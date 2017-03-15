@@ -7,7 +7,7 @@
 **
   Tracking Progress
 **
-**  As the unspecified and unresolved issue with a range-specifc paste rendered the previous method unworkable, the move to host updates on FusionTables effectively
+**  As the unspecified and unresolved issue with a range-specific paste rendered the previous method unworkable, the move to host updates on FusionTables effectively
 **  hides the progress of updates from those with access to this workbook. SheetDb now will only ever hold the same data as that used to construct the currently-visibile
 **  Scoreboard page, but sorted alphabetically. Whoever has set up the triggered events will likely receive daily emails about failed executions of the script, due to
 **  timeouts from Horntracker or Service Errors from Google (and maybe daily/hourly Quota overruns from FusionTables)
@@ -15,51 +15,50 @@
 
   Forcing a Scoreboard Update
 **
-**  If you must update the scoreboard immediately, you can manually run the UpdateScoreboard function via "Run" -> "UpdateScoreboard"  Doing so will commit
-**  the current state of the member list to the scoreboard sheet. This will reset the LastRan parameter, effectively restarting the update cycle. It may also trigger
-**  the FusionTable maintenance script, which trims out old or duplicated records from the crown database.
+**  If you must update the scoreboard immediately, you can manually run the UpdateScoreboard function via "Run" -> "UpdateScoreboard" here, or use the 'Administration'
+**  tab on from the spreadsheet. Doing so will commit the current state of the member list to the scoreboard sheet. This will also reset the LastRan parameter, 
+**  effectively restarting the update cycle. It may also trigger the FusionTable maintenance script, which trims out old or duplicated records from the crown database.
 
   Forcing a Restart (Getting the database to restart crown updates instead of continuing)
 **
 **  This is easiest done by forcing a scoreboard update, but can also be achieved by editing the LastRan parameter.
-**  Click "File" -> "Project Properties�" -> "Project Properties", and you should now see a table of fields and values.  Click the current value for LastRan (e.g. 2364)
+**  Click "File" -> "Project Properties" -> "Project Properties", and you should now see a table of fields and values.  Click the current value for LastRan (e.g. 2364)
 **  and replace it with 0.  Click "Save" to commit your change.
 
 */
 var mhccSSkey = '1P8UDv4j2lPM0hAKw4EbBT_GtvlOgFYeARV16NzWA6pc';
 function onOpen(){
-  SpreadsheetApp.getActiveSpreadsheet().addMenu('MHCC Admin', [{name:"Add Members",functionName:"addFusionMember"},
-                                                         {name:"Delete Members",functionName:"delFusionMember"},
-                                                         {name:"Refresh Scoreboard",functionName:"UpdateScoreboard"},
-                                                         {name:"Perform Update",functionName:"UpdateDatabase"},
-                                                         {name:"Perform RecordCount Maintenance",functionName:"doRecordsMaintenance"}]);
-
+  SpreadsheetApp.getActiveSpreadsheet().addMenu('Administration', [{name:"Add Members",functionName:"addFusionMember"},
+                                                                   {name:"Delete Members",functionName:"delFusionMember"},
+                                                                   {name:"Refresh Scoreboard",functionName:"UpdateScoreboard"},
+                                                                   {name:"Perform Crown Update",functionName:"UpdateDatabase"},
+                                                                   {name:"Perform RecordCount Maintenance",functionName:"doRecordsMaintenance"}]);
 }
 function getMyDb_(wb,sortObj) {
   var SS = wb.getSheetByName('SheetDb');
   var db = SS.getRange(2, 1, SS.getLastRow()-1, SS.getLastColumn()).sort(sortObj).getValues();
-  return db
+  return db;
 }
-function saveMyDb_(wb,db,range) {
-  if ( db == null ) return 1
+function saveMyDb_(wb,db) {
+  if ( db == null ) return 1;
   var lock = LockService.getPublicLock();
   lock.tryLock(30000);
   if ( lock.hasLock() ) {
     // Have a lock on the db, now save
     var SS = wb.getSheetByName('SheetDb');
-    if ( range == null) {
+ //   if ( range == null) {
       // No position input -> full db write -> no sorting needed
-      if ( db.length < SS.getLastRow()-1 ) {
-        // new db is smaller than old db, so clear it out
-        SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).setValue('');
-      }
-      SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
-    } else {
-      // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
-      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).sort(1);
-      SS.getRange(range[0],range[1],range[2],range[3]).setValues(db);
+    if ( db.length < SS.getLastRow()-1 ) {
+      // new db is smaller than old db, so clear it out
+      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).setValue('');
     }
-    SpreadsheetApp.flush(); // Commit changes (causing immediate failure as of 2017-02-21
+    SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
+//    } else {
+//     // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
+//      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).sort(1);
+//      SS.getRange(range[0],range[1],range[2],range[3]).setValues(db);
+//    }
+    SpreadsheetApp.flush(); // Commit changes (causing immediate failure as of 2017-02-21 for minidb writes
     lock.releaseLock();
     return true
   }
@@ -109,136 +108,139 @@ function saveMyDb_(wb,db,range) {
 }**/
 function UpdateDatabase() {
   // This function is used to update the database's values, and runs frequently on small sets of data
-  var BatchSize = 127;                                                               // Number of records to process on each execution
+  var BatchSize = 127;                                                        // Number of records to process on each execution
   var db = [];
   var wb = SpreadsheetApp.openById(mhccSSkey);
   // db = getMyDb_(wb,1);             // Get the db, sort on col 1 (name)
   var props = PropertiesService.getScriptProperties().getProperties();
-  var nMembers = props.nMembers               // Database records count
-  var LastRan = props.LastRan*1;              // Determine the last successfully processed record
+  var nMembers = props.nMembers;                                              // Database records count
+  var LastRan = props.LastRan*1;                                              // Determine the last successfully processed record
   var sheet = wb.getSheetByName('Members');
   // var nRows = sheet.getLastRow()-1;                                                     // Spreadsheet records count
   // Read in the MHCC tiers as a 13x3 array
   // If the MHCC tiers are moved, this getRange MUST be updated!
   var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
 
-  // Perform scoreboard update check / progress reset
-  if ( LastRan >= nMembers ) {
+  if ( LastRan >= nMembers ) {                                                
+    // Perform scoreboard update check / progress reset
     UpdateScoreboard();
     PropertiesService.getScriptProperties().setProperty('LastRan', 0);        // Point the script back to the start
-    return
+  } else {
+      // Grab a subset of the alphabetized member record
+      var lock = LockService.getPublicLock();
+      lock.waitLock(30000);
+      if ( lock.hasLock() ) {
+        var starttime = new Date().getTime();
+        Logger.log('Started with '+LastRan+' completed member updates');
+        // Loop over members in sets of BatchSize. Stop looping when we've updated all members, or exceeded 180s of runtime.
+        while ( ((new Date().getTime()) - starttime)/1000 < 180 && (LastRan < nMembers)) {
+          var btime = new Date().getTime();
+          var dHunters = getUserBatch_(LastRan,BatchSize); // Queries for the next set of members to update
+          var sIDstring = dHunters[0][1].toString();       // Get the first ID for the string
+          for (var i=1;i<dHunters.length;i++ ) {
+            if ( dHunters[i][1] != '' ) {
+              sIDstring += ","+dHunters[i][1].toString();  // Concatenate all the remaining non-null IDs
+            }
+          }
+          // Have built the ID string, now query HT's MostMice.php
+          var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters='+sIDstring).getContentText();
+          MM = JSON.parse(MM); // Separate line for debug purposes
+          // Loop over our db subset dHunters and parse the corresponding MM entry
+          Logger.log(Object.keys(MM.hunters).length+' returned hunters out of '+dHunters.length)
+          for (var i=0;i<dHunters.length;i++) {
+            var j = 'ht_'+dHunters[i][1];
+            if ( typeof MM.hunters[j] != 'undefined' ) {
+              // The hunter's ID was found in the MostMice object, and the update can be performed
+              var nB = 0, nS = 0, nG = 0;
+              for ( var k in MM.hunters[j].mice ) {
+                // Assign crowns by summing over all mice
+                if ( MM.hunters[j].mice[k] >= 500 ) nG++;
+                else if ( MM.hunters[j].mice[k] >= 100 ) nS++;
+                else if ( MM.hunters[j].mice[k] >= 10 ) nB++;
+              }
+              dHunters[i][2] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
+              if ( dHunters[i][7] != nG || dHunters[i][6] != nS || dHunters[i][5] != nB ) dHunters[i][3] = new Date().getTime();
+              dHunters[i][4] = new Date().getTime();    // Time of last update, the 'touched' value
+              dHunters[i][5] = nB                       // Bronze
+              dHunters[i][6] = nS                       // Silver
+              dHunters[i][7] = nG                       // Gold
+              dHunters[i][8] = nG-0 + nS-0;             // MHCC Crowns
+              // Determine the MHCC rank & squirrel of this hunter
+              for ( var k = 0; k<aRankTitle.length; k++ ) {
+                if ( dHunters[i][8] >= aRankTitle[k][0] ) {
+                  // Crown count meets/exceeds required crowns for this level
+                  dHunters[i][9] = aRankTitle[k][2];    // Set the Squirrel value
+                  break;
+                }
+              }
+              // if ( dHunters[i][2] >= (new Date().getTime() - 20*86400*1000) ) dHunters[i][12] = 'Current';
+              // else dHunters[i][12] = 'Old';  // move the old/lost characterization to UpdateScoreboard
+            } else {
+              // The hunter is not found in the MM object, he is lost.  Set his status to "Lost"
+              // dHunters[i][12] = 'Lost';  // move to UpdateScoreboard
+            }
+          }
+          // Have now completed the loop over the dHunters subset.  Save the new rows to the db
+          ftBatchWrite(dhunters);//  saveMyDb_(wb,dHunters,[2+LastRan-0,1,dHunters.length,dHunters[0].length]);
+          LastRan = LastRan-0 + BatchSize-0;            // Increment LastRan for next batch's usage
+          PropertiesService.getScriptProperties().setProperty('LastRan',LastRan.toString());
+          Logger.log('Batch time of '+((new Date().getTime())-btime)/1000+' sec');
+        }
+        Logger.log('Through '+LastRan+' hunters, script time '+((new Date().getTime())-starttime)/1000+' sec');
+        lock.releaseLock();
+      }
   }
-
-  // Grab a subset of the alphabetized member record
+}
+/**
+/ function UpdateStale: 
+/           Writes to the secondary page that serves as a "Help Wanted" ad for getting updates for oft-unvisited members 
+/ @param lostTime Integer  - the number of milliseconds fter which a member is considered "in dire need of revisiting"
+/
+**/
+function UpdateStale_(lostTime) {
   var lock = LockService.getPublicLock();
   lock.waitLock(30000);
   if ( lock.hasLock() ) {
-    var starttime = new Date().getTime();
-    Logger.log('Started with ' + LastRan + ' completed rows')
-    while ( ((new Date().getTime()) - starttime)/1000 < 180 && LastRan < nMembers) {
-      // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.  Use start/stop times to determine if multiple
-      // batches can be run without exceeding usage limits
-      var btime = new Date().getTime();
-      var dHunters = getUserBatch_(LastRan,BatchSize)  // Queries for the next set of members to update
-      var sIDstring = dHunters[0][1].toString();       // Get the first ID for the string
-      for (var i=1;i<dHunters.length;i++ ) {
-        if ( dHunters[i][1] != '' ) {
-          sIDstring += ',' + dHunters[i][1].toString();  // Concatenate all the remaining non-null IDs
-        }
-      }
-      // Have built the ID string, now query HT's MostMice.php
-      var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters=' + sIDstring).getContentText();
-      MM = JSON.parse(MM); // Separate line for debug purposes
-      // Loop over our db subset dHunters and parse the corresponding MM entry
-      Logger.log(Object.keys(MM.hunters).length + ' returned hunters out of ' + dHunters.length)
-      for (var i=0;i<dHunters.length;i++ ) {
-        var j = 'ht_'+dHunters[i][1];
-        if ( typeof MM.hunters[j] != 'undefined' ) {
-          // The hunter's ID was found in the MostMice object, and the update can be performed
-          var nB = 0, nS = 0, nG = 0;
-          for ( var k in MM.hunters[j].mice ) {
-            // Assign crowns by summing over all mice
-            if ( MM.hunters[j].mice[k] >= 500 ) nG = nG + 1;
-            else if ( MM.hunters[j].mice[k] >= 100 ) nS = nS + 1;
-            else if ( MM.hunters[j].mice[k] >= 10 ) nB = nB + 1;
-          }
-          dHunters[i][2] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
-          if ( dHunters[i][7] != nG || dHunters[i][6] != nS || dHunters[i][5] != nB ) dHunters[i][3] = new Date().getTime();
-          dHunters[i][4] = new Date().getTime();  // Time of last update, the 'touched' value
-          dHunters[i][5] = nB // Bronze
-          dHunters[i][6] = nS // Silver
-          dHunters[i][7] = nG // Gold
-          dHunters[i][8] = nG-0 + nS-0; // MHCC Crowns
-          // Determine the MHCC rank & squirrel of this hunter
-          for ( var k = 0; k<aRankTitle.length; k++ ) {
-            if ( dHunters[i][8] >= aRankTitle[k][0] ) {
-              // Crown count meets/exceeds required crowns for this level
-              dHunters[i][9] = aRankTitle[k][2] // Set the Squirrel value
-              break;
-            }
-          }
-          // if ( dHunters[i][2] >= (new Date().getTime() - 20*86400*1000) ) dHunters[i][12] = 'Current';
-          // else dHunters[i][12] = 'Old';  // move the old/lost characterization to UpdateScoreboard
-
-        } else {
-          // The hunter is not found in the MM object, he is lost.  Set his status to "Lost"
-          // dHunters[i][12] = 'Lost';  // move to UpdateScoreboard
-        }
-      }
-      // Have now completed the loop over the dHunters subset.  Save the new rows to the db
-      batchwrite(dhunters);//  saveMyDb_(wb,dHunters,[2+LastRan-0,1,dHunters.length,dHunters[0].length]);
-      LastRan = LastRan-0 + BatchSize-0; // Increment LastRan for next batch's usage
-      PropertiesService.getScriptProperties().setProperty('LastRan',LastRan.toString());
-      Logger.log('Batch time of ' + ((new Date().getTime()) - btime)/1000 + ' sec')
-    }
-    Logger.log('Through ' + LastRan + ' hunters, script time ' + ((new Date().getTime()) - starttime)/1000 + ' sec');
-    lock.releaseLock();
-  }
-}
-function UpdateStale() {
-  // This function is used to update the Lost Hunters page more frequently than UpdateScoreboard can run
-  var lock = LockService.getPublicLock();
-  lock.waitLock(5000);
-  if ( lock.hasLock() ) {
     var wb = SpreadsheetApp.openById(mhccSSkey);
     var dbSheet = wb.getSheetByName('SheetDb');
-    var db = getMyDb_(wb,4); // Db, sorted by LastSeen (ascending)
+    var db = getMyDb_(wb,4);                        // Sorts the most recently written snapshot of crown data by the date of last MostMice inspection, in ascending order
     var lostSheet = wb.getSheetByName('"Lost" Hunters');
     var StaleArray = [];
-    var LostArray = [];
+    var starttime = new Date().getTime();
     for (var i = 0;i<db.length;i++ ) {
-      // Loop over the sorted db and construct Lost and Stale arrays
-      switch ( db[i][12] ) {
-        case 'Old':
-          StaleArray.push([db[i][0], Utilities.formatDate(new Date(db[i][3]), 'EST', 'yyyy-MM-dd'), db[i][2], db[i][2].replace('apps.facebook.com/mousehunt','www.mousehuntgame.com')]);
-          break;
-        case 'Lost':
-          LostArray.push(['=hyperlink("' + db[i][2] + '","' + db[i][0] + '")']);
-          break;
-      }
+        if ( starttime - db[i][3] > lostTime ) {
+            StaleArray.push([db[i][0], Utilities.formatDate(new Date(db[i][3]), 'EST', 'yyyy-MM-dd'),"https://apps.facebook.com/mousehunt/profile.php?snuid="+db[i][1],"https://www.mousehuntgame.com/profile.php?snuid="+db[i][1]]);
+        }
     }
     // Write the new Stale Hunters to the sheet
     lostSheet.getRange(3,3,Math.max(lostSheet.getLastRow()-2,1),4).setValue('');  // Remove old Stale hunters
     if (StaleArray.length > 0) {
-      lostSheet.getRange(3,3,StaleArray.length,StaleArray[0].length).setValues(StaleArray); // Add new Stale hunters
-    }
-    lostSheet.getRange(2, 1, lostSheet.getLastRow()-1).setValue('');            // Clean out any previously 'Lost' hunters
-    if (LostArray.length > 0 ) {
-      lostSheet.getRange(2, 1, LostArray.length).setFormulas(LostArray);        // Add new 'Lost' hunters
+      lostSheet.getRange(3,3,StaleArray.length,4).setValues(StaleArray); // Add new Stale hunters
     }
     lock.releaseLock();
   }
 }
+/**
+/ function UpdateScoreboard:
+/           Write the most recent snapshot of each member's crowns to the Scoreboard page 
+/
+**/
 function UpdateScoreboard() {
-  // This function is used to write the collected data from SheetDb into a format that is visually appealing and functional
+  UpdateStale(20*86400*1000);                   // If a member hasn't been seen in the last 20 days, then request a high-priority update
   var start = new Date().getTime();
   var wb = SpreadsheetApp.openById(mhccSSkey);
-
-  // Check for stale & 'lost' hunters
-  UpdateStale();
-
-  // Build scoreboard
-  // Get the crown-count sorted memberlist : {column:10,ascending:false},{column:9,ascending:false},{column:8,ascending:false},{column:7,ascending:false}]);
+  var props = PropertiesService.getScriptProperties().getProperties();
+  var nMembers = props.nMembers||0;
+  if (nMembers == 0) {
+      nMembers = FusionTables.Query.sql("SELECT * FROM "+utbl).rows.length;
+      PropertiesService.getScriptProperties().setProperty("nMembers",nMembers.toString());
+  }
+  // To build the scoreboard....
+  // 1) Request the most recent snapshot of all members
+  var db = getLatestRows_(nMembers);
+  // 2) Store it on SheetDb
+  saveMyDb_(wb,db);
+  // 3) Sort it by MHCC crowns, then Golds, then LastSeen, then LastCrown: {column:10,ascending:false},{column:9,ascending:false},{column:8,ascending:false},{column:7,ascending:false}]);
   var AllHunters = getMyDb_(wb,[{column:10,ascending:false},{column:5,ascending:true},{column:4,ascending:true}]);
   var Scoreboard = [];
   var i = 1;
