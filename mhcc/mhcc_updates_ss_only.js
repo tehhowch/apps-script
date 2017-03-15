@@ -1,6 +1,4 @@
-/*** this script written by Ben Hauch (bhauch@gmail.com) aka tehhowch 
-**     This script was last updated on 7 August 2013 by Ben Hauch
-**
+/***  
 **  This spreadsheet uses Google Apps Script and the Spreadsheets API functionality to maintain a record of all MHCC members placed on the
 **  'Members' sheet.  Via the UpdateDatabase script and the external Horntracker.com website, the crowns of all members can be updated in an 
 **  automated fashion.  These members are processed in chunks of up to 127 at a time (higher batch sizes overload the maximum URL length), with
@@ -31,7 +29,7 @@
 **
 **  If the requirements for a title are changed, the true status for each member will not be reflected until the scoreboard has updated twice.  This is 
 **  because any hunters processed before the change are not re-processed upon changing of the titles / number of mice.  To restart the database update 
-**  process from square 1, you must edit the LastRan parameter.  Click "File" -> "Project Properties…" -> "Project Properties", and you should now see
+**  process from square 1, you must edit the LastRan parameter.  Click "File" -> "Project Propertiesâ€¦" -> "Project Properties", and you should now see
 **  a table of fields and values.  Click the current value for LastRan (e.g. 2364) and replace it with 0.  Click "Save" to commit your change.  You should
 **  verify that your change was accepted, and this can be done by waiting 15 minutes.  View the LastRan parameter after 10 minutes, and if it is greater 
 **  than 300 then your first edit was performed while the script was running, and promptly overwritten when the script finished.  Repeat this cycle of 
