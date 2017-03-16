@@ -1,23 +1,29 @@
-/* Google FusionTables to serve as the backend
-/ Structural changes: since updating/deleting rows is a 1-by-1 operation (yes, really >_> ), we will have multiple entries for each person in MHCC.
-/ To prevent excessive table growth, we will remove rows that were uploaded more than 4 weeks earlier.
-/ Bonus: this means we can serve new data such as most crowns in the last 30 days
-*/
+/**
+ * Google FusionTables to serve as the backend
+ * Structural changes: since updating/deleting rows is a 1-by-1 operation (yes, really >_> ), we will have multiple entries for each person.
+ * To prevent excessive table growth, we will store only 30 snapshots per user, removing any duplicates which occur when the script updates
+ * more often than the person's data is refreshed.
+ * Bonus: this means we can serve new data such as most crowns in the last 30 days.
+ */
 var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-'; // small table containing user names and user ids (unique on user ids)
 var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff'; // large table containing names, user ids, and crown counts data (no unique key!)
 /**
-/ returns the member and uid as an rectangular array
-/ [name , UID]
-**/
+ * function getUserBatch_       Return the member name and uid as a rectangular array
+ * @param  {integer} LastRan    The most recently updated member, from an alphabetical sort of the database
+ * @param  {integer} BatchSize  The number of members to update per batch, typically 127
+ * @return {String[][]}         [Name,UID]
+ */
 function getUserBatch_(LastRan,BatchSize){
   var sql = "SELECT Member, UID FROM "+utbl+" ORDER BY Member ASC OFFSET "+LastRan+" LIMIT "+BatchSize;
   var minitable = FusionTables.Query.sql(sql);
   return minitable.rows;
 }
 /**
-/ called by UpdateScoreboard to get a unique listing of hunters and crown data - only reporting the result of the latest touch per hunter
-/ returns an UNSORTED and NON-RANKED array of the most recent stored crown data
-**/
+ * function getLatestRows_    Returns a unique listing of hunters and crown data based on sorting by the most recently added crown snapshots.
+ *                            Called by UpdateScoreboard
+ * @param  {integer} nMembers The total number of members in the database
+ * @return {Array[][]}        N-by-10 array of data for UpdateScoreboard to parse and order.
+ */
 function getLatestRows_(nMembers){
   var sql = '', resp="", wt = new Date();
   sql = "SELECT * FROM "+ftid+" ORDER BY LastTouched DESC LIMIT "+nMembers;
@@ -26,12 +32,13 @@ function getLatestRows_(nMembers){
   return sbd;
 }
 /**
-/ called by new code that looks into a specific user and reports their crown growth total as a function of LastSeen times
-/ LastSeen used instead of LastTouched since database maintenance is more often than users get Seen
-/ could be called from a webapp that gets the hunters uid as a parameter, does a lookup to the table, and serves a line
-/ chart of progress over various days
-/ look into using this sample reference instead: https://developers.google.com/fusiontables/docs/sample_code#chartTools
-**/
+ * function getUserHistory_   querys the crown data snapshots for the given user and returns their crown counts as a function of when they
+ *                            were seen by Horntracker's MostMice. This function may be useful for a future webpage which could plot the
+ *                            data, either for just the specified hunter, or for all MHCC members. This function may be deprecated if the
+ *                            Visualization API is used, as described here: https://developers.google.com/fusiontables/docs/sample_code#chartTools
+ * @param  {String} uid the user id of a specific member for which the crown data snapshots are returned
+ * @return {Object}     an object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
+ */
 function getUserHistory_(uid){
   var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC FROM "+ftid+" ORDER BY LastSeen ASC WHERE UID = '"+uid.toString()+"' LIMIT 30";
   var resp = FusionTables.Query.sql(sql);
@@ -44,9 +51,11 @@ function getUserHistory_(uid){
   return "";
 }
 /**
-/ called by UpdateDatabase to write grabbed data back to the database after several batches of hunters were updated
-**/
-function batchwrite(hdata){
+ * function ftBatchWrite      Constructs and submits the necessary SQL INSERT statements to submit the supplied information to the crown snapshot database.
+ * @param  {Array[][]} hdata  The array of data that will be written to the database.
+ * @return {integer}          Returns the number of rows that were added to the database.
+ */
+function ftBatchWrite(hdata){
   // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel]
   var sqlbase = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel) VALUES ('";
   var query = "", numadded=0, resp="";
@@ -68,12 +77,11 @@ function batchwrite(hdata){
   return numadded;
 }
 /**
-/ scans the fusion table member list to determine if anyone with the given UID exists already.
-/ if yes, then informs the adder that the member is already in the database.
-/ if no, adds the member to a list and prompts for additional members to add
-/ Finally, if members remain that should be added, calls addMember2fusion_() with the member list
-/
-**/
+ * function addFusionMember     Scan the fusion table member list to determine if anyone with the given UID exists already.
+ *                              If yes, then informs the adder that the member is already in the database. If no, adds the
+ *                              member to a list and prompts for additional members to add. Finally, if members remain that
+ *                              should be added, calls addMember2fusion_() with the member list, and updates the global property nMembers
+ */
 function addFusionMember(){
     var getMembers = true, gotDb=false, hasMatch = true;
     var mem2add = [], curmems=[], matchedIndex = -1;
@@ -123,8 +131,10 @@ function addFusionMember(){
     }
 }
 /**
-/  prompt the adder for the names / profile links of the members who should be removed from the crown database
-**/
+ *  function delFusionMember      Called from the spreadsheet main interface in order to remove members from MHCC crown tracking.
+ *                                Prompts the adder for the names / profile links of the members who should be removed from the
+ *                                crown database and runs verification checks to ensure the proper rows are removed.
+ */
 function delFusionMember(){
     var getMembers = true, gotDb=false, hasMatch = true;
     var mem2del = [], curmems=[], matchedIndex = -1;
@@ -171,8 +181,8 @@ function delFusionMember(){
     }
 }
 /**
-/ helper function that gets a name from the spreadsheet main interface
-**/
+ * helper function that gets a name from the spreadsheet main interface
+ */
 function getMemberName2AddorDel_(){
     var name = Browser.inputBox("Adding a Member","Enter the new member's name",Browser.Buttons.OK_CANCEL);
     if (name.toLowerCase()=="cancel") return -1;
@@ -185,8 +195,11 @@ function getMemberName2AddorDel_(){
     }
 }
 /**
-/ helper function that ensures the provided UID belongs to who the adder thinks it does
-**/
+ * function getMemberUID2AddorDel_  Uses the Spreadsheet interface to confirm that the supplied profile link (and the
+ *                                  UID extracted from it) belong to the person that the admin is trying to modify
+ * @param  {String} memberName      The name of the member to be added to or deleted from MHCC
+ * @return {String}                 Returns the validated UID of the member.
+ */
 function getMemberUID2AddorDel_(memberName){
     var profileLink = Browser.inputBox("What is "+memberName+"'s Profile Link?","Please enter the URL of "+memberName+"'s profile",Browser.Buttons.OK_CANCEL);
     if (profileLink.toLowerCase()=="cancel") return -1;
@@ -200,10 +213,11 @@ function getMemberUID2AddorDel_(memberName){
     }
 }
 /**
-/ inserts the given members into the members db (dup checking done by parent)
-/ inserts a blank crown record into the crown database with their UID(s)
-/ @param Array[][] memlist  - [[Name1, UID1], [Name2,UID2],...]
-**/
+ * function addMember2fusion_   Inserts the given members into the Members database. Duplicate member checking is
+ *                              handled in addFusionMember()
+ * @param {Array[][]} memlist   Two-column array of the member's name and the corresponding UID.
+ * @return {Integer}            The number of rows that were added to the Members database
+ */
 function addMember2fusion_(memlist){
   var usql = "INSERT INTO "+utbl+" (Member, UID) VALUES ('";
   var csql = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel) VALUES ('";
@@ -226,7 +240,9 @@ function addMember2fusion_(memlist){
   return numadded;
 }
 /**
-/ @param memlist - array containing the name of the member(s) to delete from the members and crown-count dbs as [Name, UID utblROWID]
+ *   function delMember_          Removes the given members from the crown count database, and then the members database.
+ *   @param {String[][]} memlist  Array containing the name of the member(s) to delete from the members and crown-count dbs as [Name, UID utblROWID]
+ *   @return {Integer}            The number of rows deleted from the members database.
 **/
 function delMember_(memlist){
   var skippedMems = [], nDeleted = 0;
@@ -254,10 +270,10 @@ function delMember_(memlist){
   return nDeleted;
 }
 /**
-/ maintenance script, run weekly/daily
-/ finds all members with more than @maxRecords crown count snapshots, and trims them down to have at most 30 distinct LastSeen records.
-/ will also trim out duplicated LastSeen records even if the user does not have 30+ records in total
-**/
+ * maintenance script, run weekly/daily
+ * finds all members with more than @maxRecords crown count snapshots, and trims them down to have at most 30 distinct LastSeen records.
+ * will also trim out duplicated LastSeen records even if the user does not have 30+ records in total
+ */
 function doRecordsMaintenance(){
   var maxRecords = 30;
   var mem2trim = getMembers2trim_(maxRecords);
@@ -266,18 +282,17 @@ function doRecordsMaintenance(){
   }
 }
 /**
-/    queries for a per-member count of crown data records, then queries those with > max records to determine
-/    an array of member, lastseen value, and times to delete that member-value pairing
-/  @param Integer maxDiffSeenRecords  - the number of maximum different LastSeen crown snapshots a user can have
-/  @return Array[][] - an array of [UID,LastSeen,n] where n is the number of times to delete the Member-LastSeen pair
-**/
-function getMembers2trim(maxDiffSeenRecords){
+ *  function getMembers2trim_            Queries for a per-member count of crown data records, then queries those with > max records to
+ *                                       determine an array of member, lastseen value, and times to delete that member-value pairing
+ *  @param {Integer} maxDiffSeenRecords  The number of maximum different LastSeen crown snapshots a user can have
+ *  @return {Array[][]}                  An array of [UID,LastSeen,n] where n is the number of times to delete the Member-LastSeen pair
+ */
+function getMembers2trim_(maxDiffSeenRecords){
   var sql1 = "SELECT UID, COUNT() FROM "+ftid+" GROUP BY UID";
   var sql2 = "SELECT UID, LastSeen, COUNT() FROM "+ftid+" GROUP BY UID, LastSeen ORDER BY UID ASC";
-  var resp = FusionTables.Query.sql(sql1); // gets a count of all members and their total number of records
+  var resp = FusionTables.Query.sql(sql1);     // gets a count of all members and their total number of records
   var mem2trim = [];
-  // Scan through the total number of records to find members that have more than the allowed number of different
-  // LastSeen values
+  // Scan through the total number of records to find members that have more than the allowed number of different LastSeen values
   for (var i=0;i<resp.rows.length;i++){
     if (resp.rows[i][1] > maxDiffSeenRecords) {
       mem2trim.push(resp.rows[i][0].toString());
@@ -309,9 +324,9 @@ function getMembers2trim(maxDiffSeenRecords){
   return mem2trim;
 }
 /**
-/   for the specified UID-LastSeen pairs, it will delete num2trim records, beginning with the oldest LastSeen values
-/ @param Array[] mem2trimRow  - a row from the array mem2trim, containing [0]: UID, [1]: LastSeen, and [2]: integer of the # of pairs to delete
-**/
+ * function trimHistory_            For the specified UID-LastSeen pairs, it will delete num2trim records, beginning with the oldest LastSeen values
+ * @param {Array[]} mem2trimRow     A row from the array mem2trim, containing [0]: UID, [1]: LastSeen, and [2]: integer of the # of pairs to delete
+ */
 function trimHistory_(mem2trimRow){
   var sqlbase = "DELETE FROM "+ftid+" WHERE ROWID = ";
   var sql = "", r = 0;
