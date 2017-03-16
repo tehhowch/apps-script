@@ -5,16 +5,16 @@
  * more often than the person's data is refreshed.
  * Bonus: this means we can serve new data such as most crowns in the last 30 days.
  */
-var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-'; // small table containing user names and user ids (unique on user ids)
+var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-'; // small table containing user names, user ids, and rank (unique on user ids)
 var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff'; // large table containing names, user ids, and crown counts data (no unique key!)
 /**
  * function getUserBatch_       Return the member name and uid as a rectangular array
  * @param  {integer} LastRan    The most recently updated member, from an alphabetical sort of the database
  * @param  {integer} BatchSize  The number of members to update per batch, typically 127
- * @return {String[][]}         [Name,UID]
+ * @return {String[][]}         [Name,UID, Rank]
  */
 function getUserBatch_(LastRan,BatchSize){
-  var sql = "SELECT Member, UID FROM "+utbl+" ORDER BY Member ASC OFFSET "+LastRan+" LIMIT "+BatchSize;
+  var sql = "SELECT Member, UID, Rank FROM "+utbl+" ORDER BY Member ASC OFFSET "+LastRan+" LIMIT "+BatchSize;
   var minitable = FusionTables.Query.sql(sql);
   return minitable.rows;
 }
@@ -22,7 +22,7 @@ function getUserBatch_(LastRan,BatchSize){
  * function getLatestRows_    Returns a unique listing of hunters and crown data based on sorting by the most recently added crown snapshots.
  *                            Called by UpdateScoreboard
  * @param  {integer} nMembers The total number of members in the database
- * @return {Array[][]}        N-by-10 array of data for UpdateScoreboard to parse and order.
+ * @return {Array[][]}        N-by-11 array of data for UpdateScoreboard to parse and order.
  */
 function getLatestRows_(nMembers){
   var sql = '', resp="", wt = new Date();
@@ -40,7 +40,7 @@ function getLatestRows_(nMembers){
  * @return {Object}     an object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
  */
 function getUserHistory_(uid){
-  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC FROM "+ftid+" ORDER BY LastSeen ASC WHERE UID = '"+uid.toString()+"' LIMIT 30";
+  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank FROM "+ftid+" ORDER BY LastSeen ASC WHERE UID = '"+uid.toString()+"' LIMIT 30";
   var resp = FusionTables.Query.sql(sql);
   if (resp.rows.length > 0) {
     var columns = resp.columns;
@@ -57,7 +57,7 @@ function getUserHistory_(uid){
  */
 function ftBatchWrite(hdata){
   // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel]
-  var sqlbase = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel) VALUES ('";
+  var sqlbase = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Rank, Squirrel) VALUES ('";
   var query = "", numadded=0, resp="";
 
   while (hdata.length > 0) {         // while there are non-inserted users
@@ -65,7 +65,7 @@ function ftBatchWrite(hdata){
       if (hdata.length > 0) {        // We might have less than 500 to add
         var user = hdata.pop();
         query += sqlbase+user[0]+"', '"+user[1]+"', "+user[2]+", "+user[3]+", "+user[4];
-        query += ", "+user[5]+", "+user[6]+", "+user[7]+", "+user[8]+", '"+user[9]+"');";
+        query += ", "+user[5]+", "+user[6]+", "+user[7]+", "+user[8]+", "+user[9]+", '"+user[10]+"');";
       } else {
         break;                         // exit the for loop early
       }
@@ -85,7 +85,7 @@ function ftBatchWrite(hdata){
 function addFusionMember(){
     var getMembers = true, gotDb=false, hasMatch = true;
     var mem2add = [], curmems=[], matchedIndex = -1;
-    while getMembers {
+    while (getMembers) {
         var name = String(getMemberName2AddorDel_());
         var UID = "";
         if (name == String(-1)) {
@@ -96,7 +96,7 @@ function addFusionMember(){
                 getMembers = false;  // adder canceled the add
             } else {                 // have a confirmed name & UID pair
                 if (gotDb==false) {  // need to get the existing database records
-                    curmems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl+).rows;
+                    curmems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl).rows||[];
                     var curMemNames = curmems.map(function(value,index){return value[0]});  // member names are the 1st column in curmems array
                     var curUIDs = curmems.map(function(value,index){return value[1]});      // UIDs are the 2nd column in curmems array
                     var curRowIDs = curmems.map(function(value,index){return value[2]});    // used if a name update is wanted
@@ -106,10 +106,10 @@ function addFusionMember(){
                 hasMatch = ( matchedIndex >= 0 ) ? true :false;
                 if (hasMatch) {
                   // user matched to someone already in the database
-                  var resp = Browser.msgBox("Oops!","New member "+name+" is already in the database as "+curMemNames[matchedIndex]+".\n Would you like to update their name to "+name+"?",Browser.Buttons.YES_NO);
+                  var resp = Browser.msgBox("Oops!","New member "+name+" is already in the database as "+curMemNames[matchedIndex]+".\\nWould you like to update their name to "+name+"?",Browser.Buttons.YES_NO);
                   if (resp.toLowerCase()=="yes") { // Perform a name change (only valid for those who are already in the db)
-                    try {FusionTables.Query.sql("UPDATE "+utbl+"SET Member = '"+name+"' WHERE ROWID ="curRowIDs[matchedIndex]);}
-                    catch(e) {Browser.msgBox("Sorry, couldn't update "+curMemNames[matchedIndex]+"'s name.\n Perhaps it isn't in the database yet?");}
+                    try {FusionTables.Query.sql("UPDATE "+utbl+" SET Member = '"+name+"' WHERE ROWID = '"+curRowIDs[matchedIndex]+"'");}
+                    catch(e) {Browser.msgBox("Sorry, couldn't update "+curMemNames[matchedIndex]+"'s name.\\nPerhaps it isn't in the database yet?");}
                   }
                 } else {
                   // we have a new member! update our search arrays too
@@ -136,9 +136,9 @@ function addFusionMember(){
  *                                crown database and runs verification checks to ensure the proper rows are removed.
  */
 function delFusionMember(){
-    var getMembers = true, gotDb=false, hasMatch = true;
+    var getMembers = true, gotDb=false, hasMatch = false;
     var mem2del = [], curmems=[], matchedIndex = -1;
-    while getMembers {
+    while (getMembers) {
         var name = String(getMemberName2AddorDel_());
         var UID = "";
         if (name == String(-1)) {
@@ -149,7 +149,7 @@ function delFusionMember(){
                 getMembers = false;  // deleter canceled the del
             } else {                 // have a confirmed name & UID pair
                 if (gotDb==false) {  // need to get the existing database records
-                    curmems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl+).rows;
+                    curmems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl).rows||[];
                     var curMemNames = curmems.map(function(value,index){return value[0]});  // member names are the 1st column in curmems array
                     var curUIDs = curmems.map(function(value,index){return value[1]});      // UIDs are the 2nd column in curmems array
                     var curRowIDs = curmems.map(function(value,index){return value[2]});    // needed for deletions from user table
@@ -158,20 +158,18 @@ function delFusionMember(){
                 matchedIndex = curUIDs.indexOf(UID);  // check elements of the array to see if any element is the UID
                 if ( matchedIndex >= 0 ) {
                     // check that the name is correct too
-                    if (name.toLowerCase() == String(curMemNames(matchedIndex)).toLowerCase()) {
-                        hasMatch = true;
-                    }
+                    hasMatch = ( name.toLowerCase() === String(curMemNames[matchedIndex]).toLowerCase() ) ? true : false;
                 }
                 if (hasMatch) {
                     // Add to the deletion list
-                    mem2del.push([name,UID,curRowIDs(matchedIndex)]);
+                    mem2del.push([name,UID,curRowIDs[matchedIndex]]);
                 } else {
                     // user didn't match to someone in the database
-                    Browser.msgBox("Oops!","Couldn't find "+name+" in the database with that profile URL.\nPerhaps they're already deleted, or have a different stored name?",Browser.Buttons.OK);
+                    Browser.msgBox("Oops!","Couldn't find "+name+" in the database with that profile URL.\\nPerhaps they're already deleted, or have a different stored name?",Browser.Buttons.OK);
                 }
             }
         }
-        var resp = Browser.msgBox("Remove more?","Would you like to remove another member?",Browser.Buttons.YES_NO);
+        var resp = Browser.msgBox("Remove others?","Would you like to remove another member?",Browser.Buttons.YES_NO);
         if (resp.toLowerCase()=="no") getMembers = false;
     }
     // perhaps we've now got a list of members to remove from the database
@@ -184,14 +182,14 @@ function delFusionMember(){
  * helper function that gets a name from the spreadsheet main interface
  */
 function getMemberName2AddorDel_(){
-    var name = Browser.inputBox("Adding a Member","Enter the new member's name",Browser.Buttons.OK_CANCEL);
+    var name = Browser.inputBox("Memberlist Update","Enter the member's name",Browser.Buttons.OK_CANCEL);
     if (name.toLowerCase()=="cancel") return -1;
     var ok2add = Browser.msgBox("Verify name","Please confirm that the member is named '"+name+"'",Browser.Buttons.YES_NO);
     if (ok2add.toLowerCase()=="yes") {
         return String(name).trim();
     } else {
         // recurse until canceled or accepted
-        return getMemberName2Add_();
+        return getMemberName2AddorDel_();
     }
 }
 /**
@@ -203,13 +201,13 @@ function getMemberName2AddorDel_(){
 function getMemberUID2AddorDel_(memberName){
     var profileLink = Browser.inputBox("What is "+memberName+"'s Profile Link?","Please enter the URL of "+memberName+"'s profile",Browser.Buttons.OK_CANCEL);
     if (profileLink.toLowerCase()=="cancel") return -1;
-    var UID = profileLink.slice(mplink.search("=")+1).toString();
-    var ok2add = Browser.msgBox("Verify URL","Please confirm that this is "+memberName+"'s Profile:\n"+" http://apps.facebook.com/mousehunt/profile.php?snuid="+UID,Browser.Buttons.YES_NO);
+    var UID = profileLink.slice(profileLink.search("=")+1).toString();
+    var ok2add = Browser.msgBox("Verify URL","Please confirm that this is "+memberName+"'s Profile:\\nhttp://apps.facebook.com/mousehunt/profile.php?snuid="+UID,Browser.Buttons.YES_NO);
     if (ok2add.toLowerCase()=="yes") {
         return String(UID).trim();
     } else {
         // recurse until canceled or accepted
-        return getMemberUID2Add_(memberName);
+        return getMemberUID2AddorDel_(memberName);
     }
 }
 /**
@@ -220,14 +218,14 @@ function getMemberUID2AddorDel_(memberName){
  */
 function addMember2fusion_(memlist){
   var usql = "INSERT INTO "+utbl+" (Member, UID) VALUES ('";
-  var csql = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel) VALUES ('";
+  var csql = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Rank, Squirrel) VALUES ('";
   var query1 = '', query2 = '', rt = new Date(), resp = [], numadded=0;
   while (memlist.length > 0) {         // while there are non-inserted users
     for (var i=0;i<500;i++) {          // max 500 INSERT per query
       if (memlist.length > 0) {        // We might have less than 500 to add
         var user = memlist.pop();
         query1 += usql+user[0]+"', '"+user[1]+"');";
-        query2 += csql+user[0]+"', '"+user[1]+"', 0, "+rt.getTime()+", "+rt.getTime()+", 0, 0, 0, 0, 'Weasel');";
+        query2 += csql+user[0]+"', '"+user[1]+"', 0, "+rt.getTime()+", "+rt.getTime()+", 0, 0, 0, 0, 20000, 'Weasel');";
       } else {
         break;                         // exit the for loop early
       }
@@ -249,23 +247,23 @@ function delMember_(memlist){
   Logger.log("Will be deleting "+memlist.length+" rows from Member table");
   for (var i=0;i<memlist.length;i++){
     var sql = "SELECT ROWID, UID FROM "+ftid+" WHERE UID = '"+memlist[i][1]+"'";
-    var snapshots = FusionTables.Query.sql(sql).rows;
+    var snapshots = FusionTables.Query.sql(sql).rows||[];
     var resp = Browser.msgBox("Confirmation Required","The member named '"+memlist[i][0]+"' has "+snapshots.length+" records. Delete?",Browser.Buttons.YES_NO);
     if (resp.toLowerCase()=="yes") {
-      var sqlbase = "DELETE * FROM "+ftid+" WHERE ROWID = ";
+      var sqlbase = "DELETE FROM "+ftid+" WHERE ROWID = '";
       for (var j=0;j<snapshots.length;j++){
-          FusionTables.Query.sql(sqlbase+snapshots[j][0]);
+          FusionTables.Query.sql(sqlbase+snapshots[j][0]+"'");
       }
       Logger.log("Deleted "+snapshots.length+" crown records for former member '"+memlist[i][0]+"'.");
-      FusionTables.Query.sql("DELETE * FROM "+utbl+" WHERE ROWID = "+memlist[i][2]);
+      FusionTables.Query.sql("DELETE FROM "+utbl+" WHERE ROWID = '"+memlist[i][2]+"'");
       Logger.log("Deleted user '"+memlist[i][0]+"' from the Members table.");
       nDeleted++;
     } else {
-      skippedMems.push(memlist[i][0].toString()+"\n");
+      skippedMems.push("\\n"+memlist[i][0].toString());
     }
   }
   if (skippedMems.length > 0) {
-    Browser.msgBox("Some Not Deleted","Of the input members, the following were not deleted due to lack of confirmation\n "+skippedMems.toString(),Browser.Buttons.OK);
+    Browser.msgBox("Some Not Deleted","Of the input members, the following were not deleted due to lack of confirmation:"+skippedMems.toString(),Browser.Buttons.OK);
   }
   return nDeleted;
 }
@@ -328,7 +326,7 @@ function getMembers2trim_(maxDiffSeenRecords){
  * @param {Array[]} mem2trimRow     A row from the array mem2trim, containing [0]: UID, [1]: LastSeen, and [2]: integer of the # of pairs to delete
  */
 function trimHistory_(mem2trimRow){
-  var sqlbase = "DELETE FROM "+ftid+" WHERE ROWID = ";
+  var sqlbase = "DELETE FROM "+ftid+" WHERE ROWID = '";
   var sql = "", r = 0;
   var num2trim = mem2trimRow[2];
   if (num2trim > 0) {
@@ -337,7 +335,7 @@ function trimHistory_(mem2trimRow){
     var resp = FusionTables.Query.sql(sql);
     for (var i=0;i<resp.rows.length;i++) {
       // loop over the returned rows and schedule their deletion
-      sql = sqlbase+resp.rows[i][0].toString();
+      sql = sqlbase+resp.rows[i][0].toString()+"'";
       r = FusionTables.Query.sql(sql);
       Logger.log(r);
     }

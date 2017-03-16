@@ -147,7 +147,7 @@ function UpdateDatabase() {
               for ( var k = 0; k<aRankTitle.length; k++ ) {
                 if ( dHunters[i][8] >= aRankTitle[k][0] ) {
                   // Crown count meets/exceeds required crowns for this level
-                  dHunters[i][9] = aRankTitle[k][2];    // Set the Squirrel value
+                  dHunters[i][10] = aRankTitle[k][2];    // Set the Squirrel value
                   break;
                 }
               }
