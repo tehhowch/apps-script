@@ -14,13 +14,27 @@ var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff'; // large table containin
  * @return {String[][]}         [Name,UID, Rank]
  */
 function getUserBatch_(LastRan,BatchSize){
-  var sql = "SELECT Member, UID, Rank FROM "+utbl+" ORDER BY Member ASC OFFSET "+LastRan+" LIMIT "+BatchSize;
+  var sql = "SELECT Member, UID FROM "+utbl+" ORDER BY Member ASC OFFSET "+LastRan+" LIMIT "+BatchSize;
   var minitable = FusionTables.Query.sql(sql);
   return minitable.rows;
 }
 /**
- * function getLatestRows_    Returns a unique listing of hunters and crown data based on sorting by the most recently added crown snapshots.
- *                            Called by UpdateScoreboard
+ * function getDbIndex_     assemble an indexing object for the db based on the user's UID (which should be unique)
+ * @param  {Array} db       a rectangular array of the most recent Scoreboard update
+ * @return {object}         a simple object with the key-value pair of {UID: dbIndex}
+ */
+function getDbIndex_(db){
+  var output = {}
+  for (var i=0;i<db.length,i++){
+    output[String(db[i][0])]=i;
+  }
+  Logger.log(Object.keys(output).length-db.length); // Should be 0 if all UIDs appear just once.
+  return output;
+}
+/**
+ * function getLatestRows_    Returns a listing of hunters and crown data based on sorting by the most recently added crown snapshots.
+ *                            Called by UpdateScoreboard. Should return a unique listing but as of 2017-03-16 this assumption has not
+ *                            been checked. Possible reasons for non-uniqueness would be the addition or deletion of members.
  * @param  {integer} nMembers The total number of members in the database
  * @return {Array[][]}        N-by-11 array of data for UpdateScoreboard to parse and order.
  */

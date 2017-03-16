@@ -92,17 +92,18 @@ function saveMyDb_(wb,db) {
  */
 function UpdateDatabase() {
   var BatchSize = 127;
-  var db = [];
   var wb = SpreadsheetApp.openById(mhccSSkey);
+  var db = getMyDb_(wb,1);                                                // alphabetized records with Rank and CrownChangeDate available
+  var dbKeys = getDbIndex_(db);                                           // map UIDs to their index in the db for fast 1:1 accessing
   var props = PropertiesService.getScriptProperties().getProperties();
-  var nMembers = props.nMembers;                                              // Database records count
-  var LastRan = props.LastRan*1;                                              // Determine the last successfully processed record
+  var nMembers = props.nMembers;                                          // Database records count (may be larger than the written db on SheetDb)
+  var LastRan = props.LastRan*1;                                          // The last successfully updated member crown data record
   var sheet = wb.getSheetByName('Members');
   // Read in the MHCC tiers as a 13x3 array. If the MHCC tiers are moved, this getRange target MUST be updated!
   var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
   if ( LastRan >= nMembers ) {
-    UpdateScoreboard();                                                       // Perform scoreboard update check / progress reset
-    PropertiesService.getScriptProperties().setProperty('LastRan', 0);        // Point the script back to the start
+    UpdateScoreboard();                                                   // Perform scoreboard update check / progress reset
+    PropertiesService.getScriptProperties().setProperty('LastRan', 0);    // Point the script back to the start
   } else {
       // Grab a subset of the alphabetized member record
       var lock = LockService.getPublicLock();
@@ -110,23 +111,27 @@ function UpdateDatabase() {
       if ( lock.hasLock() ) {
         var starttime = new Date().getTime();
         Logger.log('Started with '+LastRan+' completed member updates');
-        // Loop over members in sets of BatchSize. Stop looping when we've updated all members, or exceeded 180s of runtime.
+        var remMembers = getUserBatch_(LastRan,nMembers*1);               // get everyone that hasn't been processed yet
+        var mem2update = [];                                              // remMembers is Array of [Name, UID]
+        // Loop over remaining members in sets of BatchSize. Stop looping when out of members or >180s of runtime.
         while ( ((new Date().getTime()) - starttime)/1000 < 180 && (LastRan < nMembers)) {
-          var btime = new Date().getTime();
-          var dHunters = getUserBatch_(LastRan,BatchSize); // Queries for the next set of members to update
-          var sIDstring = dHunters[0][1].toString();       // Get the first ID for the string
-          for (var i=1;i<dHunters.length;i++ ) {
-            if ( dHunters[i][1] != '' ) {
-              sIDstring += ","+dHunters[i][1].toString();  // Concatenate all the remaining non-null IDs
+          var batchHunters = remMembers.slice(LastRan,LastRan-0+BatchSize-0);  // Create new array from a section of the [Name,UID] array
+          var sIDstring = batchHunters[0][1];                 // Initialize the URL parameter string
+          for (var i=1;i<batchHunters.length;i++ ) {
+            if ( batchHunters[i][1] != '' ) {
+              sIDstring += ","+batchHunters[i][1].toString();  // Concatenate all the remaining non-null IDs
+            } else {
+              Logger.log(batchHunters[i][0]+" has no UID");
             }
           }
           // Have built the ID string, now query HT's MostMice.php
           var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters='+sIDstring).getContentText();
           MM = JSON.parse(MM); // Separate line for debug purposes
-          // Loop over our db subset dHunters and parse the corresponding MM entry
-          Logger.log(Object.keys(MM.hunters).length+' returned hunters out of '+dHunters.length)
-          for (var i=0;i<dHunters.length;i++) {
-            var j = 'ht_'+dHunters[i][1];
+          // Loop over our member subset batchHunters and parse the corresponding MM entry
+          Logger.log(Object.keys(MM.hunters).length+' returned hunters out of '+batchHunters.length)
+          for (var i=0;i<batchHunters.length;i++) {
+            var j = 'ht_'+batchHunters[i][1];
+            var dbRow = dbKeys[batchHunters[i][1]];           // store this members row in the large scoreboard dataset
             if ( typeof MM.hunters[j] != 'undefined' ) {
               // The hunter's ID was found in the MostMice object, and the update can be performed
               var nB = 0, nS = 0, nG = 0;
@@ -136,30 +141,32 @@ function UpdateDatabase() {
                 else if ( MM.hunters[j].mice[k] >= 100 ) nS++;
                 else if ( MM.hunters[j].mice[k] >= 10 ) nB++;
               }
-              dHunters[i][2] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
-              if ( dHunters[i][7] != nG || dHunters[i][6] != nS || dHunters[i][5] != nB ) dHunters[i][3] = new Date().getTime();
-              dHunters[i][4] = new Date().getTime();    // Time of last update, the 'touched' value
-              dHunters[i][5] = nB                       // Bronze
-              dHunters[i][6] = nS                       // Silver
-              dHunters[i][7] = nG                       // Gold
-              dHunters[i][8] = nG-0 + nS-0;             // MHCC Crowns
+              // Adding columns onto our originally BatchSize X 2 array
+              batchHunters[i][2] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
+              // The previous crown data is stored in the most recent scoreboard update, in our db variable
+              if ( db[dbRow][7] != nG || db[dbRow][6] != nS || db[dbRow][5] != nB ) batchHunters[i][3] = new Date().getTime();
+              batchHunters[i][4] = new Date().getTime();    // Time of this update, the 'touched' value
+              batchHunters[i][5] = nB                       // Bronze
+              batchHunters[i][6] = nS                       // Silver
+              batchHunters[i][7] = nG                       // Gold
+              batchHunters[i][8] = nG-0 + nS-0;             // MHCC Crowns
+              batchHunters[i][9] = db[dbRow][9]             // The member's rank among all members, as of the previous update.
               // Determine the MHCC rank & squirrel of this hunter
               for ( var k = 0; k<aRankTitle.length; k++ ) {
-                if ( dHunters[i][8] >= aRankTitle[k][0] ) {
+                if ( batchHunters[i][8] >= aRankTitle[k][0] ) {
                   // Crown count meets/exceeds required crowns for this level
-                  dHunters[i][10] = aRankTitle[k][2];    // Set the Squirrel value
+                  batchHunters[i][10] = aRankTitle[k][2];    // Set the Squirrel value
                   break;
                 }
               }
             }
           }
-          // Have now completed the loop over the dHunters subset.  Save the new rows to the db
-          ftBatchWrite(dhunters);
+          mem2update.push(batchHunters);                // Stage this batch's data for a single write call
           LastRan = LastRan-0 + BatchSize-0;            // Increment LastRan for next batch's usage
-          PropertiesService.getScriptProperties().setProperty('LastRan',LastRan.toString());
-          Logger.log('Batch time of '+((new Date().getTime())-btime)/1000+' sec');
         }
-        Logger.log('Through '+LastRan+' hunters, script time '+((new Date().getTime())-starttime)/1000+' sec');
+        ftBatchWrite(mem2update);                       // maximum API efficiency is insert calls with mod 500.
+        PropertiesService.getScriptProperties().setProperty('LastRan',LastRan.toString());
+        Logger.log('Through '+LastRan+' members, elapsed='+((new Date().getTime())-starttime)/1000+' sec');
         lock.releaseLock();
       }
   }
