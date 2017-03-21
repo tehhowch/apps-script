@@ -8,27 +8,31 @@
 var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-'; // small table containing user names, user ids, and rank (unique on user ids)
 var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff'; // large table containing names, user ids, and crown counts data (no unique key!)
 /**
- * function getUserBatch_       Return the member name and UID as a rectangular array
- * @param  {integer} lastRan    The most recently updated member, from an alphabetical sort of the database
- * @param  {integer} batchSize  The number of members to update per batch, typically 127
+ * function getUserBatch_       Return # limit members, starting with the index number start
+ * @param  {integer} start      The most recently updated member, from an alphabetical sort of the database
+ * @param  {integer} limit      The number of members to retun, typically 127
  * @return {String[][]}         [Name,UID, Rank]
  */
-function getUserBatch_(lastRan,batchSize){
-  var sql = "SELECT Member, UID FROM "+utbl+" ORDER BY Member ASC OFFSET "+lastRan+" LIMIT "+batchSize;
+function getUserBatch_(start,limit){
+  var sql = "SELECT Member, UID FROM "+utbl+" ORDER BY Member ASC OFFSET "+start+" LIMIT "+limit;
   var miniTable = FusionTables.Query.sql(sql);
   return miniTable.rows;
 }
 /**
- * function getDbIndex_     assemble an indexing object for the db based on the user's UID (which should be unique)
+ * function getDbIndex_     Assemble an indexing object for the db based on the user's UID (which should be unique)
+ *                          For the MHCC SheetDb db, the UID is array index [1]
  * @param  {Array} db       a rectangular array of the most recent Scoreboard update
  * @return {object}         a simple object with the key-value pair of {UID: dbIndex}
  */
 function getDbIndex_(db){
   var output = {}
   for (var i=0;i<db.length;i++){
-    output[String(db[i][0])]=i;
+    output[String(db[i][1])]=i;
   }
-  Logger.log(Object.keys(output).length-db.length); // Should be 0 if all UIDs appear just once.
+  if (Object.keys(output).length-db.length != 0) {
+    // Should have been 0 if all UIDs appeared just once.
+    throw new Error('Unique ID failed to be unique when indexing SheetDb by UID');
+  }
   return output;
 }
 /**
@@ -57,7 +61,7 @@ function getLatestRows_(nMembers){
  * @return {Object}     an object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
  */
 function getUserHistory_(UID){
-  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank FROM "+ftid+" ORDER BY LastSeen ASC WHERE UID = '"+UID.toString()+"' LIMIT 30";
+  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" ORDER BY LastSeen ASC WHERE UID = '"+UID.toString()+"' LIMIT 30";
   var resp = FusionTables.Query.sql(sql);
   if (resp.rows.length > 0) {
     var columns = resp.columns;
@@ -73,28 +77,21 @@ function getUserHistory_(UID){
  * @return {integer}          Returns the number of rows that were added to the database.
  */
 function ftBatchWrite_(hdata){
-  // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel]
-  // var sqlBase = "INSERT INTO "+ftid+" (Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Rank, Squirrel) VALUES ('";
-  // var query = "", numAdded=0, resp="";
+  // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel][RankTime]
   var crownCsv = array2CSV_(hdata);
-  var cUpload = Utilities.newBlob(crownCsv,'application/octet-stream');
-  /** while (hdata.length > 0) {         // while there are non-inserted users
-    for (var i=0;i<500;i++) {        // max 500 INSERT per query
-      if (hdata.length > 0) {        // We might have less than 500 to add
-        var userRow = hdata.pop();
-        crownArr.push(user);
-        query += sqlBase+user[0]+"', '"+user[1]+"', "+user[2]+", "+user[3]+", "+user[4];
-        query += ", "+user[5]+", "+user[6]+", "+user[7]+", "+user[8]+", "+user[9]+", '"+user[10]+"');";
-      } else {
-        break;                         // exit the for loop early
-      }
-    }                                  // prepped a query to execute
-    resp = FusionTables.Query.sql(query);
-    numAdded+=resp.rows.length*1;   // track how many new rows were added and give back to the parent
-    query = "";                        // reset the query for the next trip through
-  }*/
-  var numAdded = FusionTables.Table.importRows(ftid,cUpload);
-  return numAdded.numRowsReceived;
+  try {
+    var cUpload = Utilities.newBlob(crownCsv,'application/octet-stream');
+    try {
+      var numAdded = FusionTables.Table.importRows(ftid,cUpload);
+      return numAdded.numRowsReceived;
+    }
+    catch(e){
+      throw new Error('Unable to upload rows');
+    }
+  }
+  catch(e){
+    throw new Error('Unable to convert array into CSV format');
+  }
 }
 /**
  * function addFusionMember     Interactive dialog launched from the spreadsheet interface.
@@ -149,7 +146,7 @@ function addFusionMember(){
     // perhaps we've now got a list of only new members to add to the database
     if (mem2Add.length > 0) {
         var n = addMember2Fusion_(mem2Add);
-        SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database");
+        SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database","Success!",5);
         PropertiesService.getScriptProperties().setProperty('numMembers',curUIDs.length.toString()); // saves a query against the table for a necessary property
     }
 }
@@ -160,7 +157,7 @@ function addFusionMember(){
  *                              and runs verification checks to ensure the proper rows are removed.
  */
 function delFusionMember(){
-    var getMembers = true, gotDb=false, mem2Del = [], curMems=[], matchedIndex = -1;
+    var startTime = new Date().getTime(), getMembers = true, gotDb=false, mem2Del = [], curMems=[], matchedIndex = -1;
     while (getMembers) {
         var name = String(getMemberName2AddorDel_());
         var UID = "";
@@ -193,7 +190,7 @@ function delFusionMember(){
     }
     // perhaps we've now got a list of members to remove from the database
     if (mem2Del.length > 0) {
-        var nDeleted = delMember_(mem2Del);
+        var nDeleted = delMember_(mem2Del,startTime);
         PropertiesService.getScriptProperties().setProperty('numMembers',(curUIDs.length-nDeleted).toString());
     }
 }
@@ -238,51 +235,79 @@ function getMemberUID2AddorDel_(memberName){
  */
 function addMember2Fusion_(memList){
   var rt = new Date(), resp = [], memCsv = [], crownCsv = [];
-  // create two arrays of the new members' data for CSV upload via importRows
-  while (memList.length > 0) {
-    var user = memList.pop();
-    memCsv.push(user);
-    crownCsv.push([].concat(user,0,rt.getTime(),rt.getTime(),0,0,0,0,20000,"Weasel"));
+  if (memList.length != 0) {
+    // create two arrays of the new members' data for CSV upload via importRows
+    while (memList.length > 0) {
+      var user = memList.pop();
+      memCsv.push(user);
+      crownCsv.push([].concat(user,0,rt.getTime(),rt.getTime(),0,0,0,0,20000,"Weasel"));
+    }
+    try {
+      // Convert arrays into CSV strings and Blob for app-script class exchange
+      var uUpload = Utilities.newBlob(array2CSV_(memCsv),'application/octet-stream');
+      var cUpload = Utilities.newBlob(array2CSV_(crownCsv),'application/octet-stream');
+      try {
+        // Upload data to the FusionTable databases
+        resp[0] = FusionTables.Table.importRows(utbl,uUpload);
+        resp[1] = FusionTables.Table.importRows(ftid,cUpload);
+        var numAdded = resp[0].numRowsReceived*1;
+        return numAdded;
+      }
+      catch(e){ throw new Error("Unable to upload new members' rows") }
+    }
+    catch(e){ throw new Error('Unable to convert array into CSV format') }
+  } else {
+    return
   }
-  // Convert arrays into CSV strings and Blob for app-script class exchange
-  var uUpload = Utilities.newBlob(array2CSV_(memCsv),'application/octet-stream');
-  var cUpload = Utilities.newBlob(array2CSV_(crownCsv),'application/octet-stream');
-  resp[0] = FusionTables.Table.importRows(utbl,uUpload);
-  resp[1] = FusionTables.Table.importRows(ftid,cUpload);
-  var numAdded = resp[0].numRowsReceived*1;
-  return numAdded;
 }
 /**
- *   function delMember_          Removes the given members from the crown count database, and
- *                                then the members database.
- *   @param {String[][]} memlist  Array containing the name of the member(s) to delete from the
+ *   function delMember_          Prompts for confirmation to delete all crown records and then
+ *                                the user's record. Will rate limit and also quit before timeout.
+ *   @param {Array} memList       Array containing the name of the member(s) to delete from the
  *                                members and crown-count dbs as [Name, UID utblROWID]
+ *   @param {Long} startTime      The beginning of the user's script time.
  *   @return {Integer}            The number of rows deleted from the members database.
 **/
-function delMember_(memList){
+function delMember_(memList,startTime){
   var skippedMems = [], nDeleted = 0;
-  Logger.log("Will be deleting "+memList.length+" rows from Member table");
-  for (var i=0;i<memList.length;i++){
-    var sql = "SELECT ROWID, UID FROM "+ftid+" WHERE UID = '"+memList[i][1]+"'";
-    var snapshots = FusionTables.Query.sql(sql).rows||[];
-    var resp = Browser.msgBox("Confirmation Required","The member named '"+memList[i][0]+"' has "+snapshots.length+" records. Delete?",Browser.Buttons.YES_NO);
-    if (resp.toLowerCase()=="yes") {
-      var sqlBase = "DELETE FROM "+ftid+" WHERE ROWID = '";
-      for (var j=0;j<snapshots.length;j++){
-          FusionTables.Query.sql(sqlBase+snapshots[j][0]+"'");
+  if ( memList.length != 0 ) {
+    for (var mem=0;mem<memList.length;mem++){
+      if ( (new Date().getTime()-startTime)/1000 >= 250 ) {
+        // Out of time: report skipped members
+        skippedMems.push("\\n"+memList[mem][0].toString());
+      } else {
+        var sql = "SELECT ROWID, UID FROM "+ftid+" WHERE UID = '"+memList[mem][1]+"'";
+        var snapshots = FusionTables.Query.sql(sql).rows||[];
+        var confirmString = "The member named '"+memList[mem][0]+"' has "+snapshots.length+" records."
+        confirmString += "\\nThese cannot be removed faster than 30 per minute, requiring at least ";
+        confirmString += Math.floor(1+snapshots.length/30*60)+"seconds.\\nBegin deletion?";
+        var resp = Browser.msgBox("Confirmation Required",confirmString,Browser.Buttons.YES_NO);
+        if (resp.toLowerCase()=="yes") {
+          var sqlBase = "DELETE FROM "+ftid+" WHERE ROWID = '";
+          var row = 0;
+          while ( ((new Date().getTime()-startTime)/1000 <= 280 ) && ( row < snapshots.length) ) {
+              FusionTables.Query.sql(sqlBase+snapshots[row][0]+"'");
+              Utilities.sleep(2002);                                  // Limit the rate to <30 FusionTable queries per minute
+              row++;
+          }
+          Logger.log("Deleted "+row.toString()+" crown records for former member '"+memList[mem][0]+"'.");
+          if ( row >= snapshots.length ) {
+            FusionTables.Query.sql("DELETE FROM "+utbl+" WHERE ROWID = '"+memList[mem][2]+"'");
+            Logger.log("Deleted user '"+memList[mem][0]+"' from the Members table.");
+            nDeleted++;
+          } else {
+            skippedMems.push("\\n"+memList[mem][0].toString());
+          }
+        } else {
+          skippedMems.push("\\n"+memList[mem][0].toString());
+        }
       }
-      Logger.log("Deleted "+snapshots.length+" crown records for former member '"+memList[i][0]+"'.");
-      FusionTables.Query.sql("DELETE FROM "+utbl+" WHERE ROWID = '"+memList[i][2]+"'");
-      Logger.log("Deleted user '"+memList[i][0]+"' from the Members table.");
-      nDeleted++;
-    } else {
-      skippedMems.push("\\n"+memList[i][0].toString());
     }
+    if (skippedMems.length > 0) {
+      Browser.msgBox("Some Not Deleted","Of the input members, the following were not deleted due to lack of confirmation or insufficient time:"+skippedMems.toString(),Browser.Buttons.OK);
+    }
+    return nDeleted;
   }
-  if (skippedMems.length > 0) {
-    Browser.msgBox("Some Not Deleted","Of the input members, the following were not deleted due to lack of confirmation:"+skippedMems.toString(),Browser.Buttons.OK);
-  }
-  return nDeleted;
 }
 /**
  * maintenance script, run weekly/daily
@@ -290,10 +315,12 @@ function delMember_(memList){
  * will also trim out duplicated LastSeen records even if the user does not have 30+ records in total
  */
 function doRecordsMaintenance(){
-  var maxRecords = 30;
+  var maxRecords = 10, startTime = new Date().getTime();
   var mem2Trim = getMembers2trim_(maxRecords);
-  for (var i=0;i<mem2Trim.length;i++) {
-    trimHistory_(mem2Trim[i]);
+  var mem = 0;
+  while ( (mem<mem2Trim.length) && ((new Date().getTime()-startTime)/1000 < 250) ) {
+    trimHistory_(mem2Trim[mem],startTime);
+    mem++;
   }
 }
 /**
@@ -304,67 +331,73 @@ function doRecordsMaintenance(){
  */
 function getMembers2trim_(maxDiffSeenRecords){
   var sql1 = "SELECT UID, COUNT() FROM "+ftid+" GROUP BY UID";
-  var sql2 = "SELECT UID, LastSeen, COUNT() FROM "+ftid+" GROUP BY UID, LastSeen ORDER BY UID ASC";
   var resp = FusionTables.Query.sql(sql1);     // gets a count of all members and their total number of records
   var mem2Trim = [];
   // Scan through the total number of records to find members that have more than the allowed number of different LastSeen values
-  for (var i=0;i<resp.rows.length;i++){
-    if (resp.rows[i][1] > maxDiffSeenRecords) {
-      mem2Trim.push(resp.rows[i][0].toString());
+  for (var row=0;row<resp.rows.length;row++){
+    if (resp.rows[row][1] > maxDiffSeenRecords) {
+      mem2Trim.push(resp.rows[row][0].toString());
     }
   }
-  // Now have an array of UIDs belonging to members with more than the maximum number of records to be kept
-  // Query again for only them, and add any LastSeen having more than 1 count, or any LastSeen after the
-  // total max number allowed, to a deletion list, e.g. [UID, LastSeenVal, Num2Del]
-  sql2 += " WHERE UID IN "+mem2Trim.toString();
-  resp = FusionTables.Query.sql(sql2);
-  mem2Trim = [];
-  for (var i=0;i<resp.rows.length;i++){
-    var mem = resp.rows[i][0].toString();
-    var numDiffSeen = 0, memSeen = [];
-    while (resp.rows[i][0].toString()==mem.toString()) { // each member is on multiple rows in resp.rows
-      numDiffSeen++;
-      var num2Del = numDiffSeen - maxDiffSeenRecords;
-      if ((resp.rows[i][2] > 1) || (num2Del > 0)) {
-        num2Del = Math.max(num2Del,resp.rows[i][2]-1);
-        mem2Trim.push([mem, resp.rows[i][1], num2Del]);
+  if (mem2Trim.length > 0) {
+    // Now have an array of UIDs belonging to members with more than the maximum number of records to be kept
+    // Query again for only them, and add any LastSeen having more than 1 count, or any LastSeen after the
+    // total max number allowed, to a deletion list, e.g. [UID, LastSeenVal, Num2Del]
+    var sql2 = "SELECT UID, LastSeen, COUNT() FROM "+ftid+" WHERE UID IN ("+mem2Trim.toString()+") GROUP BY UID, LastSeen ORDER BY UID ASC";
+    resp = FusionTables.Query.sql(sql2);
+    var rows2Del = [];
+    for (var row=0;row<resp.rows.length;row++){
+      var mem = resp.rows[row][0].toString();
+      var numDiffSeen = 0, memSeen = [];
+      while (resp.rows[row][0].toString()==mem.toString()) { // each member is on multiple rows in resp.rows
+        numDiffSeen++;
+        var num2Del = numDiffSeen - maxDiffSeenRecords;
+        if ((resp.rows[row][2] > 1) || (num2Del > 0)) {
+          num2Del = Math.max(num2Del,resp.rows[row][2]-1);
+          rows2Del.push([mem, resp.rows[row][1], num2Del]);
+        }
+        row++; // step to the next row
+        if (row >= resp.rows.length) break;  // but make sure that's even possible
       }
-      i++; // step to the next row
-      if (i >= resp.rows.length) break;  // but make sure that's even possible
+      row--; // and drop back one row for the next user, due to the for loop's natural increment
     }
-    i--; // and drop back one row for the next user, due to the for loop's natural increment
   }
-  Logger.log(mem2Trim.length);
-  Logger.log(mem2Trim[0]);
-  return mem2Trim;
+  return rows2Del;
 }
 /**
  * function trimHistory_            For the specified UID-LastSeen pairs, it will delete num2Trim records,
  *                                  beginning with the oldest LastSeen values.
- * @param {Array[]} mem2TrimRow     A row from the array mem2Trim, containing [0]: UID, [1]: LastSeen, and
+ * @param {Array} mem2TrimRow       A row from the array mem2Trim, containing [0]: UID, [1]: LastSeen, and
  *                                  [2]: integer of the # of pairs to delete
+ * @param {Long} startTime          When the script began execution
+ * @return {Integer}                How many rows were removed
  */
-function trimHistory_(mem2TrimRow){
+function trimHistory_(mem2TrimRow,startTime){
   var sqlBase = "DELETE FROM "+ftid+" WHERE ROWID = '";
   var sql = "", nRemoved = 0;
   var num2Trim = mem2TrimRow[2];
   if (num2Trim > 0) {
     // query for the rowids to delete and add them to the matrix rows2del, grabbing only the number of them to be trimmed
-    sql = "SELECT ROWID, LastTouched WHERE UID = '"+mem2TrimRow[0]+"' AND LastSeen = "+mem2TrimRow[1].toString()+" ORDER BY LastTouched ASC LIMIT "+num2Trim;
-    var resp = FusionTables.Query.sql(sql);
-    for (var i=0;i<resp.rows.length;i++) {
-      // loop over the returned rows and schedule their deletion
-      sql = sqlBase+resp.rows[i][0].toString()+"'";
-      nRemoved += FusionTables.Query.sql(sql);
-      Logger.log(nRemoved);
+    sql = "SELECT ROWID, LastTouched FROM "+ftid+" WHERE UID = '"+mem2TrimRow[0]+"' AND LastSeen = "+mem2TrimRow[1].toString()+" ORDER BY LastTouched ASC LIMIT "+num2Trim;
+    try{
+      var resp = FusionTables.Query.sql(sql);
+      var row = 0;
+      while ( (row < resp.rows.length) && ((new Date().getTime()-startTime)/1000 < 250) ) {
+        // loop over the returned rows and schedule their deletion (30 query/min max)
+        sql = sqlBase+resp.rows[i][0].toString()+"'";
+        nRemoved += FusionTables.Query.sql(sql).rows[0]*1;
+        Utilities.sleep(2002);
+        row++;
+      }
     }
+    catch(e){ throw new Error(e.message)}
   }
   return nRemoved;
 }
 /**
- * function getByteCount_   Computes the size in KB of the passed string
- * @param  {string} str     The string to analyze
- * @return {number}         The bytesize of the string, in bytes
+ * function getByteCount_   Computes the size in bytes of the passed string
+ * @param  {String} str     The string to analyze
+ * @return {Long}           The bytesize of the string, in bytes
  */
 function getByteCount_(str){
   return Utilities.base64EncodeWebSafe(str).split(/%(?:u[0-9A-F]{2})?[0-9A-F]{2}|./).length-1;
@@ -372,7 +405,7 @@ function getByteCount_(str){
 /**
  * function val4CSV_        Inspect all elements of the array and ensure the values are strings
  * @param  {Object} value   the element of the array to be escaped for encapsulation into a string
- * @return {string}         A string representation of the passed element, with special character
+ * @return {String}         A string representation of the passed element, with special character
  *                          escaping and double-quoting where needed
  */
 function val4CSV_(value) {
