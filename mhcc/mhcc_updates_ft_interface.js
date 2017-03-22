@@ -477,3 +477,35 @@ function row4CSV_(row) {
 function array2CSV_(myArr) {
   return myArr.map(row4CSV_).join("\r\n");
 }
+/**
+ * function getNewLastRanValue_     Determines the new lastRan parameter value based on the existing lastRan
+ *                                  parameter, the original value of the lastRan user, and the slice of the 
+ *                                  memberlist near the old lastRan value ± number of changed rows
+ * @param {String} origUID          The UID of the most recently updated member
+ * @param {Long} origLastRan        The original value of lastRan prior to any memberlist updates
+ * @param {Array} diffMemberNames   The member names that were added or deleted
+ * @return {Long}                   The value of lastRan that ensures the next update will not skip/redo any 
+ *                                  preexisting member      
+ */
+function getNewLastRanValue_(origUID,origLastRan,diffMemberNames){
+  if ( origLastRan == 0 ) {
+      return 0;
+  } else {
+    var newLastRan = -10000;
+    differential = diffMemberNames.length;
+    var newUserBatch = getUserBatch_(origLastRan-differential,2*differential+1);
+    var newUIDs = newUserBatch.map(function(value,index){return value[1]});
+    var diffIndex = newUIDs.indexOf(origUID);
+    if ( diffIndex > 0 ) {
+        newLastRan = origLastRan + (diffIndex-differential)
+    } else {
+        // The lastRan member was one of those who was deleted!
+        
+    }
+    if ( newLastRan < 0 ) {
+        return 0; // Start over entirely
+    } else {
+        return newLastRan;
+    }
+  }
+}
