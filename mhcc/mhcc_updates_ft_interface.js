@@ -10,8 +10,8 @@ var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff'; // large table containin
 /**
  * function getUserBatch_       Return # limit members, starting with the index number start
  * @param  {integer} start      The most recently updated member, from an alphabetical sort of the database
- * @param  {integer} limit      The number of members to retun, typically 127
- * @return {String[][]}         [Name,UID, Rank]
+ * @param  {integer} limit      The number of members to return
+ * @return {String[][]}         [Name, UID, Rank]
  */
 function getUserBatch_(start,limit){
   var sql = "SELECT Member, UID FROM "+utbl+" ORDER BY Member ASC OFFSET "+start+" LIMIT "+limit;
@@ -282,7 +282,7 @@ function addMember2Fusion_(memList){
     while (memList.length > 0) {
       var user = memList.pop();
       memCsv.push(user);
-      crownCsv.push([].concat(user,0,rt.getTime(),rt.getTime(),0,0,0,0,20000,"Weasel"));
+      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,20000,"Weasel"));
     }
     try {
       // Convert arrays into CSV strings and Blob for app-script class exchange
