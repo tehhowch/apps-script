@@ -36,19 +36,61 @@ function getDbIndex_(db){
   return output;
 }
 /**
- * function getLatestRows_    Returns a listing of hunters and crown data based on sorting by the most
- *                            recently added crown snapshots. Called by UpdateScoreboard. Should return
- *                            a unique listing but as of 2017-03-16 this assumption has not been checked.
- *                            Possible reasons for non-uniqueness would be the addition or deletion of members.
+ * function getLatestRows_    Returns the record associated with the most recently touched snapshot for each
+ *                            member. Called by UpdateScoreboard. Should return a single record per member 
+ *                            so long as every record has a different LastTouched value. Accomplishes the
+ *                            uniqueness by first querying for each UID's maximum LastTouched value, then
+ *                            querying for the specific LastTouched values. Due to SQL string length limits,
+ *                            only 571 LastTouched values can be queried at a time (len=8092, maxlen=8100)
  * @param  {integer} nMembers The total number of members in the database
- * @return {Array[][]}        N-by-11 array of data for UpdateScoreboard to parse and order.
+ * @return {Array[][]}        N-by-12 array of data for UpdateScoreboard to parse and order.
  */
 function getLatestRows_(nMembers){
-  var sql = '', resp="", wt = new Date();
-  sql = "SELECT * FROM "+ftid+" ORDER BY LastTouched DESC LIMIT "+nMembers;
-  resp = FusionTables.Query.sql(sql);
-  var sbd = resp.rows;
-  return sbd;
+  var sql = "SELECT UID, MAXIMUM(LastTouched) FROM "+ftid+" GROUP BY UID";
+  var mostRecentRecordTimes = FusionTables.Query.sql(sql);
+  var numReturnedMembers = mostRecentRecordTimes.rows.length;
+  if (numReturnedMembers > 0) {
+      if (numReturnedMembers < nMembers) {
+          throw new Error((nMembers - numReturnedMembers).toString()+" members are missing scoreboard records");
+      } else if ( numReturnedMembers > nMembers) {
+          throw new Error("Script membercount is "+(numReturnedMembers-nMembers).toString()+" too low");
+      } else {
+          var batchSize = 571, snapshots = [], batchResult = [], nReturned = 0;
+          var totalQueries = 1+Math.ceil(numReturnedMembers/batchSize);
+          while ( mostRecentRecordTimes.rows.length > 0) {
+              var ltArray = [], batchStartTime = new Date().getTime();
+              for (var row=0;row<batchSize;row++){
+                  if (mostRecentRecordTimes.rows.length > 0) {
+                      var member = mostRecentRecordTimes.rows.pop();
+                      ltArray.push(member[1]);
+                  }
+                  sql = "SELECT * FROM "+ftid+" WHERE LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
+                  try {
+                      batchResult = FusionTables.Query.sql(sql);
+                      nReturned += batchResult.rows.length*1;
+                      snapshots = [].concat(snapshots, batchResult.rows);
+                      // Avoid exceeding API rate limits (30 / min and 5 / sec)
+                      var elapsedMillis = new Date().getTime() - batchStartTime;
+                      if ( totalQueries > 29 ) {
+                          Utilities.sleep(2001-elapsedMillis);
+                      } else if ( elapsedMillis < 200 ) {
+                          Utilities.sleep(201-elapsedMillis);
+                      } 
+                  }
+                  catch(e){
+                      Logger.log(e);
+                      throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
+                  }
+              }
+          }
+          if ( snapshots.length != numReturnedMembers ) {
+              throw new Error('Did not receive the proper number of scoreboard records');
+          } else {
+              return snapshots.rows;
+          }
+      }
+  }
+  return [];
 }
 /**
  * function getUserHistory_   querys the crown data snapshots for the given user and returns their crown
