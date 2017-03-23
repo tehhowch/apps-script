@@ -1,10 +1,10 @@
 /**
- * Google FusionTables to serve as the backend
- * Structural changes: since updating/deleting rows is a 1-by-1 operation (yes, really >_> ), we will have multiple entries for each person.
- * To prevent excessive table growth, we will store only 30 snapshots per user, removing any duplicates which occur when the script updates
- * more often than the person's data is refreshed.
- * Bonus: this means we can serve new data such as most crowns in the last 30 days.
- */
+* Google FusionTables to serve as the backend
+* Structural changes: since updating/deleting rows is a 1-by-1 operation (yes, really >_> ), we will have multiple entries for each person.
+* To prevent excessive table growth, we will store only 30 snapshots per user, removing any duplicates which occur when the script updates
+* more often than the person's data is refreshed.
+* Bonus: this means we can serve new data such as most crowns in the last 30 days.
+*/
 var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-'; // small table containing user names, user ids, and rank (unique on user ids)
 var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff'; // large table containing names, user ids, and crown counts data (no unique key!)
 /**
@@ -37,7 +37,7 @@ function getDbIndex_(db){
 }
 /**
  * function getLatestRows_    Returns the record associated with the most recently touched snapshot for each
- *                            member. Called by UpdateScoreboard. Should return a single record per member 
+ *                            member. Called by UpdateScoreboard. Should return a single record per member
  *                            so long as every record has a different LastTouched value. Accomplishes the
  *                            uniqueness by first querying for each UID's maximum LastTouched value, then
  *                            querying for the specific LastTouched values. Due to SQL string length limits,
@@ -50,45 +50,45 @@ function getLatestRows_(nMembers){
   var mostRecentRecordTimes = FusionTables.Query.sql(sql);
   var numReturnedMembers = mostRecentRecordTimes.rows.length;
   if (numReturnedMembers > 0) {
-      if (numReturnedMembers < nMembers) {
-          throw new Error((nMembers - numReturnedMembers).toString()+" members are missing scoreboard records");
-      } else if ( numReturnedMembers > nMembers) {
-          throw new Error("Script membercount is "+(numReturnedMembers-nMembers).toString()+" too low");
-      } else {
-          var batchSize = 571, snapshots = [], batchResult = [], nReturned = 0;
-          var totalQueries = 1+Math.ceil(numReturnedMembers/batchSize);
-          while ( mostRecentRecordTimes.rows.length > 0) {
-              var ltArray = [], batchStartTime = new Date().getTime();
-              for (var row=0;row<batchSize;row++){
-                  if (mostRecentRecordTimes.rows.length > 0) {
-                      var member = mostRecentRecordTimes.rows.pop();
-                      ltArray.push(member[1]);
-                  }
-                  sql = "SELECT * FROM "+ftid+" WHERE LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
-                  try {
-                      batchResult = FusionTables.Query.sql(sql);
-                      nReturned += batchResult.rows.length*1;
-                      snapshots = [].concat(snapshots, batchResult.rows);
-                      // Avoid exceeding API rate limits (30 / min and 5 / sec)
-                      var elapsedMillis = new Date().getTime() - batchStartTime;
-                      if ( totalQueries > 29 ) {
-                          Utilities.sleep(2001-elapsedMillis);
-                      } else if ( elapsedMillis < 200 ) {
-                          Utilities.sleep(201-elapsedMillis);
-                      } 
-                  }
-                  catch(e){
-                      Logger.log(e);
-                      throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
-                  }
-              }
+    if (numReturnedMembers < nMembers) {
+      throw new Error((nMembers - numReturnedMembers).toString()+" members are missing scoreboard records");
+    } else if ( numReturnedMembers > nMembers) {
+      throw new Error("Script membercount is "+(numReturnedMembers-nMembers).toString()+" too low");
+    } else {
+      var batchSize = 571, snapshots = [], batchResult = [], nReturned = 0;
+      var totalQueries = 1+Math.ceil(numReturnedMembers/batchSize);
+      while ( mostRecentRecordTimes.rows.length > 0) {
+        var ltArray = [], batchStartTime = new Date().getTime();
+        for (var row=0;row<batchSize;row++){
+          if (mostRecentRecordTimes.rows.length > 0) {
+            var member = mostRecentRecordTimes.rows.pop();
+            ltArray.push(member[1]);
           }
-          if ( snapshots.length != numReturnedMembers ) {
-              throw new Error('Did not receive the proper number of scoreboard records');
-          } else {
-              return snapshots.rows;
+          sql = "SELECT * FROM "+ftid+" WHERE LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
+          try {
+            batchResult = FusionTables.Query.sql(sql);
+            nReturned += batchResult.rows.length*1;
+            snapshots = [].concat(snapshots, batchResult.rows);
+            // Avoid exceeding API rate limits (30 / min and 5 / sec)
+            var elapsedMillis = new Date().getTime() - batchStartTime;
+            if ( totalQueries > 29 ) {
+              Utilities.sleep(2001-elapsedMillis);
+            } else if ( elapsedMillis < 200 ) {
+              Utilities.sleep(201-elapsedMillis);
+            }
           }
+          catch(e){
+            Logger.log(e);
+            throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
+          }
+        }
       }
+      if ( snapshots.length != numReturnedMembers ) {
+        throw new Error('Did not receive the proper number of scoreboard records');
+      } else {
+        return snapshots.rows;
+      }
+    }
   }
   return [];
 }
@@ -144,53 +144,53 @@ function ftBatchWrite_(hdata){
  *                              with the member list, and updates the global property nMembers.
  */
 function addFusionMember(){
-    var getMembers = true, gotDb=false, hasMatch = true;
-    var mem2Add = [], curMems=[], matchedIndex = -1;
-    while (getMembers) {
-        var name = String(getMemberName2AddorDel_());
-        var UID = "";
-        if (name == String(-1)) {
-            getMembers = false;      // adder canceled the add
-        } else {                     // adder gave a valid name and confirmed it
-            UID = String(getMemberUID2AddorDel_(name));
-            if (UID == String(-1)) {
-                getMembers = false;  // adder canceled the add
-            } else {                 // have a confirmed name & UID pair
-                if (gotDb==false) {  // need to get the existing database records
-                    curMems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl).rows||[];
-                    var curMemNames = curMems.map(function(value,index){return value[0]});  // member names are the 1st column in curMems array
-                    var curUIDs = curMems.map(function(value,index){return value[1]});      // UIDs are the 2nd column in curMems array
-                    var curRowIDs = curMems.map(function(value,index){return value[2]});    // used if a name update is wanted
-                    gotDb=true;
-                }
-                // Check elements of the array to see if any element is the UID
-                matchedIndex = curUIDs.indexOf(UID);
-                if ( matchedIndex >= 0 ) {
-                  // Specified member matched to an existing member
-                  var resp = Browser.msgBox("Oops!","New member "+name+" is already in the database as "+curMemNames[matchedIndex]+".\\nWould you like to update their name to "+name+"?",Browser.Buttons.YES_NO);
-                  if (resp.toLowerCase()=="yes") {
-                    // Perform a name change (only valid for those who are already in the db)
-                    try {FusionTables.Query.sql("UPDATE "+utbl+" SET Member = '"+name+"' WHERE ROWID = '"+curRowIDs[matchedIndex]+"'");}
-                    catch(e) {Browser.msgBox("Sorry, couldn't update "+curMemNames[matchedIndex]+"'s name.\\nPerhaps it isn't in the database yet?");}
-                  }
-                } else {
-                    mem2Add.push([name,UID]);
-                    // Update search arrays too
-                    curUIDs.push(UID);
-                    curMemNames.push(name);
-                }
-
-            }
+  var getMembers = true, gotDb=false, hasMatch = true;
+  var mem2Add = [], curMems=[], matchedIndex = -1;
+  while (getMembers) {
+    var name = String(getMemberName2AddorDel_());
+    var UID = "";
+    if (name == String(-1)) {
+      getMembers = false;      // adder canceled the add
+    } else {                     // adder gave a valid name and confirmed it
+      UID = String(getMemberUID2AddorDel_(name));
+      if (UID == String(-1)) {
+        getMembers = false;  // adder canceled the add
+      } else {                 // have a confirmed name & UID pair
+        if (gotDb==false) {  // need to get the existing database records
+          curMems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl).rows||[];
+          var curMemNames = curMems.map(function(value,index){return value[0]});  // member names are the 1st column in curMems array
+          var curUIDs = curMems.map(function(value,index){return value[1]});      // UIDs are the 2nd column in curMems array
+          var curRowIDs = curMems.map(function(value,index){return value[2]});    // used if a name update is wanted
+          gotDb=true;
         }
-        var resp = Browser.msgBox("Add more?","Would you like to add another member?",Browser.Buttons.YES_NO);
-        if (resp.toLowerCase()=="no") getMembers = false;
+        // Check elements of the array to see if any element is the UID
+        matchedIndex = curUIDs.indexOf(UID);
+        if ( matchedIndex >= 0 ) {
+          // Specified member matched to an existing member
+          var resp = Browser.msgBox("Oops!","New member "+name+" is already in the database as "+curMemNames[matchedIndex]+".\\nWould you like to update their name to "+name+"?",Browser.Buttons.YES_NO);
+          if (resp.toLowerCase()=="yes") {
+            // Perform a name change (only valid for those who are already in the db)
+            try {FusionTables.Query.sql("UPDATE "+utbl+" SET Member = '"+name+"' WHERE ROWID = '"+curRowIDs[matchedIndex]+"'");}
+            catch(e) {Browser.msgBox("Sorry, couldn't update "+curMemNames[matchedIndex]+"'s name.\\nPerhaps it isn't in the database yet?");}
+          }
+        } else {
+          mem2Add.push([name,UID]);
+          // Update search arrays too
+          curUIDs.push(UID);
+          curMemNames.push(name);
+        }
+
+      }
     }
-    // perhaps we've now got a list of only new members to add to the database
-    if (mem2Add.length > 0) {
-        var n = addMember2Fusion_(mem2Add);
-        SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database","Success!",5);
-        PropertiesService.getScriptProperties().setProperty('numMembers',curUIDs.length.toString()); // saves a query against the table for a necessary property
-    }
+    var resp = Browser.msgBox("Add more?","Would you like to add another member?",Browser.Buttons.YES_NO);
+    if (resp.toLowerCase()=="no") getMembers = false;
+  }
+  // perhaps we've now got a list of only new members to add to the database
+  if (mem2Add.length > 0) {
+    var n = addMember2Fusion_(mem2Add);
+    SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database","Success!",5);
+    PropertiesService.getScriptProperties().setProperty('numMembers',curUIDs.length.toString()); // saves a query against the table for a necessary property
+  }
 }
 /**
  *  function delFusionMember    Called from the spreadsheet main interface in order to remove members
@@ -199,56 +199,56 @@ function addFusionMember(){
  *                              and runs verification checks to ensure the proper rows are removed.
  */
 function delFusionMember(){
-    var startTime = new Date().getTime(), getMembers = true, gotDb=false, mem2Del = [], curMems=[], matchedIndex = -1;
-    while (getMembers) {
-        var name = String(getMemberName2AddorDel_());
-        var UID = "";
-        if (name == String(-1)) {
-            getMembers = false;      // deleter canceled the del
-        } else {
-            UID = String(getMemberUID2AddorDel_(name));
-            if (UID == String(-1)) {
-                getMembers = false;  // deleter canceled the del
-            } else {
-                if (gotDb==false) {  // need to get the existing database records
-                    curMems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl).rows||[];
-                    var curMemNames = curMems.map(function(value,index){return value[0]});
-                    var curUIDs = curMems.map(function(value,index){return value[1]});
-                    var curRowIDs = curMems.map(function(value,index){return value[2]});
-                    gotDb=true;
-                }
-                // Check elements of the array to see if any element is the UID
-                matchedIndex = curUIDs.indexOf(UID);
-                // If a UID matches, be sure the name matches
-                if ( (matchedIndex >= 0) && (name.toLowerCase() === String(curMemNames[matchedIndex]).toLowerCase()) ) {
-                    mem2Del.push([name,UID,curRowIDs[matchedIndex]]);
-                } else {
-                    Browser.msgBox("Oops!","Couldn't find "+name+" in the database with that profile URL.\\nPerhaps they're already deleted, or have a different stored name?",Browser.Buttons.OK);
-                }
-            }
+  var startTime = new Date().getTime(), getMembers = true, gotDb=false, mem2Del = [], curMems=[], matchedIndex = -1;
+  while (getMembers) {
+    var name = String(getMemberName2AddorDel_());
+    var UID = "";
+    if (name == String(-1)) {
+      getMembers = false;      // deleter canceled the del
+    } else {
+      UID = String(getMemberUID2AddorDel_(name));
+      if (UID == String(-1)) {
+        getMembers = false;  // deleter canceled the del
+      } else {
+        if (gotDb==false) {  // need to get the existing database records
+          curMems = FusionTables.Query.sql("SELECT Member, UID, ROWID FROM "+utbl).rows||[];
+          var curMemNames = curMems.map(function(value,index){return value[0]});
+          var curUIDs = curMems.map(function(value,index){return value[1]});
+          var curRowIDs = curMems.map(function(value,index){return value[2]});
+          gotDb=true;
         }
-        var resp = Browser.msgBox("Remove others?","Would you like to remove another member?",Browser.Buttons.YES_NO);
-        if (resp.toLowerCase()=="no") getMembers = false;
+        // Check elements of the array to see if any element is the UID
+        matchedIndex = curUIDs.indexOf(UID);
+        // If a UID matches, be sure the name matches
+        if ( (matchedIndex >= 0) && (name.toLowerCase() === String(curMemNames[matchedIndex]).toLowerCase()) ) {
+          mem2Del.push([name,UID,curRowIDs[matchedIndex]]);
+        } else {
+          Browser.msgBox("Oops!","Couldn't find "+name+" in the database with that profile URL.\\nPerhaps they're already deleted, or have a different stored name?",Browser.Buttons.OK);
+        }
+      }
     }
-    // perhaps we've now got a list of members to remove from the database
-    if (mem2Del.length > 0) {
-        var nDeleted = delMember_(mem2Del,startTime);
-        PropertiesService.getScriptProperties().setProperty('numMembers',(curUIDs.length-nDeleted).toString());
-    }
+    var resp = Browser.msgBox("Remove others?","Would you like to remove another member?",Browser.Buttons.YES_NO);
+    if (resp.toLowerCase()=="no") getMembers = false;
+  }
+  // perhaps we've now got a list of members to remove from the database
+  if (mem2Del.length > 0) {
+    var nDeleted = delMember_(mem2Del,startTime);
+    PropertiesService.getScriptProperties().setProperty('numMembers',(curUIDs.length-nDeleted).toString());
+  }
 }
 /**
  * helper function that gets a name from the admin on the spreadsheet's interface
  */
 function getMemberName2AddorDel_(){
-    var name = Browser.inputBox("Memberlist Update","Enter the member's name",Browser.Buttons.OK_CANCEL);
-    if (name.toLowerCase()=="cancel") return -1;
-    var ok2Add = Browser.msgBox("Verify name","Please confirm that the member is named '"+name+"'",Browser.Buttons.YES_NO);
-    if (ok2Add.toLowerCase()=="yes") {
-        return String(name).trim();
-    } else {
-        // recurse until canceled or accepted
-        return getMemberName2AddorDel_();
-    }
+  var name = Browser.inputBox("Memberlist Update","Enter the member's name",Browser.Buttons.OK_CANCEL);
+  if (name.toLowerCase()=="cancel") return -1;
+  var ok2Add = Browser.msgBox("Verify name","Please confirm that the member is named '"+name+"'",Browser.Buttons.YES_NO);
+  if (ok2Add.toLowerCase()=="yes") {
+    return String(name).trim();
+  } else {
+    // recurse until canceled or accepted
+    return getMemberName2AddorDel_();
+  }
 }
 /**
  * function getMemberUID2AddorDel_  Uses the spreadsheet's interface to confirm that the supplied profile link (and the
@@ -257,16 +257,16 @@ function getMemberName2AddorDel_(){
  * @return {String}                 Returns the validated UID of the member.
  */
 function getMemberUID2AddorDel_(memberName){
-    var profileLink = Browser.inputBox("What is "+memberName+"'s Profile Link?","Please enter the URL of "+memberName+"'s profile",Browser.Buttons.OK_CANCEL);
-    if (profileLink.toLowerCase()=="cancel") return -1;
-    var UID = profileLink.slice(profileLink.search("=")+1).toString();
-    var ok2Add = Browser.msgBox("Verify URL","Please confirm that this is "+memberName+"'s Profile:\\nhttp://apps.facebook.com/mousehunt/profile.php?snuid="+UID,Browser.Buttons.YES_NO);
-    if (ok2Add.toLowerCase()=="yes") {
-        return String(UID).trim();
-    } else {
-        // recurse until canceled or accepted
-        return getMemberUID2AddorDel_(memberName);
-    }
+  var profileLink = Browser.inputBox("What is "+memberName+"'s Profile Link?","Please enter the URL of "+memberName+"'s profile",Browser.Buttons.OK_CANCEL);
+  if (profileLink.toLowerCase()=="cancel") return -1;
+  var UID = profileLink.slice(profileLink.search("=")+1).toString();
+  var ok2Add = Browser.msgBox("Verify URL","Please confirm that this is "+memberName+"'s Profile:\\nhttp://apps.facebook.com/mousehunt/profile.php?snuid="+UID,Browser.Buttons.YES_NO);
+  if (ok2Add.toLowerCase()=="yes") {
+    return String(UID).trim();
+  } else {
+    // recurse until canceled or accepted
+    return getMemberUID2AddorDel_(memberName);
+  }
 }
 /**
  * function addMember2Fusion_   Inserts the given members into the Members database. Duplicate member checking is
@@ -308,8 +308,9 @@ function addMember2Fusion_(memList){
  *   @param {Array} memList       Array containing the name of the member(s) to delete from the
  *                                members and crown-count dbs as [Name, UID utblROWID]
  *   @param {Long} startTime      The beginning of the user's script time.
- *   @return {Integer}            The number of rows deleted from the members database.
-**/
+ *   @return {Integer}            The number of rows deleted from the members database. Will not
+ *                                include members if they were not fully deleted.
+ **/
 function delMember_(memList,startTime){
   var skippedMems = [], nDeleted = 0;
   if ( memList.length != 0 ) {
@@ -328,9 +329,9 @@ function delMember_(memList,startTime){
           var sqlBase = "DELETE FROM "+ftid+" WHERE ROWID = '";
           var row = 0;
           while ( ((new Date().getTime()-startTime)/1000 <= 280 ) && ( row < snapshots.length) ) {
-              FusionTables.Query.sql(sqlBase+snapshots[row][0]+"'");
-              Utilities.sleep(2002);                                  // Limit the rate to <30 FusionTable queries per minute
-              row++;
+            FusionTables.Query.sql(sqlBase+snapshots[row][0]+"'");
+            Utilities.sleep(2002);                                  // Limit the rate to <30 FusionTable queries per minute
+            row++;
           }
           Logger.log("Deleted "+row.toString()+" crown records for former member '"+memList[mem][0]+"'.");
           if ( row >= snapshots.length ) {
@@ -450,7 +451,7 @@ function getByteCount_(str){
  * @return {String}         A string representation of the passed element, with special character
  *                          escaping and double-quoting where needed
  */
-function val4CSV_(value) {
+function val4CSV_(value){
   var str = (typeof(value) === 'string') ? value : value.toString();
   if (str.indexOf(',') != -1 || str.indexOf("\n") != -1 || str.indexOf('"') != -1) {
     return '"'+str.replace(/"/g,'""')+'"';
@@ -465,7 +466,7 @@ function val4CSV_(value) {
  * @param  {Array} row      a 1-D array of elements which may be strings or other types
  * @return {String}         a string of the joined array elements
  */
-function row4CSV_(row) {
+function row4CSV_(row){
   return row.map(val4CSV_).join(",");
 }
 /**
@@ -474,38 +475,80 @@ function row4CSV_(row) {
  * @param  {Array} myArr    a rectangular array to be converted into a string representing a CSV object.
  * @return {String}         A string representing the rows of the input array joined by newline characters
  */
-function array2CSV_(myArr) {
+function array2CSV_(myArr){
   return myArr.map(row4CSV_).join("\r\n");
 }
 /**
  * function getNewLastRanValue_     Determines the new lastRan parameter value based on the existing lastRan
- *                                  parameter, the original value of the lastRan user, and the slice of the 
+ *                                  parameter, the original value of the lastRan user, and the slice of the
  *                                  memberlist near the old lastRan value ± number of changed rows
  * @param {String} origUID          The UID of the most recently updated member
  * @param {Long} origLastRan        The original value of lastRan prior to any memberlist updates
- * @param {Array} diffMemberNames   The member names that were added or deleted
- * @return {Long}                   The value of lastRan that ensures the next update will not skip/redo any 
- *                                  preexisting member      
+ * @param {Array} diffMembers       The member names that were added or deleted: [Member,UID]
+ * @return {Long}                   The value of lastRan that ensures the next update will not skip/redo any
+ *                                  preexisting member
  */
-function getNewLastRanValue_(origUID,origLastRan,diffMemberNames){
+function getNewLastRanValue_(origUID,origLastRan,diffMembers){
   if ( origLastRan == 0 ) {
-      return 0;
+    return 0;
   } else {
     var newLastRan = -10000;
-    differential = diffMemberNames.length;
+    differential = diffMembers.length;
     var newUserBatch = getUserBatch_(origLastRan-differential,2*differential+1);
     var newUIDs = newUserBatch.map(function(value,index){return value[1]});
     var diffIndex = newUIDs.indexOf(origUID);
-    if ( diffIndex > 0 ) {
-        newLastRan = origLastRan + (diffIndex-differential)
+    if ( diffIndex > -1 ) {
+      newLastRan = origLastRan + (diffIndex-differential)
     } else {
-        // The lastRan member was one of those who was deleted!
-        
+      // very low likelihood code here (requires both deleting action, and lastRan points at one of the deleted members
+      Logger.log("Exactly removed the lastRan member. Not changing lastRan, even if it causes issues (which it shouldn't).");
+      if ( diffMembers.length == 1 ) {
+        // Only removed 1 member, and that was the very next member in line for updating. Therefore, no change is needed.
+        newLastRan = origLastRan
+      } else {
+        // Tough case here: we lost the exact point of reference needed for determining if deletions were before or after
+        // where we've updated.
+
+        // shortcut assumption, to be changed at a later date
+        newLastRan = origLastRan
+        /*
+        // The lastRan member was one of those who was deleted.
+        // 1) Concat newUserBatch and diffMembers
+        // 2) Sort by Member (newUserBatch is already sorted)
+        diffMembers.sort();
+        // 3) Inspect to determine which elements of diffMembers fall within newUserBatch
+        for (var i=0;i<diffMembers.length;i++){
+          var dmVal = diffMembers[i][0];
+          // The deleted members can come from all regions of the Memberlist, but newUserBatch is *very* selective.
+          // Perform a lexical comparison to determine the first and last names that match into newUserBatch
+          if ( dmVal > newUserBatch[0][0] ) {
+            var startDiffMemberIndex = i;
+            break;
+          }
+        }
+        for (var i=diffMembers.length-1;i>0;i--) {
+          var dmVal = diffMembers[i][0];
+          if ( dmVal < newUserBatch[newUserBatch.length-1][0] ) {
+            var endDiffMemberIndex = i;
+            break;
+          }
+        }
+        // 4) Determine the diffIndex
+        if ( startDiffMemberIndex == endDiffMemberIndex ) {
+          //
+        } else if (false) {
+          //
+        } else {
+          //
+        }
+        // 5) Compute newLastRan
+        */
+      }
     }
     if ( newLastRan < 0 ) {
-        return 0; // Start over entirely
+      return 0; // Start over entirely
     } else {
-        return newLastRan;
+      return newLastRan;
     }
   }
 }
