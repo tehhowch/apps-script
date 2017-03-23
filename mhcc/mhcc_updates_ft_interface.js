@@ -187,9 +187,14 @@ function addFusionMember(){
   }
   // perhaps we've now got a list of only new members to add to the database
   if (mem2Add.length > 0) {
+    var props = PropertiesService.getScriptProperties().getProperties();
+    var lastRan = props.lastRan*1||0;
+    var origUID = getUserBatch_(lastRan,1);
+    origUID = origUID[0][1];
     var n = addMember2Fusion_(mem2Add);
+    lastRan = getNewLastRanValue_(origUID,lastRan,mem2Add);
     SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database","Success!",5);
-    PropertiesService.getScriptProperties().setProperty('numMembers',curUIDs.length.toString()); // saves a query against the table for a necessary property
+    PropertiesService.getScriptProperties().setPropertie({'numMembers':curUIDs.length.toString(),'lastRan':lastRan.toString()});
   }
 }
 /**
@@ -232,8 +237,13 @@ function delFusionMember(){
   }
   // perhaps we've now got a list of members to remove from the database
   if (mem2Del.length > 0) {
-    var nDeleted = delMember_(mem2Del,startTime);
-    PropertiesService.getScriptProperties().setProperty('numMembers',(curUIDs.length-nDeleted).toString());
+    var props = PropertiesService.getScriptProperties().getProperties();
+    var lastRan = props.lastRan*1||0;
+    var origUID = getUserBatch_(lastRan,1);
+    origUID = origUID[0][1];
+    var delMemberArray = delMember_(mem2Del,startTime);
+    lastRan = getNewLastRanValue_(origUID,lastRan,delMemberArray);
+    PropertiesService.getScriptProperties().setProperties({'numMembers':(curUIDs.length-delMemberArray.length).toString(),'lastRan':lastRan.toString()});
   }
 }
 /**
@@ -308,11 +318,10 @@ function addMember2Fusion_(memList){
  *   @param {Array} memList       Array containing the name of the member(s) to delete from the
  *                                members and crown-count dbs as [Name, UID utblROWID]
  *   @param {Long} startTime      The beginning of the user's script time.
- *   @return {Integer}            The number of rows deleted from the members database. Will not
- *                                include members if they were not fully deleted.
+ *   @return {Array}              The [Name, UID] array of successfully deleted members.
  **/
 function delMember_(memList,startTime){
-  var skippedMems = [], nDeleted = 0;
+  var skippedMems = [], delMemberArray = [];
   if ( memList.length != 0 ) {
     for (var mem=0;mem<memList.length;mem++){
       if ( (new Date().getTime()-startTime)/1000 >= 250 ) {
@@ -337,7 +346,7 @@ function delMember_(memList,startTime){
           if ( row >= snapshots.length ) {
             FusionTables.Query.sql("DELETE FROM "+utbl+" WHERE ROWID = '"+memList[mem][2]+"'");
             Logger.log("Deleted user '"+memList[mem][0]+"' from the Members table.");
-            nDeleted++;
+            delMemberArray.push(memList[mem]);
           } else {
             skippedMems.push("\\n"+memList[mem][0].toString());
           }
@@ -349,7 +358,7 @@ function delMember_(memList,startTime){
     if (skippedMems.length > 0) {
       Browser.msgBox("Some Not Deleted","Of the input members, the following were not deleted due to lack of confirmation or insufficient time:"+skippedMems.toString(),Browser.Buttons.OK);
     }
-    return nDeleted;
+    return delMemberArray;
   }
 }
 /**
@@ -495,22 +504,23 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
     var newLastRan = -10000;
     differential = diffMembers.length;
     var newUserBatch = getUserBatch_(origLastRan-differential,2*differential+1);
-    var newUIDs = newUserBatch.map(function(value,index){return value[1]});
-    var diffIndex = newUIDs.indexOf(origUID);
-    if ( diffIndex > -1 ) {
-      newLastRan = origLastRan + (diffIndex-differential)
-    } else {
-      // very low likelihood code here (requires both deleting action, and lastRan points at one of the deleted members
-      Logger.log("Exactly removed the lastRan member. Not changing lastRan, even if it causes issues (which it shouldn't).");
-      if ( diffMembers.length == 1 ) {
-        // Only removed 1 member, and that was the very next member in line for updating. Therefore, no change is needed.
-        newLastRan = origLastRan
+    if ( newUserBatch.length > 0 ) {
+      var newUIDs = newUserBatch.map(function(value,index){return value[1]});
+      var diffIndex = newUIDs.indexOf(origUID);
+      if ( diffIndex > -1 ) {
+        newLastRan = origLastRan + (diffIndex-differential)
       } else {
-        // Tough case here: we lost the exact point of reference needed for determining if deletions were before or after
-        // where we've updated.
+        // very low likelihood code here (requires both deleting action, and lastRan points at one of the deleted members
+        Logger.log("Exactly removed the lastRan member. Not changing lastRan, even if it causes issues (which it shouldn't).");
+        if ( diffMembers.length == 1 ) {
+          // Only removed 1 member, and that was the very next member in line for updating. Therefore, no change is needed.
+          newLastRan = origLastRan
+        } else {
+          // Tough case here: we lost the exact point of reference needed for determining if deletions were before or after
+          // where we've updated.
 
-        // shortcut assumption, to be changed at a later date
-        newLastRan = origLastRan
+          // shortcut assumption, to be changed at a later date
+          newLastRan = origLastRan
         /*
         // The lastRan member was one of those who was deleted.
         // 1) Concat newUserBatch and diffMembers
@@ -543,7 +553,12 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
         }
         // 5) Compute newLastRan
         */
+        }
       }
+    } else {
+      // lastRan is beyond the scope of the memberlist - e.g. pending scoreboard update.
+      newLastRan = origLastRan;
+      return newLastRan;
     }
     if ( newLastRan < 0 ) {
       return 0; // Start over entirely
