@@ -112,7 +112,7 @@ function UpdateDatabase() {
       if ( lock.hasLock() ) {
         Logger.log('Started with '+lastRan+' completed member updates');
         var allMembers = getUserBatch_(0,numMembers*1);                   // allMembers is an array of [Name, UID]
-        var mem2Update = [];                                              
+        var mem2Update = [];
         // Loop over remaining members in sets of batchSize. Stop looping when out of members or >180s of runtime.
         while ( ((new Date().getTime() - startTime)/1000 < 180) && (lastRan < numMembers) ) {
           var batchHunters = allMembers.slice(lastRan,lastRan-0+batchSize-0);
@@ -136,6 +136,7 @@ function UpdateDatabase() {
             for (var i=0;i<batchHunters.length;i++) {
               var j = 'ht_'+batchHunters[i][1];
               var dbRow = dbKeys[batchHunters[i][1]];           // store this members row in the large scoreboard dataset
+              if ( typeof dbRow == 'undefined' ) throw new Error('Member '+batchHunters[i][0]+' has no dbRow');
               if ( typeof MM.hunters[j] != 'undefined' ) {
                 // The hunter's ID was found in the MostMice object, and the update can be performed
                 var nB = 0, nS = 0, nG = 0;
@@ -151,23 +152,23 @@ function UpdateDatabase() {
                 if ( db[dbRow][7] != nG || db[dbRow][6] != nS || db[dbRow][5] != nB ) {
                   batchHunters[i][3] = new Date().getTime();
                 } else {
-                  batchHunters[i][3] = db[dbRow][3];          // Crown Change Date
+                  batchHunters[i][3] = db[dbRow][3];         // Crown Change Date
                 }
-                batchHunters[i][4] = new Date().getTime();    // Time of this update, the 'touched' value (must be unique!)
-                batchHunters[i][5] = nB                       // Bronze
-                batchHunters[i][6] = nS                       // Silver
-                batchHunters[i][7] = nG                       // Gold
-                batchHunters[i][8] = nG-0 + nS-0;             // MHCC Crowns
-                batchHunters[i][9] = db[dbRow][9]             // The member's rank among all members
+                batchHunters[i][4] = new Date().getTime();   // Time of this update, the 'touched' value (must be unique!)
+                batchHunters[i][5] = nB                      // Bronze
+                batchHunters[i][6] = nS                      // Silver
+                batchHunters[i][7] = nG                      // Gold
+                batchHunters[i][8] = nG-0 + nS-0;            // MHCC Crowns
+                batchHunters[i][9] = db[dbRow][9]            // The member's rank among all members
                 // Determine the MHCC rank & squirrel of this hunter
                 for ( var k = 0; k<aRankTitle.length; k++ ) {
                   if ( batchHunters[i][8] >= aRankTitle[k][0] ) {
                     // Crown count meets/exceeds required crowns for this level
-                    batchHunters[i][10] = aRankTitle[k][2];    // Set the Squirrel value
+                    batchHunters[i][10] = aRankTitle[k][2];  // Set the Squirrel value
                     break;
                   }
                 }
-                batchHunters[i][11] = db[dbRow][4]            // When the member's rank was generated
+                batchHunters[i][11] = db[dbRow][11]          // When the member's rank was generated
               }
             }
             mem2Update = [].concat(mem2Update,batchHunters); // Stage this batch's data for a single write call
@@ -250,6 +251,8 @@ function UpdateScoreboard() {
                        "https://apps.facebook.com/mousehunt/profile.php?snuid="+allHunters[i-1][1]    // Profile Link (fb)
                       ])
       if ( i%150 == 0 ) scoreboardArr.push(['Rank','Last Seen','Last Crown','Squirrel Rank','G+S Crowns','Hunter','Profile Link'] )
+      // Store the time this rank was generated
+      allHunters[i-1][11]=startTime.getTime();
       // Store the counter as the hunters' rank, then increment the counter
       allHunters[i-1][9]=i++;
     }
@@ -260,7 +263,7 @@ function UpdateScoreboard() {
     // Provide estimate of the next new scoreboard posting and the time this one was posted
     wb.getSheetByName('Members').getRange('I23').setValue((startTime-wb.getSheetByName('Members').getRange('H23').getValue())/(24*60*60*1000));
     wb.getSheetByName('Members').getRange('H23').setValue(startTime);
-    // Overwrite the latest db version with the version that has the proper ranks
+    // Overwrite the latest db version with the version that has the proper ranks and ranktimes
     saveMyDb_(wb,allHunters);
 
   } else {
