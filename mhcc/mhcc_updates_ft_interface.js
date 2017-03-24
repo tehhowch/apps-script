@@ -86,7 +86,7 @@ function getLatestRows_(nMembers){
       if ( snapshots.length != numReturnedMembers ) {
         throw new Error('Did not receive the proper number of scoreboard records');
       } else {
-        return snapshots.rows;
+        return snapshots;
       }
     }
   }
