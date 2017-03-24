@@ -64,23 +64,23 @@ function getLatestRows_(nMembers){
             var member = mostRecentRecordTimes.rows.pop();
             ltArray.push(member[1]);
           }
-          sql = "SELECT * FROM "+ftid+" WHERE LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
-          try {
-            batchResult = FusionTables.Query.sql(sql);
-            nReturned += batchResult.rows.length*1;
-            snapshots = [].concat(snapshots, batchResult.rows);
-            // Avoid exceeding API rate limits (30 / min and 5 / sec)
-            var elapsedMillis = new Date().getTime() - batchStartTime;
-            if ( totalQueries > 29 ) {
-              Utilities.sleep(2001-elapsedMillis);
-            } else if ( elapsedMillis < 200 ) {
-              Utilities.sleep(201-elapsedMillis);
-            }
+        }
+        sql = "SELECT * FROM "+ftid+" WHERE LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
+        try {
+          batchResult = FusionTables.Query.sql(sql);
+          nReturned += batchResult.rows.length*1;
+          snapshots = [].concat(snapshots, batchResult.rows);
+          // Avoid exceeding API rate limits (30 / min and 5 / sec)
+          var elapsedMillis = new Date().getTime() - batchStartTime;
+          if ( totalQueries > 29 ) {
+            Utilities.sleep(2001-elapsedMillis);
+          } else if ( elapsedMillis < 200 ) {
+            Utilities.sleep(201-elapsedMillis);
           }
-          catch(e){
-            Logger.log(e);
-            throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
-          }
+        }
+        catch(e){
+          Logger.log(e);
+          throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
         }
       }
       if ( snapshots.length != numReturnedMembers ) {
@@ -194,7 +194,7 @@ function addFusionMember(){
     var n = addMember2Fusion_(mem2Add);
     lastRan = getNewLastRanValue_(origUID,lastRan,mem2Add);
     SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database","Success!",5);
-    PropertiesService.getScriptProperties().setPropertie({'numMembers':curUIDs.length.toString(),'lastRan':lastRan.toString()});
+    PropertiesService.getScriptProperties().setProperties({'numMembers':curUIDs.length.toString(),'lastRan':lastRan.toString()});
   }
 }
 /**
