@@ -198,9 +198,9 @@ function UpdateStale_(wb,lostTime) {
     var staleArray = [];
     var startTime = new Date().getTime();
     for (var i = 0;i<db.length;i++ ) {
-        if ( startTime - db[i][3] > lostTime ) {
+        if ( startTime - db[i][2] > lostTime ) {
             staleArray.push([db[i][0],
-                             Utilities.formatDate(new Date(db[i][3]), 'EST', 'yyyy-MM-dd'),
+                             Utilities.formatDate(new Date(db[i][2]), 'EST', 'yyyy-MM-dd'),
                              "https://apps.facebook.com/mousehunt/profile.php?snuid="+db[i][1],
                              "https://www.mousehuntgame.com/profile.php?snuid="+db[i][1]
                             ]);
