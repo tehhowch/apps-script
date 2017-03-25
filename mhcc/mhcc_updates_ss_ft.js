@@ -243,8 +243,8 @@ function UpdateScoreboard() {
     // 4) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
     while ( i <= allHunters.length ) {
       scoreboardArr.push([i,                                                                          // Rank
-                       Utilities.formatDate(new Date(allHunters[i-1][3]), 'EST', 'yyyy-MM-dd'),       // Last Seen
-                       Utilities.formatDate(new Date(allHunters[i-1][4]), 'EST', 'yyyy-MM-dd'),       // Last Crown
+                       Utilities.formatDate(new Date(allHunters[i-1][2]), 'EST', 'yyyy-MM-dd'),       // Last Seen
+                       Utilities.formatDate(new Date(allHunters[i-1][3]), 'EST', 'yyyy-MM-dd'),       // Last Crown
                        allHunters[i-1][10],                                                            // Squirrel
                        allHunters[i-1][8],                                                            // #MHCC Crowns
                        allHunters[i-1][0],                                                            // Name
