@@ -567,3 +567,111 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
     }
   }
 }
+/** 
+ * function keepOnlyUniqueRecords          Quickly removes all non-unique records in the crown database
+ *
+ */
+function keepOnlyUniqueRecords(){
+  var sqlTotal = 'select ROWID from '+ftid;
+  var sqlUnique = 'select UID, LastSeen, RankTime, MINIMUM(LastTouched) from '+ftid+' group by UID, LastSeen, RankTime';
+  var totalRowCount = FusionTables.Query.sqlGet(sqlTotal);
+  if ( typeof totalRowCount.rows  != 'undefined' ) {
+      totalRowCount = totalRowCount.rows.length;
+  } else {
+    throw new Error('No response from FusionTables for sql='+sqlTotal);
+  }
+  var uniqueRowList = FusionTables.Query.sqlGet(sqlUnique), uniqueRowCount = totalRowCount;
+  if ( typeof uniqueRowList.rows == 'undefined' ) {
+    throw new Error('No response from FusionTables for sql='+sqlUnique);
+  } else {
+    uniqueRowCount = uniqueRowList.rows.length;
+    if ( (totalRowCount-uniqueRowCount) > 0 ) {
+      var batchSize = 190, records = [], batchResult = [], nReturned = 0, nRows = 0, rowidArray = [];
+      var totalQueries = 1+Math.ceil(uniqueRowCount/batchSize);
+      while ( uniqueRowList.rows.length > 0) {
+        var lsArray = [], uidArray = [], rtArray = [], ltArray = [], batchStartTime = new Date().getTime();
+        // Construct UID and LastSeen and RankTime arrays to be able to query the ROWID values
+        var sql = '';
+        while ( (sql.length <= 8000) && (uniqueRowList.rows.length > 0) ) {
+          var row = uniqueRowList.rows.pop();
+          uidArray.push(row[0]); lsArray.push(row[1]); rtArray.push(row[2]); ltArray.push(row[3]);
+          sql = "SELECT ROWID, Member FROM "+ftid+" WHERE LastSeen IN ("+lsArray.join(",")+") AND UID IN ("+uidArray.join(",")+") AND RankTime IN ("+rtArray.join(",")+") AND LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
+        }
+        // Query for the corresponding ROWIDs
+        try {
+          var rowIDresult = FusionTables.Query.sqlGet(sql);
+          nRows += rowIDresult.rows.length*1;
+          rowidArray = [].concat(rowidArray, rowIDresult.rows);
+          // Avoid exceeding API rate limits (200 / 100 sec and 5 / sec)
+          var elapsedMillis = new Date().getTime() - batchStartTime;
+          if ( totalQueries > 29 && elapsedMillis < 1000) {
+            Utilities.sleep(1001-elapsedMillis);
+          } else if ( elapsedMillis < 200 ) {
+            Utilities.sleep(201-elapsedMillis);
+          }
+        }
+        catch(e){
+          Logger.log(e);
+          throw new Error('Gathering ROWIDs failed');
+        }
+      }
+      // Duplicated records have same LastTouched value
+      // Build an {mem:[lt]} object and check against it (since members aren't returned alphabetically)
+      var ltMap = {};
+      while ( rowidArray.length > 0 ) {
+        sql = '';
+        var sqlRowIDs = [], batchStartTime = new Date().getTime();
+        // Construct ROWID query sql from the list of unique ROWIDs
+        while ( (sql.length <= 8000) && (rowidArray.length > 0) ){
+          var rowid = rowidArray.pop();
+          sqlRowIDs.push(rowid[0])
+          sql = "SELECT * FROM "+ftid+" WHERE ROWID IN ("+sqlRowIDs.join(",")+")";
+        }
+        try {
+          batchResult = FusionTables.Query.sqlGet(sql);
+          nReturned += batchResult.rows.length*1;
+          var kept = [];
+          for (var row=0;row<batchResult.rows.length;row++) {
+            var memsLTs = ltMap[batchResult.rows[row][1]]||[];
+            if ( memsLTs.indexOf(batchResult.rows[row][4]) == -1 ) {
+              // Did not find this LastTouched in this member's array of already-added LastTouched values
+              if ( batchResult.rows[row][11] == "NaN" ) batchResult.rows[row][11] = 0; // get rid of NaN in future db queries
+              kept.push(batchResult.rows[row])
+              if ( memsLTs.length == 0 ) {
+                ltMap[batchResult.rows[row][1]]=[batchResult.rows[row][4]];
+              } else {
+                ltMap[batchResult.rows[row][1]].push(batchResult.rows[row][4]);
+              }
+            }
+          }
+          records = [].concat(records, kept);
+          // Avoid exceeding API rate limits (30 / min and 5 / sec)
+          var elapsedMillis = new Date().getTime() - batchStartTime;
+          if ( totalQueries > 29 && elapsedMillis < 1000) {
+            Utilities.sleep(1001-elapsedMillis);
+          } else if ( elapsedMillis < 200 ) {
+            Utilities.sleep(201-elapsedMillis);
+          }
+        }
+        catch(e){
+          Logger.log(e);
+          throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
+        }
+      }
+      // convert records array into records CSV
+      if ( records.length == uniqueRowCount ) {
+        var recordCSV = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
+        var taskList = FusionTables.Task.list(ftid), taskId;
+        // Replace all rows of ftid with only the unique rows of ftid
+        var taskId = FusionTables.Table.replaceRows(ftid, recordCSV).taskId;
+        while ( taskList.totalItems > 0 ) {
+          Logger.log(FusionTables.Task.get(ftid, taskId).progress);
+          Utilities.sleep(500);
+        }
+        Logger.log('Replaced all rows with only unique values')
+      }
+    } else {
+      Logger.log('Cannot trim out any records - only have uniques left!');
+    }
+  }
+}
