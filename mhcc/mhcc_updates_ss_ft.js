@@ -150,7 +150,7 @@ function UpdateDatabase() {
               batchHunters[i][2] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
               // The previous crown data is stored in the most recent scoreboard update, in our db variable
               if ( db[dbRow][7] != nG || db[dbRow][6] != nS || db[dbRow][5] != nB ) {
-                batchHunters[i][3] = new Date().getTime();
+                batchHunters[i][3] = batchHunters[i][2];
               } else {
                 batchHunters[i][3] = db[dbRow][3];         // Crown Change Date
               }
