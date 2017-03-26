@@ -292,7 +292,7 @@ function addMember2Fusion_(memList){
     while (memList.length > 0) {
       var user = memList.pop();
       memCsv.push(user);
-      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,20000,"Weasel"));
+      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,20000,"Weasel",rt.getTime()));
     }
     try {
       // Convert arrays into CSV strings and Blob for app-script class exchange
