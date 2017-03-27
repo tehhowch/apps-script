@@ -675,3 +675,14 @@ function keepOnlyUniqueRecords(){
     }
   }
 }
+function getDbSize(){
+  var resp = FusionTables.Query.sqlGet('select * from '+ftid);
+  if (typeof resp.rows != 'undefined' ){
+    var rowSize = getByteCount_(resp.rows[0].toString());
+    var kbSize = Math.round(rowSize*100/1024)/100;
+    var totalSize = Math.round(kbSize*resp.rows.length*100/1024)/100;
+    Browser.msgBox("Database Size", 'The crown database has '+resp.rows.length.toString()+' entries.\\nEach entry consumes approximately '+kbSize.toString()+' kB of space.\\nThe total database size is approximately '+totalSize.toString()+' mB.\\nThe maximum size allowed is 250 mB.', Browser.Buttons.OK);
+  } else {
+    Browser.msgBox("Error", "Unable to reach FusionTables", Browser.Buttons.OK);
+  }
+}
