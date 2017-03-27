@@ -37,7 +37,8 @@ function onOpen(){
                                                                    {name:"Delete Members",functionName:"delFusionMember"},
                                                                    {name:"Refresh Scoreboard",functionName:"UpdateScoreboard"},
                                                                    {name:"Perform Crown Update",functionName:"UpdateDatabase"},
-                                                                   {name:"Perform RecordCount Maintenance",functionName:"doRecordsMaintenance"}]);
+                                                                   {name:"Perform RecordCount Maintenance",functionName:"doRecordsMaintenance"},
+                                                                   {name:"Database Size",functionName:"getDbSize"}]);
 }
 /**
  * function getMyDb_          Returns the enter data contents of the worksheet SheetDb to the calling code
@@ -88,7 +89,7 @@ function saveMyDb_(wb,db) {
  *                            scoreboard data. Batches of 127 are the maximum, due to the maximum length of a URL. The
  *  maximum execution time is 300 seconds, after which Google's servers will kill the script mid-execution. For this
  *  reason, coupled with the day-to-day performance variability of HornTracker, batches are started only if the execution
- *  time has not exceeded 180 seconds.
+ *  time has not exceeded 90 seconds.
  */
 function UpdateDatabase() {
   var startTime = new Date().getTime();
@@ -113,8 +114,8 @@ function UpdateDatabase() {
       Logger.log('Started with '+lastRan+' completed member updates');
       var allMembers = getUserBatch_(0,numMembers*1);                   // allMembers is an array of [Name, UID]
       var mem2Update = [];
-      // Loop over remaining members in sets of batchSize. Stop looping when out of members or >180s of runtime.
-      while ( ((new Date().getTime() - startTime)/1000 < 180) && (lastRan < numMembers) ) {
+      // Loop over remaining members in sets of batchSize. Stop looping when out of members or >90s of runtime.
+      while ( ((new Date().getTime() - startTime)/1000 < 90) && (lastRan < numMembers) ) {
         var batchHunters = allMembers.slice(lastRan,lastRan-0+batchSize-0);
         var urlIDs = [];
         for (var i=0;i<batchHunters.length;i++ ) {
@@ -136,7 +137,21 @@ function UpdateDatabase() {
           for (var i=0;i<batchHunters.length;i++) {
             var j = 'ht_'+batchHunters[i][1];
             var dbRow = dbKeys[batchHunters[i][1]];           // store this members row in the large scoreboard dataset
-            if ( typeof dbRow == 'undefined' ) throw new Error('Member '+batchHunters[i][0]+' has no dbRow');
+            if ( typeof dbRow == 'undefined' ) {
+              // Should have found a row, but didn't. Explicitly request this member's update
+              var record = getMostRecentRecord_(batchHunters[i][1]);
+              if ( record.length == 12 ) {
+                // Add to SheetDb
+                wb.getSheetByName('SheetDb').appendRow(record);
+                // Reindex rows
+                dbKeys = getDbIndex_(db);
+                dbRow = dbKeys[batchHunters[i][1]];
+                if ( typeof dbRow == 'undefined') continue;
+              } else { 
+                // Move on to the next hunter in batchHunters
+                continue 
+              }
+            }
             if ( typeof MM.hunters[j] != 'undefined' ) {
               // The hunter's ID was found in the MostMice object, and the update can be performed
               var nB = 0, nS = 0, nG = 0;
