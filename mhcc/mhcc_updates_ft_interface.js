@@ -290,12 +290,12 @@ function addMember2Fusion_(memList){
   if (memList.length != 0) {
     var wb = SpreadsheetApp.openById(mhccSSkey)
     var dbSheet = wb.getSheetByName('SheetDb');
-    var nMembers = dbSheet.getLastRow()-1;
+    var newRank = dbSheet.getLastRow();
     // create two arrays of the new members' data for CSV upload via importRows
     while (memList.length > 0) {
       var user = memList.pop();
       memCsv.push(user);
-      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,nMembers++,"Weasel",rt.getTime()));
+      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,newRank,"Weasel",rt.getTime()));
     }
     try {
       // Convert arrays into CSV strings and Blob for app-script class exchange
@@ -338,15 +338,15 @@ function delMember_(memList,startTime){
         var sql = "SELECT ROWID, UID FROM "+ftid+" WHERE UID = '"+memList[mem][1]+"'";
         var snapshots = FusionTables.Query.sql(sql).rows||[];
         var confirmString = "The member named '"+memList[mem][0]+"' has "+snapshots.length+" records."
-        confirmString += "\\nThese cannot be removed faster than 30 per minute, requiring at least ";
-        confirmString += Math.floor(1+snapshots.length/30*60)+"seconds.\\nBegin deletion?";
+        confirmString += "\\nThese cannot be removed faster than 2 per second, requiring at least ";
+        confirmString += Math.floor(1+snapshots.length*0.5)+" seconds.\\nBegin deletion?";
         var resp = Browser.msgBox("Confirmation Required",confirmString,Browser.Buttons.YES_NO);
         if (resp.toLowerCase()=="yes") {
           var sqlBase = "DELETE FROM "+ftid+" WHERE ROWID = '";
           var row = 0;
-          while ( ((new Date().getTime()-startTime)/1000 <= 280 ) && ( row < snapshots.length) ) {
+          while ( ((new Date().getTime()-startTime)/1000 <= 250 ) && ( row < snapshots.length) ) {
             FusionTables.Query.sql(sqlBase+snapshots[row][0]+"'");
-            Utilities.sleep(2002);                                  // Limit the rate to <30 FusionTable queries per minute
+            Utilities.sleep(502);                                  // Limit the rate to <200 FusionTable queries per 100 seconds
             row++;
           }
           Logger.log("Deleted "+row.toString()+" crown records for former member '"+memList[mem][0]+"'.");
@@ -725,4 +725,23 @@ function doBackupTable_(){
     return false;
   }
   return false;
+}
+/** 
+ * function getMostRecentRecord_  Called when UpdateDatabase has no stored information about a member.
+ *                                Queries the crown database for the input member and returns the record
+ * @param {String} memUID         The UID of the member who needs a record
+ * @return {Array}                The most recent update for the specified member, or [] in case of error
+ */
+function getMostRecentRecord_(memUID){
+  var recentSql = "SELECT * FROM "+ftid+" WHERE UID = "+memUID+" ORDER BY LastTouched DESC LIMIT 1"
+  var resp = FusionTables.Query.sqlGet(recentSql);
+  if (typeof resp.rows == 'undefined'){
+    return [];
+  } else {
+    if ( resp.rows.length > 0) {
+      return resp.rows[0];
+    } else {
+      return [];
+    }
+  }
 }
