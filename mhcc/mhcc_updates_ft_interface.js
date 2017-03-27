@@ -179,7 +179,6 @@ function addFusionMember(){
           curUIDs.push(UID);
           curMemNames.push(name);
         }
-
       }
     }
     var resp = Browser.msgBox("Add more?","Would you like to add another member?",Browser.Buttons.YES_NO);
@@ -281,33 +280,41 @@ function getMemberUID2AddorDel_(memberName){
 /**
  * function addMember2Fusion_   Inserts the given members into the Members database. Duplicate member checking is
  *                              handled in addFusionMember(). Users are added by assembling into a CSV format and
- *                              then passing to Table.importRows
+ *                              then passing to Table.importRows. To prevent errors in UpdateDatabase, the added 
+ *                              members are also pushed to SheetDb to guarantee a dbKeys reference will exist
  * @param {Array[][]} memList   Two-column array of the members' names and the corresponding UIDs.
  * @return {Integer}            The number of rows that were added to the Members database
  */
 function addMember2Fusion_(memList){
   var rt = new Date(), resp = [], memCsv = [], crownCsv = [];
   if (memList.length != 0) {
+    var wb = SpreadsheetApp.openById(mhccSSkey)
+    var dbSheet = wb.getSheetByName('SheetDb');
+    var nMembers = dbSheet.getLastRow()-1;
     // create two arrays of the new members' data for CSV upload via importRows
     while (memList.length > 0) {
       var user = memList.pop();
       memCsv.push(user);
-      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,20000,"Weasel",rt.getTime()));
+      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,nMembers++,"Weasel",rt.getTime()));
     }
     try {
       // Convert arrays into CSV strings and Blob for app-script class exchange
       var uUpload = Utilities.newBlob(array2CSV_(memCsv),'application/octet-stream');
       var cUpload = Utilities.newBlob(array2CSV_(crownCsv),'application/octet-stream');
       try {
+        // Upload data to SheetDb
+        for (var row=0;row<crownCsv.length;row++) {
+          dbSheet.appendRow(crownCsv[0])
+        }
         // Upload data to the FusionTable databases
         resp[0] = FusionTables.Table.importRows(utbl,uUpload);
         resp[1] = FusionTables.Table.importRows(ftid,cUpload);
         var numAdded = resp[0].numRowsReceived*1;
         return numAdded;
       }
-      catch(e){ throw new Error("Unable to upload new members' rows") }
+      catch(e){ Logger.log(e);throw new Error("Unable to upload new members' rows") }
     }
-    catch(e){ throw new Error('Unable to convert array into CSV format') }
+    catch(e){ Logger.log(e);throw new Error('Unable to convert array into CSV format') }
   } else {
     return
   }
@@ -518,7 +525,7 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
         } else {
           // Tough case here: we lost the exact point of reference needed for determining if deletions were before or after
           // where we've updated.
-
+          
           // shortcut assumption, to be changed at a later date
           newLastRan = origLastRan
         /*
