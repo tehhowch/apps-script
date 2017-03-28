@@ -369,91 +369,6 @@ function delMember_(memList,startTime){
   }
 }
 /**
- * maintenance script, run weekly/daily
- * finds all members with more than @maxRecords crown count snapshots, and trims them down to have at most 30 distinct LastSeen records.
- * will also trim out duplicated LastSeen records even if the user does not have 30+ records in total
- */
-function doRecordsMaintenance(){
-  var maxRecords = 10, startTime = new Date().getTime();
-  var mem2Trim = getMembers2trim_(maxRecords);
-  var mem = 0;
-  while ( (mem<mem2Trim.length) && ((new Date().getTime()-startTime)/1000 < 250) ) {
-    trimHistory_(mem2Trim[mem],startTime);
-    mem++;
-  }
-}
-/**
- *  function getMembers2trim_            Queries for a per-member count of crown data records, then queries those with > max records to
- *                                       determine an array of member, lastseen value, and times to delete that member-value pairing
- *  @param {Integer} maxDiffSeenRecords  The number of maximum different LastSeen crown snapshots a user can have
- *  @return {Array[][]}                  An array of [UID,LastSeen,n] where n is the number of times to delete the Member-LastSeen pair
- */
-function getMembers2trim_(maxDiffSeenRecords){
-  var sql1 = "SELECT UID, COUNT() FROM "+ftid+" GROUP BY UID";
-  var resp = FusionTables.Query.sql(sql1);     // gets a count of all members and their total number of records
-  var mem2Trim = [];
-  // Scan through the total number of records to find members that have more than the allowed number of different LastSeen values
-  for (var row=0;row<resp.rows.length;row++){
-    if (resp.rows[row][1] > maxDiffSeenRecords) {
-      mem2Trim.push(resp.rows[row][0].toString());
-    }
-  }
-  if (mem2Trim.length > 0) {
-    // Now have an array of UIDs belonging to members with more than the maximum number of records to be kept
-    // Query again for only them, and add any LastSeen having more than 1 count, or any LastSeen after the
-    // total max number allowed, to a deletion list, e.g. [UID, LastSeenVal, Num2Del]
-    var sql2 = "SELECT UID, LastSeen, COUNT() FROM "+ftid+" WHERE UID IN ("+mem2Trim.toString()+") GROUP BY UID, LastSeen ORDER BY UID ASC";
-    resp = FusionTables.Query.sql(sql2);
-    var rows2Del = [];
-    for (var row=0;row<resp.rows.length;row++){
-      var mem = resp.rows[row][0].toString();
-      var numDiffSeen = 0, memSeen = [];
-      while (resp.rows[row][0].toString()==mem.toString()) { // each member is on multiple rows in resp.rows
-        numDiffSeen++;
-        var num2Del = numDiffSeen - maxDiffSeenRecords;
-        if ((resp.rows[row][2] > 1) || (num2Del > 0)) {
-          num2Del = Math.max(num2Del,resp.rows[row][2]-1);
-          rows2Del.push([mem, resp.rows[row][1], num2Del]);
-        }
-        row++; // step to the next row
-        if (row >= resp.rows.length) break;  // but make sure that's even possible
-      }
-      row--; // and drop back one row for the next user, due to the for loop's natural increment
-    }
-  }
-  return rows2Del;
-}
-/**
- * function trimHistory_            For the specified UID-LastSeen pairs, it will delete num2Trim records,
- *                                  beginning with the oldest LastSeen values.
- * @param {Array} mem2TrimRow       A row from the array mem2Trim, containing [0]: UID, [1]: LastSeen, and
- *                                  [2]: integer of the # of pairs to delete
- * @param {Long} startTime          When the script began execution
- * @return {Integer}                How many rows were removed
- */
-function trimHistory_(mem2TrimRow,startTime){
-  var sqlBase = "DELETE FROM "+ftid+" WHERE ROWID = '";
-  var sql = "", nRemoved = 0;
-  var num2Trim = mem2TrimRow[2];
-  if (num2Trim > 0) {
-    // query for the rowids to delete and add them to the matrix rows2del, grabbing only the number of them to be trimmed
-    sql = "SELECT ROWID, LastTouched FROM "+ftid+" WHERE UID = '"+mem2TrimRow[0]+"' AND LastSeen = "+mem2TrimRow[1].toString()+" ORDER BY LastTouched ASC LIMIT "+num2Trim;
-    try{
-      var resp = FusionTables.Query.sql(sql);
-      var row = 0;
-      while ( (row < resp.rows.length) && ((new Date().getTime()-startTime)/1000 < 250) ) {
-        // loop over the returned rows and schedule their deletion (30 query/min max)
-        sql = sqlBase+resp.rows[i][0].toString()+"'";
-        nRemoved += FusionTables.Query.sql(sql).rows[0]*1;
-        Utilities.sleep(2002);
-        row++;
-      }
-    }
-    catch(e){ throw new Error(e.message)}
-  }
-  return nRemoved;
-}
-/**
  * function getByteCount_   Computes the size in bytes of the passed string
  * @param  {String} str     The string to analyze
  * @return {Long}           The bytesize of the string, in bytes
@@ -698,7 +613,7 @@ function getDbSize(){
     var rowSize = getByteCount_(resp.rows[0].toString());
     var kbSize = Math.round(rowSize*100/1024)/100;
     var totalSize = Math.round(kbSize*resp.rows.length*100/1024)/100;
-    Browser.msgBox("Database Size", 'The crown database has '+resp.rows.length.toString()+' entries.\\nEach entry consumes approximately '+kbSize.toString()+' kB of space.\\nThe total database size is approximately '+totalSize.toString()+' mB.\\nThe maximum size allowed is 250 mB.', Browser.Buttons.OK);
+    Browser.msgBox("Database Size", 'The crown database has '+resp.rows.length.toString()+' entries.\\nEach entry consumes approximately '+kbSize.toString()+' kB of space.\\nThe total database size is approximately '+totalSize.toString()+' mB.\\nThe maximum size allowed is 250 MB.', Browser.Buttons.OK);
   } else {
     Browser.msgBox("Error", "Unable to reach FusionTables", Browser.Buttons.OK);
   }
@@ -742,6 +657,140 @@ function getMostRecentRecord_(memUID){
       return resp.rows[0];
     } else {
       return [];
+    }
+  }
+}
+/**
+ * function identifyDiffSeenAndRankRecords_   For the given members, returns the ROWIDs of all records 
+ *                                            that have different LastSeen or Ranks. All other records
+ *                                            do not have "interesting" data that is not already on 
+ *                                            these records.
+ * @param {String} memUIDs                    The members to query for
+ * @return {Array}                            The ROWIDs of these members interesting records
+ */
+function identifyDiffSeenAndRankRecords_(memUIDs){
+  var rowidArray = [];
+  memUIDs.reverse();
+  // Need to loop over memUIDs in case too many were given
+  while ( memUIDs.length > 0 ) {
+    var sql = '', sqlUIDs = []
+    while (( sql.length < 8000 ) && ( memUIDs.length > 0 )) {
+      sqlUIDs.push(memUIDs.pop());
+      sql = "SELECT ROWID, Member, UID, LastSeen, Rank FROM "+ftid+" WHERE UID IN ("+sqlUIDs.join(",")+") ORDER BY LastSeen ASC";
+    }
+    var resp = FusionTables.Query.sqlGet(sql);
+    if ( typeof resp.rows == 'undefined' ) {
+      throw new Error('Unable to reach FusionTables');
+    } else {
+      var lsMap = {}; var rankMap = {};
+      var keptArray = [];
+      var nRecords = resp.rows.length;
+      for (var row=0;row<nRecords;row++){
+        var data = resp.rows[row];
+        var memLSs = lsMap[data[2]]||[];
+        var memRanks = rankMap[data[2]]||[];
+        if (( memLSs.indexOf(data[3]) == -1 ) ||        // New LastSeen
+            ( memRanks.indexOf(data[4]) == -1 )) {      // OR new Rank
+          // Store the ROWID, and add the LastSeen and Rank to the uid objects
+          keptArray.push(data[0]);
+          if ( memLSs.length == 0 ) {
+            lsMap[data[2]]=[data[3]];
+          } else {
+            lsMap[data[2]].push(data[3]);
+          }
+          if ( memRanks.length == 0 ) {
+            rankMap[data[2]]=[data[4]];
+          } else {
+            rankMap[data[2]].push(data[4]);
+          }
+        } else {
+          // Already stored a ROWID that has either this LastSeen date or this Rank for this member
+        }
+      }
+      rowidArray = [].concat(rowidArray,keptArray);
+    }
+  }
+  if ( rowidArray.length > 0 ) {
+    return rowidArray;
+  } else {
+    return [];
+  }
+}
+/**
+ * function retrieveDiffSeenAndRankRecords_  Queries the crown database to retrieve the specified ROWIDs
+ * @param {Array} rowidArray                 A 1D array of all the rowids identified as interesting by
+ *                                           fn identifyDifferentSeenAndRankRecords_
+ * @return {Array}                           A 2D array of all the interesting records. Maybe be quite large.
+ */
+function retrieveDiffSeenAndRankRecords_(rowidArray){
+  if (rowidArray.length == 0 ) return [];
+  if ( typeof rowidArray[0] != 'string' ) return [];
+  var nReturned = 0, nRowIds = rowidArray.length, records = [];
+  while ( rowidArray.length > 0 ) {
+    var sql = '';
+    var sqlRowIDs = [], batchStartTime = new Date().getTime();
+    // Construct ROWID query sql from the list of unique ROWIDs
+    while ( (sql.length <= 8000) && (rowidArray.length > 0) ){
+      var rowid = rowidArray.pop();
+      sqlRowIDs.push(rowid)
+      sql = "SELECT * FROM "+ftid+" WHERE ROWID IN ("+sqlRowIDs.join(",")+") ORDER BY Member ASC";
+    }
+    try {
+      var batchResult = FusionTables.Query.sqlGet(sql);
+      nReturned += batchResult.rows.length*1;
+      records = [].concat(records,batchResult.rows);
+    }
+    catch(e){Logger.log(e);throw new Error('FusionTables error');}
+    var elapsedMillis = new Date().getTime() - batchStartTime;
+    if ( elapsedMillis < 750 ) {
+      Utilities.sleep(750-elapsedMillis);
+    }
+  }
+  if ( nReturned == nRowIds ) {
+    Logger.log('Returning '+nReturned+' interesting records');
+    return records;
+  } else {
+    throw new Error('Got different number of rows than desired')
+  }
+  return [];
+}
+/**
+ * function keepInterestingRecords 
+ */
+function keepInterestingRecords(){
+  var startTime = new Date().getTime()
+  if (doBackupTable_() == false) {
+    throw new Error("Couldn't back up existing table data");
+  } else {
+    var members = getUserBatch_(0, 100000);
+    var rowids = identifyDiffSeenAndRankRecords_(members.map(function(value,index){return value[1]}));
+    if ( rowids.length == 0 ) {
+      Logger.log('No records returned');
+    } else { 
+      var elapsedMillis = new Date().getTime() - startTime;
+      Logger.log("Different Seen&Rank records identified in: "+elapsedMillis);
+      var records = retrieveDiffSeenAndRankRecords_(rowids);
+      if ( records.length > 0 ) {
+        records.sort();
+        var elapsedMillis1 = new Date().getTime() - startTime - elapsedMillis;
+        Logger.log("Queried records in: "+elapsedMillis);
+        var uploadSize = Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100;
+        Logger.log('New data is '+uploadSize+' MB (rounded up)');
+        if ( uploadSize/1024/1024 >= 250 ) {
+          // Need to prune data
+          throw new Error('Database too large - must delete rows!');
+        } else {
+          // Do not need to chunk the update
+          var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
+          var taskList = FusionTables.Task.list(ftid);
+          while ( taskList.totalItems > 0 ) {
+            Utilities.sleep(50);
+          }
+          Logger.log('Replaced all rows with only the interesting ones')      
+        }
+      } else {
+        Logger.log('No records returned');
+      }
     }
   }
 }
