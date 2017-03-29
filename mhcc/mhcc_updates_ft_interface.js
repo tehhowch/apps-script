@@ -103,8 +103,9 @@ function getLatestRows_(nMembers){
  * @return {Object}     an object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
  */
 function getUserHistory_(UID){
-  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" ORDER BY LastSeen ASC WHERE UID = '"+UID.toString()+"' LIMIT 30";
+  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" WHERE UID = "+UID.toString()+" ORDER BY LastSeen ASC";
   var resp = FusionTables.Query.sql(sql);
+  if (typeof resp.rows == 'undefined') {throw new Error('No data for UID='+UID)};
   if (resp.rows.length > 0) {
     var columns = resp.columns;
     var data = resp.rows;
@@ -561,7 +562,7 @@ function keepOnlyUniqueRecords(){
               var memsLTs = ltMap[batchResult.rows[row][1]]||[];
               if ( memsLTs.indexOf(batchResult.rows[row][4]) == -1 ) {
                 // Did not find this LastTouched in this member's array of already-added LastTouched values
-                if ( batchResult.rows[row][11] == "NaN" ) batchResult.rows[row][11] = 0; // get rid of NaN in future db queries
+                if ( batchResult.rows[row][11] == 0 ) batchResult.rows[row][11] = 1480307602000; // get rid of NaN in future db queries
                 kept.push(batchResult.rows[row])
                 if ( memsLTs.length == 0 ) {
                   ltMap[batchResult.rows[row][1]]=[batchResult.rows[row][4]];
