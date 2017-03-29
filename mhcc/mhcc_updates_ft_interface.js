@@ -93,17 +93,22 @@ function getLatestRows_(nMembers){
   return [];
 }
 /**
- * function getUserHistory_   querys the crown data snapshots for the given user and returns their crown
- *                            counts as a function of when they were seen by Horntracker's MostMice. This
- *                            function may be useful for a future webpage which could plot the data,
- *                            either for just the specified hunter, or for all MHCC members. This function may
- *                            be deprecated if the Visualization API is used, as described here:
- *                            https://developers.google.com/fusiontables/docs/sample_code#chartTools
- * @param  {String} UID the user id of a specific member for which the crown data snapshots are returned
- * @return {Object}     an object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
+ * function getUserHistory_   Querys the crown data snapshots for the given user and returns their crown
+ *                            counts as a function of when they were seen by Horntracker's MostMice.
+ * @param  {String} UID       The user id(s) of specific member(s) for which the crown data snapshots are returned. If 
+ *                            multiple members are queried, this should be a string of comma-separated UIDs.
+ * @param  {Boolean} blGroup  Optional parameter indicating whether to perform GROUP BY queries or return all records
+ * @return {Object}           An object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
  */
-function getUserHistory_(UID){
-  var sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" WHERE UID = "+UID.toString()+" ORDER BY LastSeen ASC";
+function getUserHistory_(UID,blGroup){
+  var sql = '';
+  if (UID == '') { throw new Error('No UID provided')}
+  if (blGroup == true) {
+    sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, MINIMUM(RankTime) FROM "+ftid+" WHERE UID IN ("+UID.toString()+") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
+  } else { 
+    // blGroup not given, or false
+    sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" WHERE UID = "+UID.toString()+" ORDER BY LastSeen ASC";
+  }
   var resp = FusionTables.Query.sql(sql);
   if (typeof resp.rows == 'undefined') {throw new Error('No data for UID='+UID)};
   if (resp.rows.length > 0) {
@@ -496,14 +501,8 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
  *                                         the script execution time limit. 
  */
 function keepOnlyUniqueRecords(){
-  var sqlTotal = 'select ROWID from '+ftid;
   var sqlUnique = 'select UID, LastSeen, RankTime, MINIMUM(LastTouched) from '+ftid+' group by UID, LastSeen, RankTime';
-  var totalRowCount = FusionTables.Query.sqlGet(sqlTotal);
-  if ( typeof totalRowCount.rows  != 'undefined' ) {
-    totalRowCount = totalRowCount.rows.length;
-  } else {
-    throw new Error('No response from FusionTables for sql='+sqlTotal);
-  }
+  var totalRowCount = getTotalRowCount_(ftid);
   var uniqueRowList = FusionTables.Query.sqlGet(sqlUnique), uniqueRowCount = totalRowCount;
   if ( typeof uniqueRowList.rows == 'undefined' ) {
     throw new Error('No response from FusionTables for sql='+sqlUnique);
@@ -758,40 +757,63 @@ function retrieveDiffSeenAndRankRecords_(rowidArray){
 /**
  * function keepInterestingRecords 
  */
-function keepInterestingRecords(){
-  var startTime = new Date().getTime()
-  if (doBackupTable_() == false) {
-    throw new Error("Couldn't back up existing table data");
-  } else {
-    var members = getUserBatch_(0, 100000);
-    var rowids = identifyDiffSeenAndRankRecords_(members.map(function(value,index){return value[1]}));
+function keepInterestingRecords_(){
+  var startTime = new Date().getTime();
+  var members = getUserBatch_(0, 100000);
+  var rowids = identifyDiffSeenAndRankRecords_(members.map(function(value,index){return value[1]}));
+  var totalRows = getTotalRowCount_(ftid);
+  if ( rowids.length == totalRows ) {
+    Logger.log('All records are interesting')
+  } else if (rowids.length < totalRows ) {
     if ( rowids.length == 0 ) {
       Logger.log('No records returned');
     } else { 
-      var elapsedMillis = new Date().getTime() - startTime;
-      Logger.log("Different Seen&Rank records identified in: "+elapsedMillis);
-      var records = retrieveDiffSeenAndRankRecords_(rowids);
-      if ( records.length > 0 ) {
-        records.sort();
-        var elapsedMillis1 = new Date().getTime() - startTime - elapsedMillis;
-        Logger.log("Queried records in: "+elapsedMillis);
-        var uploadSize = Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100;
-        Logger.log('New data is '+uploadSize+' MB (rounded up)');
-        if ( uploadSize/1024/1024 >= 250 ) {
-          // Need to prune data
-          throw new Error('Database too large - must delete rows!');
-        } else {
-          // Do not need to chunk the update
-          var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
-          var taskList = FusionTables.Task.list(ftid);
-          while ( taskList.totalItems > 0 ) {
-            Utilities.sleep(50);
-          }
-          Logger.log('Replaced all rows with only the interesting ones')      
-        }
+      if (doBackupTable_() == false) {
+        throw new Error("Couldn't back up existing table data");
       } else {
-        Logger.log('No records returned');
+        var records = retrieveDiffSeenAndRankRecords_(rowids);
+        if ( records.length == 0 ) {
+          Logger.log('No records returned');
+        } else {
+          records.sort();
+          var uploadSize = Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100;
+          Logger.log('New data is '+uploadSize+' MB (rounded up)');
+          if ( uploadSize >= 250 ) {
+            // Need to prune data
+            throw new Error('Database too large - must delete some rows first!');
+          } else {
+            // Do not need to chunk the update
+            var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
+            FusionTables.Table.replaceRows(ftid, cUpload)
+            var taskList = FusionTables.Task.list(ftid);
+            while ( taskList.totalItems > 0 ) {
+              Utilities.sleep(50);
+            }
+            Logger.log('Replaced all rows with only the interesting ones')
+            return true;
+          }
+        }
       }
     }
+  } else {
+    throw new Error('More interesting records than records... How???');
   }
+  return false;
+}
+/**
+ * function getTotalRowCount_  Gets the total number of rows in the supplied FusionTable
+ * @param {String} tblID       The table id
+ * @return {Long}              The number of rows in the table
+ */
+function getTotalRowCount_(tblID){
+  var sqlTotal = 'select ROWID from '+tblID;
+  try {
+    var totalRowCount = FusionTables.Query.sqlGet(sqlTotal);
+    totalRowCount = totalRowCount.rows.length;
+  }
+  catch(e){
+    Logger.log(e);
+    throw e;
+  }
+  return totalRowCount;
 }
