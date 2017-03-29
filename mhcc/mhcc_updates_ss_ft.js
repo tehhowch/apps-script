@@ -106,6 +106,7 @@ function UpdateDatabase() {
   if ( lastRan >= numMembers ) {
     UpdateScoreboard();                                                   // Perform scoreboard update check / progress reset
     PropertiesService.getScriptProperties().setProperty('lastRan', 0);    // Point the script back to the start
+    keepInterestingRecords_();                                            // Cleanse records that don't offer anything
   } else {
     // Grab a subset of the alphabetized member record
     var lock = LockService.getScriptLock();
