@@ -107,7 +107,7 @@ function getUserHistory_(UID,blGroup){
     sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, MINIMUM(RankTime) FROM "+ftid+" WHERE UID IN ("+UID.toString()+") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
   } else { 
     // blGroup not given, or false
-    sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" WHERE UID = "+UID.toString()+" ORDER BY LastSeen ASC";
+    sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" WHERE UID IN ("+UID.toString()+") ORDER BY LastSeen ASC";
   }
   var resp = FusionTables.Query.sql(sql);
   if (typeof resp.rows == 'undefined') {throw new Error('No data for UID='+UID)};
@@ -717,14 +717,19 @@ function identifyDiffSeenAndRankRecords_(memUIDs){
   }
 }
 /**
- * function retrieveDiffSeenAndRankRecords_  Queries the crown database to retrieve the specified ROWIDs
- * @param {Array} rowidArray                 A 1D array of all the rowids identified as interesting by
- *                                           fn identifyDifferentSeenAndRankRecords_
- * @return {Array}                           A 2D array of all the interesting records. Maybe be quite large.
+ * function retrieveWholeRecords_    Queries to retrieve the specified ROWIDs. Will query at most once per 750ms.
+ * @param {String[]} rowidArray      A 1D array of String rowids to retrieve (can be very large)
+ * @param {String} tblID             The FusionTable which is to be queried 
+ * @return {Array}                   A 2D array of the specified records, or []
  */
-function retrieveDiffSeenAndRankRecords_(rowidArray){
+function retrieveWholeRecords_(rowidArray,tblID){
   if (rowidArray.length == 0 ) return [];
-  if ( typeof rowidArray[0] != 'string' ) return [];
+  if ( typeof rowidArray[0] != 'string' ) {
+    throw new TypeError('Expected ROWIDs to be type String but received type '+typeof rowidArray[0]);
+  }
+  if ( typeof tblID != 'string' ) {
+    throw new TypeError('Expected table id to be string but received type '+typeof tblID);
+  }
   var nReturned = 0, nRowIds = rowidArray.length, records = [];
   while ( rowidArray.length > 0 ) {
     var sql = '';
@@ -733,21 +738,20 @@ function retrieveDiffSeenAndRankRecords_(rowidArray){
     while ( (sql.length <= 8000) && (rowidArray.length > 0) ){
       var rowid = rowidArray.pop();
       sqlRowIDs.push(rowid)
-      sql = "SELECT * FROM "+ftid+" WHERE ROWID IN ("+sqlRowIDs.join(",")+") ORDER BY Member ASC";
+      sql = "SELECT * FROM "+tblID+" WHERE ROWID IN ("+sqlRowIDs.join(",")+")";
     }
     try {
       var batchResult = FusionTables.Query.sqlGet(sql);
       nReturned += batchResult.rows.length*1;
       records = [].concat(records,batchResult.rows);
     }
-    catch(e){Logger.log(e);throw new Error('FusionTables error');}
+    catch(e){Logger.log(e);throw new Error('Error while retrieving records by ROWID');}
     var elapsedMillis = new Date().getTime() - batchStartTime;
     if ( elapsedMillis < 750 ) {
       Utilities.sleep(750-elapsedMillis);
     }
   }
   if ( nReturned == nRowIds ) {
-    Logger.log('Returning '+nReturned+' interesting records');
     return records;
   } else {
     throw new Error('Got different number of rows than desired')
@@ -771,7 +775,7 @@ function keepInterestingRecords_(){
       if (doBackupTable_() == false) {
         throw new Error("Couldn't back up existing table data");
       } else {
-        var records = retrieveDiffSeenAndRankRecords_(rowids);
+        var records = retrieveWholeRecords_(rowids,ftid);
         if ( records.length == 0 ) {
           Logger.log('No records returned');
         } else {
