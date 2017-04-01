@@ -584,17 +584,8 @@ function keepOnlyUniqueRecords(){
             throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
           }
         }
-        // convert records array into records CSV
         if ( records.length == uniqueRowCount ) {
-          var recordCSV = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
-          var taskList = FusionTables.Task.list(ftid), taskId;
-          // Replace all rows of ftid with only the unique rows of ftid
-          var taskId = FusionTables.Table.replaceRows(ftid, recordCSV).taskId;
-          while ( taskList.totalItems > 0 ) {
-            Logger.log(FusionTables.Task.get(ftid, taskId).progress);
-            Utilities.sleep(500);
-          }
-          Logger.log('Replaced all rows with only unique values')
+          doReplace_(ftid, records)
         }
       }
     } else {
@@ -779,23 +770,7 @@ function keepInterestingRecords_(){
         if ( records.length == 0 ) {
           Logger.log('No records returned');
         } else {
-          records.sort();
-          var uploadSize = Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100;
-          Logger.log('New data is '+uploadSize+' MB (rounded up)');
-          if ( uploadSize >= 250 ) {
-            // Need to prune data
-            throw new Error('Database too large - must delete some rows first!');
-          } else {
-            // Do not need to chunk the update
-            var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
-            FusionTables.Table.replaceRows(ftid, cUpload)
-            var taskList = FusionTables.Task.list(ftid);
-            while ( taskList.totalItems > 0 ) {
-              Utilities.sleep(50);
-            }
-            Logger.log('Replaced all rows with only the interesting ones')
-            return true;
-          }
+          doReplace_(ftid, records)
         }
       }
     }
@@ -820,4 +795,39 @@ function getTotalRowCount_(tblID){
     throw e;
   }
   return totalRowCount;
+}
+/**
+ * function doReplace_      Replaces the contents of the specified FusionTable with the 
+ *                          input array after sorting on its first element
+ * @param {String} tblID    The table whose contents will be replaced
+ * @param {Array} records   The new contents of the specified table
+ * @return {Object}         Object indicating if the replace was successful, and the 
+ *                          error message if it was not
+ */
+function doReplace_(tblID, records){
+  if ( records.constructor != Array ) { throw new TypeError('Argument records was not type Array');}
+  if ( typeof tblID != 'string' ) { throw new TypeError('Argument tblID was not type String');}
+  if ( tblID.length != 41) { throw new Error('Argument tbldID not a FusionTables id');}
+  if ( records.length == 0 ) { throw new Error('Argument records must not be length 0');}
+  records.sort();
+  var progress = {"saved":false,
+                "errmsg":"",
+                "uploadSize":Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100
+               };
+  Logger.log('New data is '+progress.uploadSize+' MB (rounded up)');
+  if ( progress.uploadSize >= 250 ) {
+    progress.errmsg = "Array exceeds maximum upload size";
+  } else {
+    try {
+      var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
+      FusionTables.Table.replaceRows(tblID, cUpload)
+      var taskList = FusionTables.Task.list(tblID);
+      while ( taskList.totalItems > 0 ) {
+        Utilities.sleep(50);
+      }
+      progress.saved = true;
+    }
+    catch(e){ progress.errmsg = e.message }
+  }  
+  return progress; 
 }
