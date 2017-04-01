@@ -597,14 +597,18 @@ function keepOnlyUniqueRecords(){
  * function getDbSize           Determines the size of the database by extrapolating
  *                              from the size of the first row, and reports the result
  *                              in Logger and in the spreadsheet interface.
+ *                              Maximum number of selected rows for this db is ~53900
+ *                              53900 rows at 0.5r kb per row is about 7.8 MB of data
  */
 function getDbSize(){
-  var resp = FusionTables.Query.sqlGet('select * from '+ftid);
-  if (typeof resp.rows != 'undefined' ){
-    var rowSize = getByteCount_(resp.rows[0].toString());
-    var kbSize = Math.round(rowSize*100/1024)/100;
-    var totalSize = Math.round(kbSize*resp.rows.length*100/1024)/100;
-    Browser.msgBox("Database Size", 'The crown database has '+resp.rows.length.toString()+' entries.\\nEach entry consumes approximately '+kbSize.toString()+' kB of space.\\nThe total database size is approximately '+totalSize.toString()+' mB.\\nThe maximum size allowed is 250 MB.', Browser.Buttons.OK);
+  var nRows = getTotalRowCount_(ftid);
+  var row2get = Math.floor(nRows*Math.random());
+  var rowData = FusionTables.Query.sqlGet('select * from '+ftid+" OFFSET "+row2get+" LIMIT 1");
+  if (typeof rowData.rows != 'undefined' ){
+    var rowSize = getByteCount_(rowData.rows[0].toString());
+    var kbSize = Math.round(rowSize*1000/1024)/1000;
+    var totalSize = Math.round(kbSize*nRows*1000/1024)/1000;
+    Browser.msgBox("Database Size", 'The crown database has '+nRows.toString()+' entries.\\nEach entry consumes approximately '+kbSize.toString()+' kB of space.\\nThe total database size is approximately '+totalSize.toString()+' mB.\\nThe maximum size allowed is 250 MB.', Browser.Buttons.OK);
   } else {
     Browser.msgBox("Error", "Unable to reach FusionTables", Browser.Buttons.OK);
   }
