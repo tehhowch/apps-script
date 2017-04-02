@@ -96,10 +96,10 @@ function UpdateDatabase() {
   var batchSize = 127;
   var wb = SpreadsheetApp.openById(mhccSSkey);
   var db = getMyDb_(wb,1);                                                // alphabetized records with Rank and CrownChangeDate available
-  var dbKeys = getDbIndex_(db);                                           // map UIDs to their index in the db for fast 1:1 accessing
   var props = PropertiesService.getScriptProperties().getProperties();
   var numMembers = props.numMembers;                                      // Database records count (may be larger than the written db on SheetDb)
   var lastRan = props.lastRan*1;                                          // The last successfully updated member crown data record
+  var dbKeys = getDbIndex_(db,numMembers);                                // map UIDs to their index in the db for fast 1:1 accessing
   var sheet = wb.getSheetByName('Members');
   // Read in the MHCC tiers as a 13x3 array. If the MHCC tiers are moved, this getRange target MUST be updated!
   var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
@@ -145,7 +145,7 @@ function UpdateDatabase() {
                 // Add to SheetDb
                 wb.getSheetByName('SheetDb').appendRow(record);
                 // Reindex rows
-                dbKeys = getDbIndex_(db);
+                dbKeys = getDbIndex_(db,numMembers);
                 dbRow = dbKeys[batchHunters[i][1]];
                 if ( typeof dbRow == 'undefined') continue;
               } else { 
