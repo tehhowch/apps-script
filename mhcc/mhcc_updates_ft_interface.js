@@ -24,12 +24,12 @@ function getUserBatch_(start,limit){
  * @param  {Array} db       a rectangular array of the most recent Scoreboard update
  * @return {object}         a simple object with the key-value pair of {UID: dbIndex}
  */
-function getDbIndex_(db){
+function getDbIndex_(db,numMembers){
   var output = {}
   for (var i=0;i<db.length;i++){
     output[String(db[i][1])]=i;
   }
-  if (Object.keys(output).length-db.length != 0) {
+  if (Object.keys(output).length-numMembers != 0) {
     // Should have been 0 if all UIDs appeared just once.
     throw new Error('Unique ID failed to be unique when indexing SheetDb by UID');
   }
