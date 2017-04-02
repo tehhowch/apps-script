@@ -29,8 +29,9 @@ function getDbIndex_(db,numMembers){
   for (var i=0;i<db.length;i++){
     output[String(db[i][1])]=i;
   }
-  if (Object.keys(output).length-numMembers != 0) {
-    // Should have been 0 if all UIDs appeared just once.
+  if ( (Object.keys(output).length < numMembers*1) && (db.length === numMembers*1) ){
+    // If there are fewer unique rows on SheetDb than numMembers, we might just be missing rows.
+    // But if there are exactly as many total rows on SheetDb as numMembers  
     throw new Error('Unique ID failed to be unique when indexing SheetDb by UID');
   }
   return output;
