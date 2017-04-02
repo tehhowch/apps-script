@@ -310,7 +310,7 @@ function addMember2Fusion_(memList){
       try {
         // Upload data to SheetDb
         for (var row=0;row<crownCsv.length;row++) {
-          dbSheet.appendRow(crownCsv[0])
+          dbSheet.appendRow(crownCsv[row])
         }
         // Upload data to the FusionTable databases
         resp[0] = FusionTables.Table.importRows(utbl,uUpload);
