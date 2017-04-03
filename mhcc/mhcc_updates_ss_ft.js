@@ -262,9 +262,9 @@ function UpdateScoreboard() {
                        Utilities.formatDate(new Date(allHunters[i-1][2]), 'EST', 'yyyy-MM-dd'),       // Last Seen
                        Utilities.formatDate(new Date(allHunters[i-1][3]), 'EST', 'yyyy-MM-dd'),       // Last Crown
                        allHunters[i-1][10],                                                            // Squirrel
-                       allHunters[i-1][8],                                                            // #MHCC Crowns
+                       '=HYPERLINK("https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid='+allHunters[i-1][1]+'","'+allHunters[i-1][8]+'")',  // #MHCC Crowns
                        allHunters[i-1][0],                                                            // Name
-                       "https://apps.facebook.com/mousehunt/profile.php?snuid="+allHunters[i-1][1]    // Profile Link (fb)
+                       'https://apps.facebook.com/mousehunt/profile.php?snuid='+allHunters[i-1][1]   
                       ])
       if ( i%150 == 0 ) scoreboardArr.push(['Rank','Last Seen','Last Crown','Squirrel Rank','G+S Crowns','Hunter','Profile Link'] )
       // Store the time this rank was generated
