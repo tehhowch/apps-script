@@ -130,16 +130,22 @@ function ftBatchWrite_(hdata){
   var crownCsv = array2CSV_(hdata);
   try {
     var cUpload = Utilities.newBlob(crownCsv,'application/octet-stream');
-    try {
-      var numAdded = FusionTables.Table.importRows(ftid,cUpload);
-      return numAdded.numRowsReceived;
-    }
-    catch(e){
-      throw new Error('Unable to upload rows');
-    }
   }
   catch(e){
     throw new Error('Unable to convert array into CSV format');
+  }
+  try {
+    var numAdded = FusionTables.Table.importRows(ftid,cUpload);
+    return numAdded.numRowsReceived;
+  }
+  catch(e){
+    Logger.log(e);
+    for (var row=0;row<hdata.length;row++){
+      if (hdata[row].length != 12) {
+        Logger.log(row+", data: "+hdata[row].toString());
+      }
+    }
+    throw new Error('Unable to upload rows');
   }
 }
 /**
@@ -303,6 +309,7 @@ function addMember2Fusion_(memList){
       var user = memList.pop();
       memCsv.push(user);
       crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,newRank,"Weasel",rt.getTime()));
+      Utilities.sleep(1);
     }
     try {
       // Convert arrays into CSV strings and Blob for app-script class exchange
@@ -827,9 +834,6 @@ function doReplace_(tblID, records){
       var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
       FusionTables.Table.replaceRows(tblID, cUpload)
       var taskList = FusionTables.Task.list(tblID);
-      while ( taskList.totalItems > 0 ) {
-        Utilities.sleep(50);
-      }
       progress.saved = true;
     }
     catch(e){ progress.errmsg = e.message }
