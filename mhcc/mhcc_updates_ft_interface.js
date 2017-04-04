@@ -503,104 +503,6 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
     }
   }
 }
-/** 
- * function keepOnlyUniqueRecords          Removes all non-unique records in the crown database. 
- *                                         If the database is large, this could take longer than
- *                                         the script execution time limit. 
- */
-function keepOnlyUniqueRecords(){
-  var sqlUnique = 'select UID, LastSeen, RankTime, MINIMUM(LastTouched) from '+ftid+' group by UID, LastSeen, RankTime';
-  var totalRowCount = getTotalRowCount_(ftid);
-  var uniqueRowList = FusionTables.Query.sqlGet(sqlUnique), uniqueRowCount = totalRowCount;
-  if ( typeof uniqueRowList.rows == 'undefined' ) {
-    throw new Error('No response from FusionTables for sql='+sqlUnique);
-  } else {
-    uniqueRowCount = uniqueRowList.rows.length;
-    if ( (totalRowCount-uniqueRowCount) > 0 ) {
-      if (doBackupTable_() == false) {
-        throw new Error("Couldn't back up existing table data");
-      } else {
-        var batchSize = 190, records = [], batchResult = [], nReturned = 0, nRows = 0, rowidArray = [];
-        var totalQueries = 1+Math.ceil(uniqueRowCount/batchSize);
-        while ( uniqueRowList.rows.length > 0) {
-          var lsArray = [], uidArray = [], rtArray = [], ltArray = [], batchStartTime = new Date().getTime();
-          // Construct UID and LastSeen and RankTime arrays to be able to query the ROWID values
-          var sql = '';
-          while ( (sql.length <= 8000) && (uniqueRowList.rows.length > 0) ) {
-            var row = uniqueRowList.rows.pop();
-            uidArray.push(row[0]); lsArray.push(row[1]); rtArray.push(row[2]); ltArray.push(row[3]);
-            sql = "SELECT ROWID, Member FROM "+ftid+" WHERE LastSeen IN ("+lsArray.join(",")+") AND UID IN ("+uidArray.join(",")+") AND RankTime IN ("+rtArray.join(",")+") AND LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
-          }
-          // Query for the corresponding ROWIDs
-          try {
-            var rowIDresult = FusionTables.Query.sqlGet(sql);
-            nRows += rowIDresult.rows.length*1;
-            rowidArray = [].concat(rowidArray, rowIDresult.rows);
-            // Avoid exceeding API rate limits (200 / 100 sec and 5 / sec)
-            var elapsedMillis = new Date().getTime() - batchStartTime;
-            if ( totalQueries > 29 && elapsedMillis < 1000) {
-              Utilities.sleep(1001-elapsedMillis);
-            } else if ( elapsedMillis < 200 ) {
-              Utilities.sleep(201-elapsedMillis);
-            }
-          }
-          catch(e){
-            Logger.log(e);
-            throw new Error('Gathering ROWIDs failed');
-          }
-        }
-        // Duplicated records have same LastTouched value
-        // Build an {mem:[lt]} object and check against it (since members aren't returned alphabetically)
-        var ltMap = {};
-        while ( rowidArray.length > 0 ) {
-          sql = '';
-          var sqlRowIDs = [], batchStartTime = new Date().getTime();
-          // Construct ROWID query sql from the list of unique ROWIDs
-          while ( (sql.length <= 8000) && (rowidArray.length > 0) ){
-            var rowid = rowidArray.pop();
-            sqlRowIDs.push(rowid[0])
-            sql = "SELECT * FROM "+ftid+" WHERE ROWID IN ("+sqlRowIDs.join(",")+")";
-          }
-          try {
-            batchResult = FusionTables.Query.sqlGet(sql);
-            nReturned += batchResult.rows.length*1;
-            var kept = [];
-            for (var row=0;row<batchResult.rows.length;row++) {
-              var memsLTs = ltMap[batchResult.rows[row][1]]||[];
-              if ( memsLTs.indexOf(batchResult.rows[row][4]) == -1 ) {
-                // Did not find this LastTouched in this member's array of already-added LastTouched values
-                if ( batchResult.rows[row][11] == 0 ) batchResult.rows[row][11] = 1480307602000; // get rid of NaN in future db queries
-                kept.push(batchResult.rows[row])
-                if ( memsLTs.length == 0 ) {
-                  ltMap[batchResult.rows[row][1]]=[batchResult.rows[row][4]];
-                } else {
-                  ltMap[batchResult.rows[row][1]].push(batchResult.rows[row][4]);
-                }
-              }
-            }
-            records = [].concat(records, kept);
-            // Avoid exceeding API rate limits (30 / min and 5 / sec)
-            var elapsedMillis = new Date().getTime() - batchStartTime;
-            if ( totalQueries > 29 && elapsedMillis < 1000) {
-              Utilities.sleep(1001-elapsedMillis);
-            } else if ( elapsedMillis < 200 ) {
-              Utilities.sleep(201-elapsedMillis);
-            }
-          }
-          catch(e){
-            Logger.log(e);
-            throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
-          }
-        }
-        if ( records.length === uniqueRowCount ) {
-          doReplace_(ftid, records)
-        }
-      }
-    } else {
-      Logger.log('Cannot trim out any records - only have uniques left!');
-    }
-  }
-}
 /**
  * function getDbSize           Determines the size of the database by extrapolating
  *                              from the size of the first row, and reports the result
@@ -669,62 +571,6 @@ function getMostRecentRecord_(memUID){
   }
 }
 /**
- * function identifyDiffSeenAndRankRecords_   For the given members, returns the ROWIDs of all records 
- *                                            that have different LastSeen or Ranks. All other records
- *                                            do not have "interesting" data that is not already on 
- *                                            these records.
- * @param {String} memUIDs                    The members to query for
- * @return {Array}                            The ROWIDs of these members interesting records
- */
-function identifyDiffSeenAndRankRecords_(memUIDs){
-  var rowidArray = [];
-  memUIDs.reverse();
-  // Need to loop over memUIDs in case too many were given
-  while ( memUIDs.length > 0 ) {
-    var sql = '', sqlUIDs = []
-    while (( sql.length <= 8000 ) && ( memUIDs.length > 0 )) {
-      sqlUIDs.push(memUIDs.pop());
-      sql = "SELECT ROWID, Member, UID, LastSeen, Rank FROM "+ftid+" WHERE UID IN ("+sqlUIDs.join(",")+") ORDER BY LastSeen ASC";
-    }
-    var resp = FusionTables.Query.sqlGet(sql);
-    if ( typeof resp.rows == 'undefined' ) {
-      throw new Error('Unable to reach FusionTables');
-    } else {
-      var lsMap = {}; var rankMap = {};
-      var keptArray = [];
-      var nRecords = resp.rows.length;
-      for (var row=0;row<nRecords;row++){
-        var data = resp.rows[row];
-        var memLSs = lsMap[data[2]]||[];
-        var memRanks = rankMap[data[2]]||[];
-        if (( memLSs.indexOf(data[3]) === -1 ) ||        // New LastSeen
-            ( memRanks.indexOf(data[4]) === -1 )) {      // OR new Rank
-          // Store the ROWID, and add the LastSeen and Rank to the uid objects
-          keptArray.push(data[0]);
-          if ( memLSs.length === 0 ) {
-            lsMap[data[2]]=[data[3]];
-          } else {
-            lsMap[data[2]].push(data[3]);
-          }
-          if ( memRanks.length === 0 ) {
-            rankMap[data[2]]=[data[4]];
-          } else {
-            rankMap[data[2]].push(data[4]);
-          }
-        } else {
-          // Already stored a ROWID that has either this LastSeen date or this Rank for this member
-        }
-      }
-      rowidArray = [].concat(rowidArray,keptArray);
-    }
-  }
-  if ( rowidArray.length > 0 ) {
-    return rowidArray;
-  } else {
-    return [];
-  }
-}
-/**
  * function retrieveWholeRecords_    Queries to retrieve the specified ROWIDs. Will query at most once per 750ms.
  * @param {String[]} rowidArray      A 1D array of String rowids to retrieve (can be very large)
  * @param {String} tblID             The FusionTable which is to be queried 
@@ -765,41 +611,6 @@ function retrieveWholeRecords_(rowidArray,tblID){
     throw new Error('Got different number of rows than desired')
   }
   return [];
-}
-/**
- * function keepInterestingRecords 
- */
-function keepInterestingRecords_(){
-  var startTime = new Date().getTime();
-  var members = getUserBatch_(0, 100000);
-  var rowids = identifyDiffSeenAndRankRecords_(members.map(function(value,index){return value[1]}));
-  var totalRows = getTotalRowCount_(ftid);
-  var progress = {"saved":false,"errmsg":"","uploadSize":0};
-  if ( rowids.length === totalRows ) {
-    progress.errmsg = 'All records are interesting';
-    progress.saved = true;
-  } else if (rowids.length < totalRows ) {
-    if ( rowids.length == 0 ) {
-      progress.errmsg = 'No rowids returned';
-    } else { 
-      if (doBackupTable_() === false) {
-        progress.errmsg = "Couldn't back up existing table data";
-      } else {
-        var records = retrieveWholeRecords_(rowids,ftid);
-        if ( records.length === 0 ) {
-          progress.errmsg = 'No records returned from rowids';
-        } else {
-          progress = doReplace_(ftid, records)
-          if ( progress.saved === false) {
-            throw new Error(progress.errmsg);
-          }
-        }
-      }
-    }
-  } else {
-    throw new Error('More interesting records than records... How???');
-  }
-  return progress;
 }
 /**
  * function getTotalRowCount_  Gets the total number of rows in the supplied FusionTable
@@ -849,4 +660,22 @@ function doReplace_(tblID, records){
     catch(e){ progress.errmsg = e.message }
   }  
   return progress; 
+}
+/**
+ * function arrayTranspose Transposes the array if it is a 2D array, or throws an error if it is not
+ * @param {Array} oldArr   The array to be transposed
+ * @return {Array}         The transposed array
+ */
+function arrayTranspose_(oldArr){
+  if ( oldArr.constructor != Array ) { throw new TypeError('Array to transpose is not an array');};
+  if ( oldArr[0].constructor != Array ) { throw new TypeError('Array is 1D - not transposable');};
+  if ( oldArr[0][0].constructor === Array ) { throw new TypeError('Array has too many dimensions');};
+  var newArr = [];
+  for (var nr=0;nr<oldArr[0].length;nr++){
+    newArr[nr]=[];
+    for (var nc=0;nc<oldArr.length;nc++) {
+      newArr[nr][nc] = oldArr[nc][nr];
+    }
+  }
+  return newArr;
 }
