@@ -4,7 +4,9 @@
  *  crowns of all members can be updated in an automated fashion. These members are processed in chunks of up to 127 at a time
  *  (higher batch sizes overload the maximum URL length), with an unspecified number of batches processed per execution.  The
  *  script will update as many batches as it can without exceeding a specified execution time, in order to avoid triggering the
- *  Maximum Execution Time Exceeded error (at 300 seconds).
+ *  Maximum Execution Time Exceeded error (at 300 seconds). This specified execution time is kept low in order to avoid rapidly
+ *  filling the FusionTable with essentially duplicated data, but is high enough that the scoreboard updates multiple times per
+ *  day.
  *
  * Tracking Progress of Updates
  *
@@ -13,22 +15,22 @@
  *  only ever hold the same data as that used to construct the currently-visibile Scoreboard page, but sorted alphabetically.
  *  Whoever has set up the triggered events will likely receive daily emails about failed executions of the script, due to timeouts
  *  from Horntracker or Service Errors from Google (and maybe daily/hourly Quota overruns from FusionTables). If you wish to know
- *  the current status of the update, you can view the lastRan parameter via File -> Project Properties -> Project Properties
+ *  the current update cycle's status, you can view the lastRan parameter via File -> Project Properties -> Project Properties. 
+ *  If the same error repeatedly occurs and scoreboard updates seem to have ceased, it is best to contact the person who set it up.
  *
  * Forcing a Scoreboard Update
  *
  *  If you must update the scoreboard immediately, manually run the UpdateScoreboard function via "Run" -> "UpdateScoreboard" here,
  *  or use the 'Administration' tab on from the spreadsheet. Doing so will commit the current state of the member list to the
- *  scoreboard sheet. This will also reset the lastRan parameter, effectively restarting the update cycle. It may also trigger the
- *  FusionTable maintenance script, which trims out old or duplicated records from the crown database.
+ *  scoreboard sheet. 
  *
  * Forcing a Restart (Getting the database to restart crown updates instead of continuing)
  *
- *  This is easiest done by forcing a scoreboard update, but can also be achieved by editing the lastRan parameter. Click "File" ->
- *  "Project Properties" -> "Project Properties", and you should now see a table of fields and values.  Click the current value for
- *  lastRan (e.g. 2364) and replace it with 0.  Click "Save" to commit your change.
+ *  Click "File" -> "Project Properties" -> "Project Properties", and you should now see a table of fields and values.  Click the 
+ *  current value for lastRan (e.g. 2364) and replace it with 0.  Click "Save" or press "Enter" to commit your change.
  */
 var mhccSSkey = '1P8UDv4j2lPM0hAKw4EbBT_GtvlOgFYeARV16NzWA6pc';
+var crownDBnumColumns = 12;
 /**
  * function onOpen()      Sets up the admin's menu from the spreadsheet interface
  */
@@ -101,12 +103,21 @@ function UpdateDatabase() {
   var lastRan = props.lastRan*1;                                          // The last successfully updated member crown data record
   var dbKeys = getDbIndex_(db,numMembers);                                // map UIDs to their index in the db for fast 1:1 accessing
   var sheet = wb.getSheetByName('Members');
-  // Read in the MHCC tiers as a 13x3 array. If the MHCC tiers are moved, this getRange target MUST be updated!
+  // Read in the MHCC tiers as a 13x3 array. 
+  // If the MHCC tiers are moved, this getRange target MUST be updated!
   var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
-  if ( lastRan >= numMembers ) {
-    UpdateScoreboard();                                                   // Perform scoreboard update check / progress reset
-    PropertiesService.getScriptProperties().setProperty('lastRan', 0);    // Point the script back to the start
-    keepInterestingRecords_();                                            // Cleanse records that don't offer anything
+  if ( lastRan > numMembers*3 ) {
+    // Trim out records that don't offer different information
+    var progress = keepInterestingRecords_();
+    if ( progress.saved === true ) {           // Resume update fetching
+      PropertiesService.getScriptProperties().setProperty('lastRan', 0);
+    } else {
+      throw new Error('keepInterestingRecords failed: '+progress.errmsg);
+    }
+  } else if (lastRan >= numMembers) {
+    // Perform scoreboard update & set next trigger to perform record maintenance
+    UpdateScoreboard();
+    PropertiesService.getScriptProperties().setProperty('lastRan', numMembers*4);    // Next execution is maintenance
   } else {
     // Grab a subset of the alphabetized member record
     var lock = LockService.getScriptLock();
@@ -116,7 +127,7 @@ function UpdateDatabase() {
       var allMembers = getUserBatch_(0,numMembers*1);                   // allMembers is an array of [Name, UID]
       var mem2Update = [];
       // Loop over remaining members in sets of batchSize. Stop looping when out of members or >90s of runtime.
-      while ( ((new Date().getTime() - startTime)/1000 < 90) && (lastRan < numMembers) ) {
+      while ( ((new Date().getTime() - startTime)/1000 < 100) && (lastRan < numMembers) ) {
         var batchHunters = allMembers.slice(lastRan,lastRan-0+batchSize-0);
         var urlIDs = [];
         for (var i=0;i<batchHunters.length;i++ ) {
@@ -128,8 +139,9 @@ function UpdateDatabase() {
         }
         // Have built the ID string, now query HT's MostMice.php
         var htResponse = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters='+urlIDs.join(','));
-        if ( htResponse.getResponseCode() != 200 ) {
-          Logger.log('Aborting further updates due to HornTracker downtime');
+        if ( (htResponse.getResponseCode() != 200) || 
+            (htResponse.getContentText().toLowerCase().indexOf("unexpected error") > -1) ){
+          Logger.log('Aborting further updates due to HornTracker downtime or "unexpected errors"');
           break;
         } else {
           var MM = JSON.parse(htResponse.getContentText());
@@ -141,7 +153,7 @@ function UpdateDatabase() {
             if ( typeof dbRow == 'undefined' ) {
               // Should have found a row, but didn't. Explicitly request this member's update
               var record = getMostRecentRecord_(batchHunters[i][1]);
-              if ( record.length == 12 ) {
+              if ( record.length == crownDBnumColumns ) {
                 // Add to SheetDb
                 wb.getSheetByName('SheetDb').appendRow(record);
                 // Reindex rows
