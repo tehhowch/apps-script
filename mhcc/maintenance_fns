@@ -329,14 +329,15 @@ function keepOnlyUniqueRecords(){
       } else {
         var batchSize = 190, records = [], batchResult = [], nReturned = 0, nRows = 0, rowidArray = [];
         var totalQueries = 1+Math.ceil(uniqueRowCount/batchSize);
+        var st = new Date().getTime();
         while ( uniqueRowList.rows.length > 0) {
           var lsArray = [], uidArray = [], rtArray = [], ltArray = [], batchStartTime = new Date().getTime();
           // Construct UID and LastSeen and RankTime arrays to be able to query the ROWID values
           var sql = '';
-          while ( (sql.length <= 8000) && (uniqueRowList.rows.length > 0) ) {
+          while ( (sql.length <= 8010) && (uniqueRowList.rows.length > 0) ) {
             var row = uniqueRowList.rows.pop();
             uidArray.push(row[0]); lsArray.push(row[1]); rtArray.push(row[2]); ltArray.push(row[3]);
-            sql = "SELECT ROWID, Member FROM "+ftid+" WHERE LastSeen IN ("+lsArray.join(",")+") AND UID IN ("+uidArray.join(",")+") AND RankTime IN ("+rtArray.join(",")+") AND LastTouched IN ("+ltArray.join(",")+") ORDER BY Member ASC";
+            sql = "SELECT ROWID FROM "+ftid+" WHERE LastSeen IN ("+lsArray.join(",")+") AND UID IN ("+uidArray.join(",")+") AND RankTime IN ("+rtArray.join(",")+") AND LastTouched IN ("+ltArray.join(",")+")";
           }
           // Query for the corresponding ROWIDs
           try {
@@ -345,8 +346,8 @@ function keepOnlyUniqueRecords(){
             rowidArray = [].concat(rowidArray, rowIDresult.rows);
             // Avoid exceeding API rate limits (200 / 100 sec and 5 / sec)
             var elapsedMillis = new Date().getTime() - batchStartTime;
-            if ( totalQueries > 29 && elapsedMillis < 1000) {
-              Utilities.sleep(1001-elapsedMillis);
+            if ( totalQueries > 190 && elapsedMillis < 600) {
+              Utilities.sleep(601-elapsedMillis);
             } else if ( elapsedMillis < 200 ) {
               Utilities.sleep(201-elapsedMillis);
             }
@@ -356,6 +357,8 @@ function keepOnlyUniqueRecords(){
             throw new Error('Gathering ROWIDs failed');
           }
         }
+        Logger.log('Get ROWIDs: '+(new Date().getTime() - st)+' millis');
+        st = new Date().getTime()
         // Duplicated records have same LastTouched value
         // Build an {mem:[lt]} object and check against it (since members aren't returned alphabetically)
         var ltMap = {};
@@ -363,7 +366,7 @@ function keepOnlyUniqueRecords(){
           sql = '';
           var sqlRowIDs = [], batchStartTime = new Date().getTime();
           // Construct ROWID query sql from the list of unique ROWIDs
-          while ( (sql.length <= 8000) && (rowidArray.length > 0) ){
+          while ( (sql.length <= 8050) && (rowidArray.length > 0) ){
             var rowid = rowidArray.pop();
             sqlRowIDs.push(rowid[0])
             sql = "SELECT * FROM "+ftid+" WHERE ROWID IN ("+sqlRowIDs.join(",")+")";
@@ -376,7 +379,7 @@ function keepOnlyUniqueRecords(){
               var memsLTs = ltMap[batchResult.rows[row][1]]||[];
               if ( memsLTs.indexOf(batchResult.rows[row][4]) == -1 ) {
                 // Did not find this LastTouched in this member's array of already-added LastTouched values
-                if ( batchResult.rows[row][11] == 0 ) batchResult.rows[row][11] = 1480307602000; // get rid of NaN in future db queries
+//                if ( batchResult.rows[row][11] == 1480307602000 ) batchResult.rows[row][11] = batchResult.rows[row][2];
                 kept.push(batchResult.rows[row])
                 if ( memsLTs.length == 0 ) {
                   ltMap[batchResult.rows[row][1]]=[batchResult.rows[row][4]];
@@ -388,8 +391,8 @@ function keepOnlyUniqueRecords(){
             records = [].concat(records, kept);
             // Avoid exceeding API rate limits (30 / min and 5 / sec)
             var elapsedMillis = new Date().getTime() - batchStartTime;
-            if ( totalQueries > 29 && elapsedMillis < 1000) {
-              Utilities.sleep(1001-elapsedMillis);
+            if ( totalQueries > 190 && elapsedMillis < 600) {
+              Utilities.sleep(601-elapsedMillis);
             } else if ( elapsedMillis < 200 ) {
               Utilities.sleep(201-elapsedMillis);
             }
@@ -399,9 +402,12 @@ function keepOnlyUniqueRecords(){
             throw new Error('Batchsize likely too large. SQL length was ='+sql.length);
           }
         }
+        Logger.log('Get Row Data: '+(new Date().getTime() - st)+' millis');
+        st = new Date().getTime();
         if ( records.length === uniqueRowCount ) {
           doReplace_(ftid, records)
         }
+        Logger.log('Upload data: '+(new Date().getTime() - st)+' millis');
       }
     } else {
       Logger.log('Cannot trim out any records - only have uniques left!');
