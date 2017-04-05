@@ -259,7 +259,7 @@ function keepInterestingRecords_(){
  *                                            that have different LastSeen or Ranks. All other records
  *                                            do not have "interesting" data that is not already on 
  *                                            these records.
- * @param {String} memUIDs                    The members to query for
+ * @param {String[]} memUIDs                    The members to query for
  * @return {Array}                            The ROWIDs of these members interesting records
  */
 function identifyDiffSeenAndRankRecords_(memUIDs){
@@ -309,6 +309,130 @@ function identifyDiffSeenAndRankRecords_(memUIDs){
   } else {
     return [];
   }
+}
+/**
+ * function doBookending    This maintenance method will drastically reduce the database size if a significant
+ *                          portion of the members are infrequently seen while a much smaller group that is 
+ *                          evenly distributed throughout the ranking is considerably more active (as is expected).
+ *                          Only records which demarcate crown changes are kept. Within a crown change date, two 
+ *                          records are kept per rank attained, as the rank can only worsen until the player gains 
+ *                          a new crown change date.
+ */
+function doBookending(){
+  var members = getUserBatch_(0, 100000), startTime = new Date().getTime();
+  var rowids = identifyBookendRowids_(members.map(function(value,index){return value[1]}));
+  var totalRowCount = getTotalRowCount_(ftid);
+  Logger.log('Current non-bookend count: '+(totalRowCount-rowids.length)+' out of '+totalRowCount+' rows');
+  var progress = {"saved":false,"errmsg":"","uploadSize":0};
+  if ( rowids.length === totalRowCount ) {
+    progress.errmsg = 'All records are bookends';
+    progress.saved = true;
+  } else if (rowids.length < totalRowCount ) {
+    if ( rowids.length == 0 ) {
+      progress.errmsg = 'No rowids returned';
+    } else { 
+      if (doBackupTable_() === false) {
+        progress.errmsg = "Couldn't back up existing table data";
+      } else {
+        var records = retrieveWholeRecords_(rowids,ftid);
+        if ( records.length === 0 ) {
+          progress.errmsg = 'No records returned from rowids';
+        } else {
+          progress = doReplace_(ftid, records)
+          if ( progress.saved === false) {
+            throw new Error(progress.errmsg);
+          }
+        }
+      }
+    }
+  } else {
+    throw new Error('More bookending records than records... How???');
+  }
+  Logger.log('doBookending: '+((new Date().getTime() - startTime)/1000) +' sec');
+  return progress;
+}
+/**
+ * function identifyBookendRowids_   For the given members, returns the ROWID array containing each
+ *                                   members records that describe 
+ *                                     1) every instance of a rank change
+ *                                     2) every instance of a crown change
+ *                                   If a user is newly seen but didn't get any new crowns, we no 
+ *                                   longer need any other records for that user having the same crown
+ *                                   change date except for the first one. E.g, keep the first and last
+ *                                   instance of each crown change and rank date 
+ * @param {String[]} memUIDs         The members to query for
+ * @return {Array}                   The ROWIDs of these members' bookending records
+ */
+function identifyBookendRowids_(memUIDs){
+  if ( memUIDs.constructor !== Array ) { throw new TypeError('Expected input to be type Array') };
+  if ( typeof memUIDs[0] !== 'string' ) { throw new TypeError('Expected input array to contain strings') };
+  
+  var startTime = new Date().getTime(), resultArr = []
+  while ( memUIDs.length > 0 ) {
+    var sql = '', sqlUIDs = [], batchTime = new Date().getTime();
+    while (( sql.length <= 8050 ) && ( memUIDs.length > 0 )) {
+      sqlUIDs.push(memUIDs.pop());
+      sql = "SELECT UID, LastCrown, ROWID, LastSeen, Rank FROM "+ftid+" WHERE UID IN ("+sqlUIDs.join(",")+") ORDER BY LastCrown ASC";
+    }
+    var resp = FusionTables.Query.sqlGet(sql);
+    if ( typeof resp.rows == 'undefined' ) {
+      throw new Error('Unable to reach FusionTables');
+    } else {
+      resultArr = [].concat(resultArr,resp.rows);
+      var elapsedMillis = new Date().getTime()-batchTime;
+      if ( elapsedMillis < 600 ) Utilities.sleep(601-elapsedMillis);
+    }
+  }
+  // Categorize the large resultArr
+  var lcMap = {};
+  for (var row=0;row<resultArr.length;row++){
+    var data = resultArr[row], usedRow = '';
+    // Have we seen this member yet?
+    if ( typeof lcMap[data[0]] === 'undefined' ) lcMap[data[0]] = {'lc':{},'numOrig':1,'numDrop':0};
+    // Have we seen this member's crown change date before?
+    if ( typeof lcMap[data[0]].lc[data[1]] === 'undefined' ) {
+      // No, so create a new object array describing when it was first and last seen, and associated ranks
+      lcMap[data[0]].lc[data[1]] = {"minLS":{"val":data[3],"rowid":data[2]},
+                                    "maxLS":{"val":data[3],"rowid":data[2]},
+                                    'minRank':{'val':data[4],'rowid':data[2]},
+                                    'maxRank':{'val':data[4],'rowid':data[2]}
+                                   }
+    } else {
+      // Yes, compare vs existing data
+      lcMap[data[0]].numOrig++;
+      if ( data[3] < lcMap[data[0]].lc[data[1]].minLS.val ) {
+        // This row has the same crown change date, but occurred before the stored min value. Replace the stored LastSeen
+        lcMap[data[0]].lc[data[1]].minLS = {"val":data[3],"rowid":data[2]};
+      } else if ( data[3] > lcMap[data[0]].lc[data[1]].maxLS.val ) {
+        // This row has the same crown change date, but occurred after the stored max value. Replace the stored LastSeen
+        lcMap[data[0]].lc[data[1]].maxLS = {"val":data[3],"rowid":data[2]};
+      } else {
+        usedRow = false;
+      }
+      if ( data[4] < lcMap[data[0]].lc[data[1]].minRank.val ) {
+        // Same crown change date, but lower rank than the stored min rank. Updated stored rank.
+        lcMap[data[0]].lc[data[1]].minRank = {'val':data[4],'rowid':data[2]};
+      } else if ( data[4] > lcMap[data[0]].lc[data[1]].maxRank.val ) {
+        // Same crown change date, but higher rank than the stored max rank. Updated stored rank.
+        lcMap[data[0]].lc[data[1]].maxRank = {'val':data[4],'rowid':data[2]};
+      } else {
+        if ( usedRow === '' ) usedRow = false;
+      }
+      if (usedRow === false) lcMap[data[0]].numDrop++;
+    }
+  }
+  // Push the needed rowids
+  var keptRowids = []
+  for (var mem in lcMap) {
+    for (var lc in lcMap[mem].lc) {
+      if ( keptRowids.indexOf(lcMap[mem].lc[lc].minLS.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].minLS.rowid);
+      if ( keptRowids.indexOf(lcMap[mem].lc[lc].maxLS.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].maxLS.rowid);
+      if ( keptRowids.indexOf(lcMap[mem].lc[lc].minRank.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].minRank.rowid);
+      if ( keptRowids.indexOf(lcMap[mem].lc[lc].maxRank.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].maxRank.rowid);
+    }
+  }
+  Logger.log((new Date().getTime()-startTime)/1000 + ' sec to find bookend ROWIDs');
+  return keptRowids.sort();   
 }
 /** 
  * function keepOnlyUniqueRecords          Removes all non-unique records in the crown database. 
