@@ -39,7 +39,7 @@ function onOpen(){
                                                                    {name:"Delete Members",functionName:"delFusionMember"},
                                                                    {name:"Refresh Scoreboard",functionName:"UpdateScoreboard"},
                                                                    {name:"Perform Crown Update",functionName:"UpdateDatabase"},
-                                                                   {name:"Perform RecordCount Maintenance",functionName:"doRecordsMaintenance"},
+                                                                   {name:"Perform RecordCount Maintenance",functionName:"doBookending"},
                                                                    {name:"Database Size",functionName:"getDbSize"}]);
 }
 /**
