@@ -201,10 +201,17 @@ function addFusionMember(){
   if (mem2Add.length > 0) {
     var props = PropertiesService.getScriptProperties().getProperties();
     var lastRan = props.lastRan*1||0;
-    var origUID = getUserBatch_(lastRan,1);
-    origUID = origUID[0][1];
-    var n = addMember2Fusion_(mem2Add);
-    lastRan = getNewLastRanValue_(origUID,lastRan,mem2Add);
+    if ( lastRan >= curUIDs.length ) {
+      // We've already updated everyone in this cycle
+      var n = addMember2Fusion_(mem2Add);
+      lastRan += n*1;
+    } else {
+      // We may be adding the member in the middle of a cycle
+      var origUID = getUserBatch_(lastRan,1);
+      origUID = origUID[0][1];
+      var n = addMember2Fusion_(mem2Add);
+      lastRan = getNewLastRanValue_(origUID,lastRan,mem2Add);
+    }
     SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added "+n.toString()+" new member(s) to the MHCC Member Crown Database","Success!",5);
     PropertiesService.getScriptProperties().setProperties({'numMembers':curUIDs.length.toString(),'lastRan':lastRan.toString()});
   }
@@ -251,10 +258,16 @@ function delFusionMember(){
   if (mem2Del.length > 0) {
     var props = PropertiesService.getScriptProperties().getProperties();
     var lastRan = props.lastRan*1||0;
-    var origUID = getUserBatch_(lastRan,1);
-    origUID = origUID[0][1];
-    var delMemberArray = delMember_(mem2Del,startTime);
-    lastRan = getNewLastRanValue_(origUID,lastRan,delMemberArray);
+    if ( lastRan >= curUIDs.length ) {
+      // We've already updated everyone in this cycle
+      var delMemberArray = delMember_(mem2Del,startTime);
+    } else {
+      // We may be removing the member in the middle of a cycle
+      var origUID = getUserBatch_(lastRan,1);
+      origUID = origUID[0][1];
+      var delMemberArray = delMember_(mem2Del,startTime);
+      lastRan = getNewLastRanValue_(origUID,lastRan,delMemberArray);
+    }
     PropertiesService.getScriptProperties().setProperties({'numMembers':(curUIDs.length-delMemberArray.length).toString(),'lastRan':lastRan.toString()});
   }
 }
