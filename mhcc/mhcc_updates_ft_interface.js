@@ -31,7 +31,7 @@ function getDbIndex_(db,numMembers){
   }
   if ( (Object.keys(output).length < numMembers*1) && (db.length === numMembers*1) ){
     // If there are fewer unique rows on SheetDb than numMembers, we might just be missing rows.
-    // But if there are exactly as many total rows on SheetDb as numMembers  
+    // But if there are exactly as many total rows on SheetDb as numMembers
     throw new Error('Unique ID failed to be unique when indexing SheetDb by UID');
   }
   return output;
@@ -96,7 +96,7 @@ function getLatestRows_(nMembers){
 /**
  * function getUserHistory_   Querys the crown data snapshots for the given user and returns their crown
  *                            counts as a function of when they were seen by Horntracker's MostMice.
- * @param  {String} UID       The user id(s) of specific member(s) for which the crown data snapshots are returned. If 
+ * @param  {String} UID       The user id(s) of specific member(s) for which the crown data snapshots are returned. If
  *                            multiple members are queried, this should be a string of comma-separated UIDs.
  * @param  {Boolean} blGroup  Optional parameter indicating whether to perform GROUP BY queries or return all records
  * @return {Object}           An object containing "user" (member's name), "headers" (the data headers), and "dataset" (the data) for the member
@@ -106,7 +106,7 @@ function getUserHistory_(UID,blGroup){
   if (UID == '') { throw new Error('No UID provided')}
   if (blGroup == true) {
     sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, MINIMUM(RankTime) FROM "+ftid+" WHERE UID IN ("+UID.toString()+") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
-  } else { 
+  } else {
     // blGroup not given, or false
     sql = "SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, RankTime FROM "+ftid+" WHERE UID IN ("+UID.toString()+") ORDER BY LastSeen ASC";
   }
@@ -145,7 +145,7 @@ function ftBatchWrite_(hdata){
         Logger.log(row+", data: "+hdata[row].toString());
       }
     }
-    throw new Error('Unable to upload rows');
+    throw new Error('Unable to upload rows: '+e.message);
   }
 }
 /**
@@ -306,7 +306,7 @@ function getMemberUID2AddorDel_(memberName){
 /**
  * function addMember2Fusion_   Inserts the given members into the Members database. Duplicate member checking is
  *                              handled in addFusionMember(). Users are added by assembling into a CSV format and
- *                              then passing to Table.importRows. To prevent errors in UpdateDatabase, the added 
+ *                              then passing to Table.importRows. To prevent errors in UpdateDatabase, the added
  *                              members are also pushed to SheetDb to guarantee a dbKeys reference will exist
  * @param {Array[][]} memList   Two-column array of the members' names and the corresponding UIDs.
  * @return {Integer}            The number of rows that were added to the Members database
@@ -467,7 +467,7 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
         } else {
           // Tough case here: we lost the exact point of reference needed for determining if deletions were before or after
           // where we've updated.
-          
+
           // shortcut assumption, to be changed at a later date
           newLastRan = origLastRan
         /*
@@ -537,7 +537,7 @@ function getDbSize(){
   }
 }
 /**
- * function doBackupTable_      Ensure that a copy of the database exists prior to 
+ * function doBackupTable_      Ensure that a copy of the database exists prior to
  *                              performing some major update, such as attempting to
  *                              remove all non-unique rows
  */
@@ -562,7 +562,7 @@ function doBackupTable_(){
   }
   return false;
 }
-/** 
+/**
  * function getMostRecentRecord_  Called when UpdateDatabase has no stored information about a member.
  *                                Queries the crown database for the input member and returns the record
  * @param {String} memUID         The UID of the member who needs a record
@@ -586,7 +586,7 @@ function getMostRecentRecord_(memUID){
 /**
  * function retrieveWholeRecords_    Queries to retrieve the specified ROWIDs. Will query at most once per 750ms.
  * @param {String[]} rowidArray      A 1D array of String rowids to retrieve (can be very large)
- * @param {String} tblID             The FusionTable which is to be queried 
+ * @param {String} tblID             The FusionTable which is to be queried
  * @return {Array}                   A 2D array of the specified records, or []
  */
 function retrieveWholeRecords_(rowidArray,tblID){
@@ -643,11 +643,11 @@ function getTotalRowCount_(tblID){
   return totalRowCount;
 }
 /**
- * function doReplace_      Replaces the contents of the specified FusionTable with the 
+ * function doReplace_      Replaces the contents of the specified FusionTable with the
  *                          input array after sorting on its first element
  * @param {String} tblID    The table whose contents will be replaced
  * @param {Array} records   The new contents of the specified table
- * @return {Object}         Object indicating if the replace was successful, and the 
+ * @return {Object}         Object indicating if the replace was successful, and the
  *                          error message if it was not
  */
 function doReplace_(tblID, records){
@@ -671,8 +671,8 @@ function doReplace_(tblID, records){
       progress.saved = true;
     }
     catch(e){ progress.errmsg = e.message }
-  }  
-  return progress; 
+  }
+  return progress;
 }
 /**
  * function arrayTranspose Transposes the array if it is a 2D array, or throws an error if it is not
