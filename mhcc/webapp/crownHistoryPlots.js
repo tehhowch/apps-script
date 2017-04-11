@@ -4,9 +4,9 @@
  * publink (v4): https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec
  */
 /*
- * function doGet     Runs when the script app link is visited via HTTP GET
+ * function doGet     Runs when the script app link is clicked
  * @param {Object} e  Object containing various properties. Each link will have at least one parameter labeled uid
- *                    which is stored in e.parameter (first only) or e.parameters (array of parameters)
+ *                    which is stored in e.parameter
  *                    {parameter={}, contextPath=, contentLength=-1, queryString=null, parameters={[]}}
  * @return {webpage}  Returns a webpage described by assembling the various .html files
  */
