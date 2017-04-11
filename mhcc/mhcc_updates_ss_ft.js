@@ -154,7 +154,7 @@ hunterBatchLoop:
             break;
             default:
               // Unknown new error: total abort
-              throw new Error(e);
+              throw new Error('htr:'+htResponse.getContentText()+' errmsg:'+e.message);
           }
         }
         // Loop over our member subset batchHunters and parse the corresponding MM entry
