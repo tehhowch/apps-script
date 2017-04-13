@@ -141,8 +141,10 @@ hunterBatchLoop:
         // Attempt to retrieve a JSON object from HornTracker
         try {
           var htResponse = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters='+urlIDs.join(','));
+          if ( htResponse === undefined ) throw new Error('Undefined Response');
           if ( htResponse.getResponseCode() != 200 ) throw new Error('HornTracker Unavailable');
           if ( htResponse.getContentText().toLowerCase().indexOf('unexpected error') > -1 ) throw new Error('Unexpected HornTracker Error');
+          if ( htResponse.getContentText().length == 0 ) throw new Error('Empty Content Text');
           var MM = JSON.parse(htResponse.getContentText());
         }
         catch(e) {
@@ -150,6 +152,8 @@ hunterBatchLoop:
           switch ( e.message ){
             case "HornTracker Unavailable":
             case "Unexpected HornTracker Error":
+            case "Empty Content Text":
+            case "Undefined Response":
               break hunterBatchLoop;
             break;
             default:
