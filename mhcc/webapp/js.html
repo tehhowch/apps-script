@@ -57,8 +57,11 @@
                        vAxis:{title:'Rank',direction:-1,minValue:1, logScale:false},
                        explorer: {axis:'horizontal'}
                       }
-      var rankDelta = input.rankHistory[input.rankHistory.length-1][1] - input.rankHistory[1][1];
-      if ( rankDelta >= 1000 ) {rhOptions.vAxis.logScale = true};
+      var rankDelta = Math.abs(input.rankHistory[input.rankHistory.length-1][1] - input.rankHistory[1][1]);
+      if ( rankDelta >= 1000 ) {
+          rhOptions.vAxis.logScale = true;
+          rhOptions.vAxis.minValue=Math.round(input.rankHistory[input.rankHistory.length-1][1]/10);
+      }
       rhWrapper = new google.visualization.ChartWrapper({
                                 containerId:'rankHistory',
                                 chartType:'LineChart',
@@ -68,7 +71,7 @@
       rhWrapper.draw();
 
     } else {
-      Logger.log(input)
+      console.log(input)
     }
   }
 

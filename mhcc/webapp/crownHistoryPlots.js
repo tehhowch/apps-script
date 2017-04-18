@@ -13,7 +13,7 @@
 function doGet(e){
   var pg = HtmlService.createTemplateFromFile('userHistory');
   pg.webAppUID = e.parameter.uid;
-  return pg.evaluate().setTitle('MHCC Crown History').setFaviconUrl('http://i.imgur.com/QMghA1l.png');
+  return pg.evaluate().setTitle('MHCC Crown History').setFaviconUrl('https://i.imgur.com/QMghA1l.png');
 }
 /*
  * function loadUserData    gets the crown and rank data from FusionTables for use by the webapp's plotters
