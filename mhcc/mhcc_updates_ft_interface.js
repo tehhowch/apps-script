@@ -321,7 +321,7 @@ function addMember2Fusion_(memList){
     while (memList.length > 0) {
       var user = memList.pop();
       memCsv.push(user);
-      crownCsv.push([].concat(user,0,rt.getTime(),new Date().getTime(),0,0,0,0,newRank,"Weasel",rt.getTime()));
+      crownCsv.push([].concat(user,rt.getTime()-5000000000,rt.getTime(),new Date().getTime(),0,0,0,0,newRank,"Weasel",rt.getTime()));
       Utilities.sleep(1);
     }
     try {

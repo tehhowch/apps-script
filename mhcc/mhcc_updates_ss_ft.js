@@ -128,7 +128,7 @@ function UpdateDatabase() {
       var mem2Update = [];
       // Loop over remaining members in sets of batchSize. Stop looping when out of members or >90s of runtime.
 hunterBatchLoop:
-      while ( ((new Date().getTime() - startTime)/1000 < 100) && (lastRan < numMembers) ) {
+      while ( ((new Date().getTime() - startTime)/1000 < 150) && (lastRan < numMembers) ) {
         var batchHunters = allMembers.slice(lastRan,lastRan-0+batchSize-0);
         var urlIDs = [];
         for (var i=0;i<batchHunters.length;i++ ) {
@@ -141,7 +141,7 @@ hunterBatchLoop:
         // Attempt to retrieve a JSON object from HornTracker
         try {
           var htResponse = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters='+urlIDs.join(','));
-          if ( htResponse === undefined ) throw new Error('Undefined Response');
+          if ( htResponse == 'undefined' ) throw new Error('Undefined Response');
           if ( htResponse.getResponseCode() != 200 ) throw new Error('HornTracker Unavailable');
           if ( htResponse.getContentText().toLowerCase().indexOf('unexpected error') > -1 ) throw new Error('Unexpected HornTracker Error');
           if ( htResponse.getContentText().length == 0 ) throw new Error('Empty Content Text');
