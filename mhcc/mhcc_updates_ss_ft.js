@@ -144,6 +144,7 @@ hunterBatchLoop:
           if ( htResponse == 'undefined' ) throw new Error('Undefined Response');
           if ( htResponse.getResponseCode() != 200 ) throw new Error('HornTracker Unavailable');
           if ( htResponse.getContentText().toLowerCase().indexOf('unexpected error') > -1 ) throw new Error('Unexpected HornTracker Error');
+          if ( htResponse.getContentText().toLowerCase().indexOf('connect to mysql') > -1 ) throw new Error('Unexpected HornTracker Error');
           if ( htResponse.getContentText().length == 0 ) throw new Error('Empty Content Text');
           var MM = JSON.parse(htResponse.getContentText());
         }
@@ -158,7 +159,7 @@ hunterBatchLoop:
             break;
             default:
               // Unknown new error: total abort
-              throw new Error('htr:'+htResponse.getContentText()+' errmsg:'+e.message);
+              throw new Error('errmsg:'+e.message+' htr:'+htResponse.getContentText());
           }
         }
         // Loop over our member subset batchHunters and parse the corresponding MM entry
