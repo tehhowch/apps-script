@@ -1,3 +1,7 @@
+/**
+* @OnlyCurrentDoc
+*/
+// written by z3nithor, world 747
 // S-ATK effects
 function do_satk_effects(attacker, fleet, primus) {
   attacker.accumulator = attacker.SATKReset;
