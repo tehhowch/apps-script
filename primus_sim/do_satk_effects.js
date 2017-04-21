@@ -2,282 +2,309 @@
 * @OnlyCurrentDoc
 */
 // written by z3nithor, world 747
-// S-ATK effects
-function do_satk_effects(attacker, fleet, primus) {
+/**
+ * function DoSpecialSATK_Effects_  Allow extra effects/conditions to be activated other than simple damage, poison damage, or lock/freeze effects
+ *                                  Operates on the global variables fleet, primus
+ * @param  {Object} attacker        A pointer to the fleet[ship] object whose effects which require activating
+ */
+function DoSpecialSATK_Effects_( attacker) {
   attacker.accumulator = attacker.SATKReset;
   switch (attacker.name.toLowerCase()) {
     case "frost jr":
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost.toString());
+      // Increment a random ship's accumulator by 30 (if it is alive)
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-      fleet[acBoostChoices[acBoostRoll]].accumulator+=30;
+      var rndRoll = Math.floor(Math.random()*choices.length);
+      fleet[choices[rndRoll]].accumulator += 30;
       break;
     case "cabal":
-      // self-invisibility for 2 effective rounds (takes effect after firing)
+      // Self-invisibility & 2x 20% Dodge increases
+      // Cabal's iself-nvisibility lasts one round longer than Alfred's, as it takes effect after firing
       attacker.invis.isInvisible = true;
       attacker.invis.from = "cabal";
       attacker.invis.turnsLeft = 2;
-      // Assign 2x 20% dodge boosts
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost);
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      var nRolls = Math.min(2,acBoostChoices.length);
-      for (var i = 0;i<nRolls;i++) {
-        var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-        var acBoost = acBoostChoices.splice(acBoostRoll,1)[0];
-        fleet[acBoost].boostFromSatk.dodge.temp = 20;
-        fleet[acBoost].boostFromSatk.dodge.tempTurns = 1;
-      }
-      break;
-    case "dark carter": 		// +35 accum to fleet
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) fleet[acBoost].accumulator+=35;
+      var nRolls = Math.min(2,choices.length);
+      for (var i=0;i<nRolls;i++) {
+        var rndRoll = Math.floor(Math.random()*choices.length);
+        var selection = choices.splice(rndRoll,1)[0];
+        fleet[selection].boostFromSatk.dodge.temp = 20;
+        fleet[selection].boostFromSatk.dodge.tempTurns = 1;
       }
       break;
-    case "opal":				// +10% dodge to fleet
-      for (var acBoost in fleet) {
-        fleet[acBoost].boostFromSatk.dodge.temp = 10;
-        fleet[acBoost].boostFromSatk.dodge.tempTurns = 1;
+    case "dark carter":
+      // Increase fleet's Accumulator by 35
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) fleet[selection].accumulator += 35;
+      }
+      break;
+    case "opal":
+    	// Set fleet's Dodge bonus to 10%
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.dodge.temp = 10;
+        fleet[selection].boostFromSatk.dodge.tempTurns = 1;
       }
       break;
     case "akhenaton":
-      if (Math.random()*100<10) primus.damage[simNumber]=primus.damage[simNumber]-100000; // added a shield to Primus
-      for (var acBoost in fleet) {
-        switch (fleet[acBoost].name) {
+      // Set all other ships invisible, and maybe give Primus a 100,000 HP shield
+      if (Math.random()*100 < 10) primus.damage[simNumber] -= 100000;
+      for (var selection in fleet) {
+        switch (fleet[selection].name) {
+          // These ships cannot become invisible
           case "akhenaton":
           case "izolda":
+          case "raksha":
             break;
           default:
-            if (!(fleet[acBoost].isDead)) {
-              fleet[acBoost].invis.isInvisible = true;
-              fleet[acBoost].invis.from = "akhe";
-              fleet[acBoost].invis.turnsLeft = 1;
+            if (!(fleet[selection].isDead)) {
+              fleet[selection].invis.isInvisible = true;
+              fleet[selection].invis.from = "akhe";
+              fleet[selection].invis.turnsLeft = 1;
             }
             break;
         }
       }
       break;
     case "carter":
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) fleet[acBoost].accumulator+=50;
+      // Increase fleet's Accumulator by 50
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) fleet[selection].accumulator += 50;
       }
       break;
     case "cryptor":
+      // Give an invincibility buff to self, and the next-to-fire ship, that clears after 5 attacks
       attacker.stasis.isDeathProof = true;
       attacker.stasis.turnsLeft = 5;
-      if (attackerList.length > 1) { // is someone other than just cryptor present?
+      var attackerList = makeAttackOrder_( fleet, fleetMap, '');
+      if (attackerList.length > 1) {
         attackerList.reverse();
-        var acBoost = attackerList.pop();
-        if (acBoost == "cryptor") acBoost = attackerList.pop(); // cryptor was in s1
-        fleet[acBoost].stasis.isDeathProof = true;
-        fleet[acBoost].stasis.turnsLeft = 5;
-      } else {
-        // cryptor is the last alive, nothing to do
+        var selection = attackerList.pop();
+        if (selection == "cryptor") selection = attackerList.pop();
+        fleet[selection].stasis.isDeathProof = true;
+        fleet[selection].stasis.turnsLeft = 5;
       }
       break;
-    case "hunter": 				// 2x 2-turn +20% hitrate buffs
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost);
+    case "hunter":
+      // Set two ships' temporary Hit Rate bonus to 20% for 2 attacks
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      var nRolls = Math.min(2,acBoostChoices.length);
-      for (var i = 0;i<nRolls;i++) {
-        var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-        var acBoost = acBoostChoices.splice(acBoostRoll,1);
-        fleet[acBoost].boostFromSatk.hitRate.temp = 20;
-        fleet[acBoost].boostFromSatk.hitRate.tempTurns = 2;
+      var nRolls = Math.min(2,choices.length);
+      for (var i=0;i<nRolls;i++) {
+        var rndRoll = Math.floor(Math.random()*choices.length);
+        var selection = choices.splice(rndRoll,1);
+        fleet[selection].boostFromSatk.hitRate.temp = 20;
+        fleet[selection].boostFromSatk.hitRate.tempTurns = 2;
       }
       break;
-    case "quasimodo": 			// summon a ship
-      cParams.updateLists = true;
-      fleet['summonShip'].isDead=false;
+    case "quasimodo":
+      // Summon Duomilian to the fleet, in the first position not filled by a living ship
+      controlParams.updateLists = true;
+      fleet['summonShip'].isDead = false;
       fleet['summonShip'].accumulator = 0;
-      fleet['summonShip'].position = 0; // trigger insertion mode behavior
+      // Trigger insertion mode behavior of the positionMap function
+      fleet['summonShip'].position = 0;
       fleet['summonShip'].turnsLeft = 1;
       break;
-    case "darrien": 			// hit rate for all, block rate for 3
-      for (var acBoost in fleet) { 
-        if (!(fleet[acBoost].isDead)) {
-          fleet[acBoost].boostFromSatk.hitRate.temp = 100;
-          fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
+    case "darrien":
+      // Set fleet's temporary Hit Rate bonus to 100%, and temporary Block bonus to 100% for 3 ships, for 1 attack
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) {
+          fleet[selection].boostFromSatk.hitRate.temp = 100;
+          fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
+          choices.push(String(selection));
         }
       }
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost);
-      }
-      var nRolls = Math.min(3,acBoostChoices.length);
-      for (var i = 0;i<nRolls;i++) {
-        var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-        var acBoost = acBoostChoices.splice(acBoostRoll,1);
-        fleet[acBoost].boostFromSatk.block.temp = 100;
-        fleet[acBoost].boostFromSatk.block.tempTurns = 1;
+      var nRolls = Math.min(3,choices.length);
+      for (var i=0;i<nRolls;i++) {
+        var rndRoll = Math.floor(Math.random()*choices.length);
+        var selection = choices.splice(rndRoll,1);
+        fleet[selection].boostFromSatk.block.temp = 100;
+        fleet[selection].boostFromSatk.block.tempTurns = 1;
       }
       break;
-    case "dark darrien": 		// 3 random get +HR, 3 random get +blk
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost);
+    case "dark darrien":
+      // Set 3 ships' temporary Hit Rate bonus to 60%, and 3 ships' temporary Block bonus to 60%, for 1 attack
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      var nRolls = Math.min(3,acBoostChoices.length);
-      for (var i = 0;i<nRolls;i++) {
-        var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-        var acBoost = acBoostChoices.splice(acBoostRoll,1);
-        fleet[acBoost].boostFromSatk.hitRate.temp = 60;
-        fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
+      var nRolls = Math.min(3,choices.length);
+      for (var i=0;i<nRolls;i++) {
+        var rndRoll = Math.floor(Math.random()*choices.length);
+        var selection = choices.splice(rndRoll,1);
+        fleet[selection].boostFromSatk.hitRate.temp = 60;
+        fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
       }
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost);
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      for (var i = 0;i<nRolls;i++) {
-        var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-        var acBoost = acBoostChoices.splice(acBoostRoll,1);
-        fleet[acBoost].boostFromSatk.block.temp = 60;
-        fleet[acBoost].boostFromSatk.block.tempTurns = 1;
-      }
-      break;
-    case "lazarus":				// boost to S-ATK by 30% for 1 round
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.satk.temp = 0.3;
-        fleet[acBoost].boostFromSatk.satk.tempTurns = 1;
+      for (var i=0;i<nRolls;i++) {
+        var rndRoll = Math.floor(Math.random()*choices.length);
+        var selection = choices.splice(rndRoll,1);
+        fleet[selection].boostFromSatk.block.temp = 60;
+        fleet[selection].boostFromSatk.block.tempTurns = 1;
       }
       break;
-    case "dark lazarus":		// boost to S-ATK by 25% for 1 round
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.satk.temp = 0.25;
-        fleet[acBoost].boostFromSatk.satk.tempTurns = 1;
+    case "lazarus":
+      // Set fleet's temporary S-ATK bonus to 30% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.satk.temp = 0.3;
+        fleet[selection].boostFromSatk.satk.tempTurns = 1;
       }
       break;
-    case "roxy":				// crit chance and hit rate, 25% 1 round
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.hitRate.temp = 25;
-        fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
-        fleet[acBoost].boostFromSatk.critChance.temp = 25;
-        fleet[acBoost].boostFromSatk.critChance.tempTurns = 1;
+    case "dark lazarus":
+      // Set fleet's temporary S-ATK bonus to 25% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.satk.temp = 0.25;
+        fleet[selection].boostFromSatk.satk.tempTurns = 1;
       }
       break;
-    case "kit":					// self block shield
+    case "roxy":
+      // Set fleet's temporary Crit and Hit Rate bonuses to 25% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.hitRate.temp = 25;
+        fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
+        fleet[selection].boostFromSatk.critChance.temp = 25;
+        fleet[selection].boostFromSatk.critChance.tempTurns = 1;
+      }
+      break;
+    case "kit":
+      // Set attacker's temporary Block bonusself block shield
       attacker.boostFromSatk.block.temp = 30
       attacker.boostFromSatk.block.tempTurns = 2;
       break;
-    case "warden":				// block shields for all
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.block.temp = 30;
-        fleet[acBoost].boostFromSatk.block.tempTurns = 1;
+    case "warden":
+      // Set fleet's temporary Block bonus to 30% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.block.temp = 30;
+        fleet[selection].boostFromSatk.block.tempTurns = 1;
       }
       break;
     case "izolda":
       izoldaInvisCheck:
-      if (attackerList.length > 1) { // is someone other than just izolda present?
+      var attackerList = makeAttackOrder_( fleet, fleetMap, '');
+      if (attackerList.length > 1) {
         attackerList.reverse();
-        var acBoost = attackerList.pop();
-        if ( acBoost == "izolda" ) {
+        var selection = attackerList.pop();
+        if (selection == "izolda") {
           if (attackerList.length == 0) break izoldaInvisCheck;
-          acBoost = attackerList.pop();
+          selection = attackerList.pop();
         }
-        if ( acBoost != "akhenaton" ) {
-          fleet[acBoost].invis.isInvisible = true;
-          fleet[acBoost].invis.turnsLeft = 1;
-          fleet[acBoost].invis.from = "izolda";
+        if (selection != "akhenaton" && selection != 'raksha') {
+          fleet[selection].invis.isInvisible = true;
+          fleet[selection].invis.turnsLeft = 1;
+          fleet[selection].invis.from = "izolda";
         }
-      } else {
-        // izolda is the last alive, nothing to do
       }
       break;
     case "dark kerom":
-    case "kerom":				// +20% HR to all		
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.hitRate.temp = 20;
-        fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
+    case "kerom":
+      // Set fleet's temporary Hit Rate bonus to 20% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.hitRate.temp = 20;
+        fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
       }
       break;
-    case "celeste":				// +100% HR, Crit Chance
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.hitRate.temp = 100;
-        fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
-        fleet[acBoost].boostFromSatk.critChance.temp = 100;
-        fleet[acBoost].boostFromSatk.critChance.tempTurns = 1;
+    case "celeste":
+      // Set fleet's temporary Hit Rate and Crit bonus to 100% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.hitRate.temp = 100;
+        fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
+        fleet[selection].boostFromSatk.critChance.temp = 100;
+        fleet[selection].boostFromSatk.critChance.tempTurns = 1;
       }
       break;
-    case "dark celeste":		// +50% HR, cc
-      for (var acBoost in fleet) {
-        fleet[acBoost].boostFromSatk.hitRate.temp = 50;
-        fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
-        fleet[acBoost].boostFromSatk.critChance.temp = 50;
-        fleet[acBoost].boostFromSatk.critChance.tempTurns = 1;
+    case "dark celeste":
+      // Set fleet's temporary Hit Rate and Crit bonus to 50% for 1 attack
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.hitRate.temp = 50;
+        fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
+        fleet[selection].boostFromSatk.critChance.temp = 50;
+        fleet[selection].boostFromSatk.critChance.tempTurns = 1;
       }
       break;
-    case "gambit": 				// +20% atk for 2 rounds
-      for (var acBoost in fleet) { 
-        fleet[acBoost].boostFromSatk.atk.temp = 0.2;
-        fleet[acBoost].boostFromSatk.atk.tempTurns = 2;
+    case "gambit":
+      // Set fleet's temporary ATK attribute bonus to 20% for 2 attacks
+      for (var selection in fleet) {
+        fleet[selection].boostFromSatk.atk.temp = 0.2;
+        fleet[selection].boostFromSatk.atk.tempTurns = 2;
       }
       break;
     case "alfred":
+      // Set self invisibility, and instantiate a curse object on Primus.
+      // Curse objects are based on the attributes at the time of instantiation, and not on the attributes at the time of damage application
       attacker.invis.isInvisible = true;
       attacker.invis.turnsLeft = 1;
       attacker.invis.from = "alfred";
       primus.curses.push({"from":"alfred",
-                          "damageRate": 4*(1+cParams.forceUp/100)*(attacker.ATK-0+attacker.SATK-0)*(1+attacker.dmgUp/100+attacker.sDmgUp/100),
+                          "damageRate": 4*(1+controlParams.forceUp/100)*(attacker.ATK-0+attacker.SATK-0)*(1+attacker.dmgUp/100+attacker.sDmgUp/100),
                           "dormantTurns":1
                          })
       break;
     case "raizer":
-      for (var acBoost in fleet) {
-        if (fleet[acBoost].isDead == false) fleet[acBoost].accumulator+=75;
+      // Increase fleet's Accumulator by 75
+      for (var selection in fleet) {
+        if (fleet[selection].isDead == false) fleet[selection].accumulator += 75;
       }
       break;
     case "ursa":
       attacker.boostFromSatk.block.temp = 80;
       attacker.boostFromSatk.block.tempTurns = 4; // might be 3, might be permanent, but 4 is basically permanent
-      for (var acBoost in fleet) {
-        if ( fleet[acBoost].isDead == false ) {
-          fleet[acBoost].wainFury.isLinked = true;
-          fleet[acBoost].wainFury.turnsLeft = 5; // links do not seem to break
-          fleet[acBoost].wainFury.from = attacker.name.toLowerCase();
+      for (var selection in fleet) {
+        if (fleet[selection].isDead == false ) {
+          fleet[selection].wainFury.isLinked = true;
+          fleet[selection].wainFury.turnsLeft = 99;
+          fleet[selection].wainFury.from = attacker.name.toLowerCase();
         }
       }
-      cParams.wain = {"multiplier":8*1};
+      controlParams.wain = {"multiplier":8*1};
       break;
-    case "dor+10":                      // 80% boost
+    case "dor+10":                    // 80% boost
       dorBuff = 80;
-    case "dor+7":                      // 65% boost
+    case "dor+7":                     // 65% boost
       dorBuff = Math.max(dorBuff,65);
     case "dor":                       // 50% boost
       dorBuff = Math.max(dorBuff,50);
-      for (var acBoost in fleet) {
-        if ( fleet[acBoost].isDead == false ) {
-          fleet[acBoost].boostFromSatk.hitRate.temp = dorBuff;
-          fleet[acBoost].boostFromSatk.hitRate.tempTurns = 1;
-          fleet[acBoost].boostFromSatk.critChance.temp = dorBuff;
-          fleet[acBoost].boostFromSatk.critChance.tempTurns = 1;
+      for (var selection in fleet) {
+        if (fleet[selection].isDead == false ) {
+          fleet[selection].boostFromSatk.hitRate.temp = dorBuff;
+          fleet[selection].boostFromSatk.hitRate.tempTurns = 1;
+          fleet[selection].boostFromSatk.critChance.temp = dorBuff;
+          fleet[selection].boostFromSatk.critChance.tempTurns = 1;
         }
       }
       dorBuff = 0;
       break;
-    case "paccar":                     // 30% S-ATK boost
-      for (var acBoost in fleet) {
-        if ( fleet[acBoost].isDead == false) {
-          fleet[acBoost].boostFromSatk.satk.temp = 0.3;
-          fleet[acBoost].boostFromSatk.satk.tempTurns = 1;
+    case "paccar":
+      // Set fleet's temporary S-ATK attribute bonus to 30% for 1 attack
+      for (var selection in fleet) {
+        if (fleet[selection].isDead == false) {
+          fleet[selection].boostFromSatk.satk.temp = 0.3;
+          fleet[selection].boostFromSatk.satk.tempTurns = 1;
         }
       }
       break;
-    case "anatoli":                    // 3 100% crit chance buffs
-      var acBoostChoices = [];
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) acBoostChoices.push(acBoost);
+    case "anatoli":
+      // Set 3 ships' temporary Crit bonuses to 100% for 1 attack
+      var choices = [];
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      var nRolls = Math.min(3,acBoostChoices.length);
-      for (var i = 0;i<nRolls;i++) {
-        var acBoostRoll = Math.floor(Math.random()*acBoostChoices.length);
-        var acBoost = acBoostChoices.splice(acBoostRoll,1);
-        fleet[acBoost].boostFromSatk.critChance.temp = 100;
-        fleet[acBoost].boostFromSatk.critChance.tempTurns = 1;
+      var nRolls = Math.min(3,choices.length);
+      for (var i=0;i<nRolls;i++) {
+        var rndRoll = Math.floor(Math.random()*choices.length);
+        var selection = choices.splice(rndRoll,1);
+        fleet[selection].boostFromSatk.critChance.temp = 100;
+        fleet[selection].boostFromSatk.critChance.tempTurns = 1;
       }
       break;
     case "st. nick":
@@ -285,15 +312,130 @@ function do_satk_effects(attacker, fleet, primus) {
       attacker.boostFromSatk.critChance.tempTurns = 1;
       break;
     case "louise":
-      for (var acBoost in fleet) {
-        if (!(fleet[acBoost].isDead)) {
-          fleet[acBoost].accumulator += 25;
-          fleet[acBoost].stasis.isDeathProof = true;
-          fleet[acBoost].stasis.turnsLeft = 1;
+      // Increase fleets' Accumulator by 25 & give invincibility for 1 attack
+      for (var selection in fleet) {
+        if (!(fleet[selection].isDead)) {
+          fleet[selection].accumulator += 25;
+          fleet[selection].stasis.isDeathProof = true;
+          fleet[selection].stasis.turnsLeft = 1;
         }
       }
-      attacker.accumulator = 50; // set it here because of trickiness.
+      // Reset Louise's accumulator back to 50
+      attacker.accumulator = 50;
+      break;
     default:
       break;
+  }
+}
+
+/**
+ * function AddInvincibilityViaSATK_  Sets the supplied number of ships to be invincible, beginning with the first-to-fire. Always ignores the caster.
+ * @param {Integer} duration   How many turns the invincibility buff should last
+ * @param {Integer} numberToDo How many ships the invincibility buff shoudl be given to
+ * @param {String} origin     The name of the casting ship
+ */
+function AddInvincibilityViaSATK_( duration, numberToDo, origin){
+  numberToDo = numberToDo||9;
+  origin = String(origin)||"";
+  numberToDo = Math.min(numberToDo,Object.keys(fleet).length);
+  // Get all non-dead ships in the fleet
+  var attackerList = makeAttackOrder_( fleet, fleetMap, '');
+  if (attackerList.length > 1) {
+    if (numberToDo < attackerList.length){
+      // Give invincibility shields to the next N ships in the firing order, excluding the caster
+      attackerList.reverse();
+      for (var i=0;i<numberToDo;i++){
+        var selection = attackerList.pop();
+        if (selection == origin) selection = attackerList.pop();
+        fleet[selection].stasis.isDeathProof = true;
+        fleet[selection].stasis.turnsLeft = duration*1;
+      }
+    }
+    else {
+      // We are giving out as many or more invincibility shields as there are ships alive
+      for (var selection in attackerList){
+        fleet[selection].stasis.isDeathProof = true;
+        fleet[selection].stasis.turnsLeft = duration*1;
+      }
+    }
+  }
+}
+
+/**
+ * function AddInvisibilityViaSATK_  Sets the supplied number of ships to be invisible, beginning with the first-to-fire. Always ignores the caster.
+ * @param {Integer} duration   How many turns the invisibility should last
+ * @param {Integer} numberToDo How many ships the invisibility should be given to
+ * @param {String} origin     The name of the casting ship
+ */
+function AddInvisibilityViaSATK_( duration, numberToDo, origin){
+  numberToDo = numberToDo||9;
+  origin = String(origin)||"";
+  var cannotHide = ['akhenaton','izolda','raksha',origin];
+  numberToDo = Math.min(numberToDo, Object.keys(fleet).length);
+  // Get all non-dead ships in the fleet
+  var attackerList = makeAttackOrder_( fleet, fleetMap, '');
+  if (attackerList.length > 1) {
+    if (numberToDo < attackerList.length){
+      // Give invisibility to the next N ships in the firing order, excluding the caster
+      attackerList.reverse();
+      for (var i=0;i<numberToDo;i++){
+        var selection = attackerList.pop();
+        if (cannotHide.indexOf(selection) > 0) selection = attackerList.pop();
+        fleet[selection].invis.isInvisible = true;
+        fleet[selection].invis.turnsLeft = duration*1;
+        fleet[selection].invis.from = origin;
+      }
+    }
+    else {
+      for (var selection in attackerList){
+        if (cannotHide.indexOf(selection) === -1){
+          fleet[selection].invis.isInvisible = true;
+          fleet[selection].invis.turnsLeft = duration*1;
+          fleet[selection].invis.from = origin;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * function AddTempAttributeViaSATK_  Adds the specified amount to the specified attribute for the specified duration.
+ *                                    Temporary bonuses always overwrite other bonuses to that same attribute that are added in the same manner (e.g. from activated Lieutenants)
+ *                                    Bonuses are expired before the attack is made, if the remaining duration is 0 at that moment
+ * @param {String} attributeName      The attribute which is to be temporarily modified
+ * @param {Number} amount             The magnitude of the temporary bonus.
+ * @param {Integer} duration          The number of attacks which can be made before this bonus expires.
+ * @param {String} shipClass          The type of ship which should benefit from this bonus. E.g. "", Hero, Ranger, Rover, Protector, Destroyer, or Striker
+ */
+function AddTempAttributeViaSATK_( attributeName, amount, duration, shipClass){
+  attributeName = String(attributeName).toLowerCase();
+  shipClass = String(shipClass).toLowerCase();
+  for (var i in fleet){
+    if (fleet[i].isDead === false) {
+      if (shipClass === "" || shipClass === fleet[i].class.toLowerCase()){
+        fleet[i].boostFromSatk[attributeName].temp = amount*1;
+        fleet[i].boostFromSatk[attributeName].tempTurns = duration*1;
+      }
+    }
+  }
+}
+
+
+/**
+ * function AddPermAttributeViaSATK_  Adds the specified amount to the specified attribute for the entire simulation.
+ *                                    Permanent bonuses are additive.
+ * @param {String} attributeName      The attribute which is to be permanently modified
+ * @param {number} amount             The magnitude of the permanent bonus.
+ * @param {String} shipClass          The type of ship which should benefit from this bonus. E.g. "", Hero, Ranger, Rover, Protector, Destroyer, or Striker
+ */
+function AddPermAttributeViaSATK_( attributeName, amount, shipClass){
+  attributeName = String(attributeName).toLowerCase();
+  shipClass = String(shipClass).toLowerCase()||"";
+  for (var i in fleet){
+    if (fleet[i].isDead === false){
+      if (shipClass === "" || shipClass === fleet[i].class.toLowerCase()){
+        fleet[i].boostFromSatk[attributeName].perm += amount*1;
+      }
+    }
   }
 }
