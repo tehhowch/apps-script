@@ -2,7 +2,7 @@
  * @OnlyCurrentDoc
  */
 // written by z3nithor, world 747
-function RunSimV3(){ 
+function RunSimV3(){
   var fleet = {}, setupSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Setup');
   var simParams = setupSS.getRange('P1:P5').getValues(),
       primusParams = setupSS.getRange('J1:J4').getValues(),
@@ -87,7 +87,7 @@ function RunSimV3(){
       fleet["summonShip"].initAccumulator=0;
       fleet["summonShip"].name = 'summonShip';
     }
-  }	
+  }
   // Default objects are set, run iterations
   while (((new Date().getTime() - controlParams.startTime)/1000 < controlParams.max_ex_time ) && (simCount<controlParams.max_iter)){
     // Initialize per-iteration quantities
@@ -147,14 +147,14 @@ function RunSimV3(){
         primus.lockData[primus.timesLocked[simCount-1]]=[]; // couldn't read the length of a non-existent array, so we create it
       }
     }
-    primus.lockData[primus.timesLocked[simCount-1]].push(primus.damage[simCount-1]); // histogram data of number of times locked & the damage per round    
+    primus.lockData[primus.timesLocked[simCount-1]].push(primus.damage[simCount-1]); // histogram data of number of times locked & the damage per round
   }
   // iterations complete / timed out, report data
   doReport_(fleet,primus,fleetData,setupSS.getParent());
   if (simParams[4][0]==true) doPlot(fleet,primus,SpreadsheetApp.getActiveSpreadsheet().insertSheet(setupSS.getParent().getSheets().length));
 }
 function makePositionMap_(fleet) {
-  // iterate the name-referenced fleet object to create a position-referenced object list 
+  // iterate the name-referenced fleet object to create a position-referenced object list
   var outputObj = {"s1":"","s2":"","s3":"","s4":"","s5":"","s6":"","s7":"","s8":"","s9":""};
   var insertSummon = false;
   for (var p in fleet) {
@@ -170,7 +170,7 @@ function makePositionMap_(fleet) {
     var spot = 1;
     while (fleet["summonShip"].position == 0) {
       if (outputObj["s"+spot.toString()] == "") {
-        fleet["summonShip"].position = spot-0; 
+        fleet["summonShip"].position = spot-0;
       }
       spot++;
     }
@@ -192,7 +192,7 @@ function makeAttackOrder_(myShips,positionMap,hasFiredList) {
             thad - quasi - X					thad - quasi - summon
             X  -  FS   - X		becomes 	  X  -  FS   - X
             X  - Flynn - Vio					  X  - Flynn - Vio
-            
+
             thad -   X   - X					thad - summon - X
             quas -  FS   - X		becomes		quas -  FS    - X
             X  - Flynn - Vio					  X  - Flynn  - Vio
@@ -209,7 +209,7 @@ function makeAttackOrder_(myShips,positionMap,hasFiredList) {
 function makeTargetOrder_(myShips,positionMap) { //output is directly pop()-able
   var targetingOrder = ["s2","s5","s8","s1","s4","s7","s3","s6","s9"],
       tOut = [];
-  for (var a = 0;a<9;a++) { // Loop through 'targetingOrder' list 
+  for (var a = 0;a<9;a++) { // Loop through 'targetingOrder' list
     var shipName = positionMap[targetingOrder[a]];
     if (shipName != "") {
       if (myShips[shipName].isDead == false) {
@@ -237,7 +237,7 @@ function tryToKillShip_(myShips,targetedShip,primus,simNumber,cParams,isCounter,
       }
     } else {												// Primus ATK or S-ATK, we can perhaps respond
       if (isSATK == true) {                             // Primus S-ATK reveals invisible ships
-        myShips[targetedShip].invis.isInvisible = false; 
+        myShips[targetedShip].invis.isInvisible = false;
         myShips[targetedShip].invis.turnsLeft = 0;
         myShips[targetedShip].invis.from = "";
       }
@@ -257,7 +257,7 @@ function tryToKillShip_(myShips,targetedShip,primus,simNumber,cParams,isCounter,
           } else {
             myShips[targetedShip].stasis.isDeathProof = false;
             myShips[targetedShip].stasis.turnsLeft = 0;
-            myShips[targetedShip].accumulator+=(targetedShip=="alfred") ? 0 : 25; 
+            myShips[targetedShip].accumulator+=(targetedShip=="alfred") ? 0 : 25;
             // Check for block & counter
             if ( isSATK == false ) { //Can't counter S-ATK
               var currentBlockRate = getFinalStat_(myShips,targetedShip,"block") - primus.pen;
@@ -347,7 +347,7 @@ function getFinalStat_(fleet,ship,stat) {
   boost = fleet[ship].boostFromSatk[stat].perm-0 + fleet[ship].boostFromSatk[stat].temp-0; 	// bonuses from S-ATKs
   boost += fleet[ship].ltSpecial[stat].perm-0 + fleet[ship].ltSpecial[stat].temp-0; 			// bonuses from Lt. effects
   switch (stat) {
-    case "atk": 
+    case "atk":
       rawStat = fleet[ship].rawATK-0;
       finalStat = rawStat*(1+boost-0);
       break;
@@ -355,15 +355,15 @@ function getFinalStat_(fleet,ship,stat) {
       rawStat = fleet[ship].rawSATK-0;
       finalStat = rawStat*(1+boost-0);
       break;
-    case "dodge": 
+    case "dodge":
       rawStat = fleet[ship].rawDodge-0;
       finalStat = rawStat-0+boost-0;
       break;
-    case "block": 
+    case "block":
       rawStat = fleet[ship].rawBlock-0;
       finalStat = rawStat-0+boost-0;
       break;
-    case "hitRate": 
+    case "hitRate":
       rawStat = fleet[ship].rawHitRate-0;
       finalStat = rawStat-0+boost-0;
       break;
@@ -477,7 +477,7 @@ function doIterateV3_(fleet,primus,controlParams,simNum) {
           }
         } else {
           primus.canBlock = true;
-          
+
           // Firing opportunity is realized
           targetList = makeTargetOrder_(fleet,fleetMap); // make the target list
           if (targetList.length >0 ) {
@@ -497,7 +497,7 @@ function doIterateV3_(fleet,primus,controlParams,simNum) {
               if ( targetList.length == 0 && fleet[ship].invis.isInvisible == true ) {
                 // skip turn because no targetable ships
               } else {
-                tryToKillShip_(fleet,ship,primus,simNum,controlParams,false,false); // 
+                tryToKillShip_(fleet,ship,primus,simNum,controlParams,false,false); //
               }
             }
           } // end the have-targets code
@@ -534,7 +534,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
       damage = 0,   accuDrain = 0,      dorBuff = 0,        wainFury = 0;
   if (attacker.isDead == true) return;
   attacker.numShots[simNumber]++;
-  
+
   // removal of expiring turn-based effects
   for (var i in attacker.ltSpecial) {
     if (attacker.ltSpecial[i].tempTurns == 0) attacker.ltSpecial[i].temp = 0;
@@ -557,7 +557,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
   attacker.stasis.turnsLeft = Math.max(0,attacker.stasis.turnsLeft-1);
   attacker.invis.turnsLeft = Math.max(0,attacker.invis.turnsLeft-1);
   if (attacker.name == 'summonShip') attacker.turnsLeft = Math.max(0,attacker.turnsLeft-1);
-  
+
   // Generate current attributes
   attacker.ATK = getFinalStat_(fleet,attacker.name,"atk");
   attacker.SATK = getFinalStat_(fleet,attacker.name,"satk");
@@ -567,7 +567,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
   attacker.critDam = attacker.rawCritDamage-0;
   attacker.dmgUp = getFinalStat_(fleet,attacker.name,"dmgUp");
   attacker.sDmgUp = getFinalStat_(fleet,attacker.name,"sDmgUp");
-  
+
   // Do we hit Primus?
   rnd = Math.random()*100;
   if (rnd > attacker.hitRate) {
@@ -597,7 +597,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
           accuDrain = Math.max(accuDrain,45);
         case "sky mightlis":
           accuDrain = Math.max(accuDrain,40);
-          break;  
+          break;
         case "starlord":
           accuDrain = 20;
           break;
@@ -607,7 +607,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
       if ( primus.accumulator < accuDrain ) accuDrain = primus.accumulator;
       primus.accumulator = Math.max(0, primus.accumulator - accuDrain);
       attacker.accumulator += (accuDrain*1); // preattack plunderers gain the accumulator for use in attacking
-      
+
     }
     damage = (attacker.ATK-0 + isSatk*attacker.SATK)*(1+cParams.forceUp/100)*(1+isSatk*(attacker.SATKDamage/100 - 1))*(1+isSatk*(attacker.accumulator-100)/100)*(1+attacker.dmgUp/100)*(1+isSatk*attacker.sDmgUp/100)*attacker.wainFury.amount;
     rnd = Math.random()*100;
@@ -617,7 +617,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
     // Record damage
     primus.damage[simNumber] += damage-0;
     attacker.damageDealt[simNumber] += damage-0;
-    
+
     // S-Attack effects
     if (isSatk) {
       do_satk_effects(attacker, fleet, primus);
@@ -645,7 +645,7 @@ function doAttackV3_(attacker,primus,cParams,simNumber,fleet,attackerList) {
       if (shotBlocked) {
         if (attacker.isDestroyer == true || (!(primus.canBlock))) {
         } else {
-          tryToKillShip_(fleet,attacker.name,primus,simNumber,cParams,true,false); 
+          tryToKillShip_(fleet,attacker.name,primus,simNumber,cParams,true,false);
         }
       }
     } // end S-ATK effects codes
