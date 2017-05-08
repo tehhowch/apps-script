@@ -7,17 +7,16 @@
  *                                  Operates on the global variables fleet, primus
  * @param  {Object} attacker        A pointer to the fleet[ship] object whose effects which require activating
  */
-function DoSpecialSATK_Effects_( attacker) {
+function DoSpecialSATK_Effects_( attacker){
   attacker.accumulator = attacker.SATKReset;
-  switch (attacker.name.toLowerCase()) {
+  switch (attacker.name.toLowerCase()){
     case "frost jr":
       // Increment a random ship's accumulator by 30 (if it is alive)
       var choices = [];
-      for (var selection in fleet) {
+      for (var selection in fleet){
         if (!(fleet[selection].isDead)) choices.push(String(selection));
       }
-      var rndRoll = Math.floor(Math.random()*choices.length);
-      fleet[choices[rndRoll]].accumulator += 30;
+      fleet[choices[Math.floor(Math.random()*choices.length)]].accumulator += 30;
       break;
     case "cabal":
       // Self-invisibility & 2x 20% Dodge increases
@@ -40,7 +39,7 @@ function DoSpecialSATK_Effects_( attacker) {
       break;
     case "dark carter":
       // Increase fleet's Accumulator by 35
-      for (var selection in fleet) {
+      for (var selection in fleet){
         if (!(fleet[selection].isDead)) fleet[selection].accumulator += 35;
       }
       break;
@@ -75,7 +74,7 @@ function DoSpecialSATK_Effects_( attacker) {
       break;
     case "carter":
       // Increase fleet's Accumulator by 50
-      for (var selection in fleet) {
+      for (var selection in fleet){
         if (!(fleet[selection].isDead)) fleet[selection].accumulator += 50;
       }
       break;
@@ -273,15 +272,15 @@ function DoSpecialSATK_Effects_( attacker) {
       break;
     case "raizer":
       // Increase fleet's Accumulator by 75
-      for (var selection in fleet) {
+      for (var selection in fleet){
         if (fleet[selection].isDead == false) fleet[selection].accumulator += 75;
       }
       break;
     case "ursa":
       attacker.boostFromSatk.block.temp = 80;
       attacker.boostFromSatk.block.tempTurns = 4; // might be 3, might be permanent, but 4 is basically permanent
-      for (var selection in fleet) {
-        if (fleet[selection].isDead == false ) {
+      for (var selection in fleet){
+        if (fleet[selection].isDead == false ){
           fleet[selection].wainFury.isLinked = true;
           fleet[selection].wainFury.turnsLeft = 99;
           fleet[selection].wainFury.from = attacker.name.toLowerCase();
@@ -337,18 +336,22 @@ function DoSpecialSATK_Effects_( attacker) {
       attacker.boostFromSatk.critChance.tempTurns = 1;
       break;
     case "louise":
-      // Increase fleets' Accumulator by 25 & give invincibility for 1 attack
-      AddInvincibilityViaSATK_( 1, 5, '');  // set origin as '' so louise is shielded too
-      /*for (var selection in fleet) {
-        if (!(fleet[selection].isDead)) {
+      // Increase fleets' Accumulator by 25 & give invincibility for 1 attack to the whole fleet
+      AddInvincibilityViaSATK_( 1, 9, '');  // set origin as '' so louise is shielded too
+      for (var selection in fleet){
+        if (!(fleet[selection].isDead)){
           fleet[selection].accumulator += 25;
-          fleet[selection].stasis.isDeathProof = true;
-          fleet[selection].stasis.turnsLeft = 1;
         }
-      }*/
+      }
       // Reset Louise's accumulator back to 50
       attacker.accumulator = 50;
       break;
+    case "caroline":
+      // Increase own dodge and dodge of next-to-fire by 80%
+      // Accumulator reset should be handled by player's inputs on the spreadsheet
+      attacker.boostFromSatk.dodge.temp = 80;
+      attacker.boostFromSatk.dodge.tempTurns = 1;
+      AddTempAttributeViaSATKtoNext_( "dodge", 80, 1, 1, "caroline");
     default:
       break;
   }
@@ -366,7 +369,7 @@ function AddInvincibilityViaSATK_( duration, numberToDo, origin){
   numberToDo = Math.min( numberToDo, Object.keys( fleet).length);
   // Get all non-dead ships in the fleet
   var attackerList = MakeAttackOrder_( []]);
-  if (attackerList.length > 1) {
+  if (attackerList.length > 1){
     if (numberToDo < attackerList.length){
       // Give invincibility shields to the next N ships in the firing order, excluding the ship referenced by origin
       attackerList.reverse();
@@ -396,11 +399,11 @@ function AddInvincibilityViaSATK_( duration, numberToDo, origin){
 function AddInvisibilityViaSATK_( duration, numberToDo, origin){
   numberToDo = numberToDo||9;
   origin = String( origin)||"";
-  var cannotHide = ['akhenaton','izolda','raksha',origin];
+  var cannotHide = [ 'akhenaton', 'izolda', 'raksha', origin];
   numberToDo = Math.min( numberToDo, Object.keys( fleet).length);
   // Get all non-dead ships in the fleet
   var attackerList = MakeAttackOrder_( []);
-  if (attackerList.length > 1) {
+  if (attackerList.length > 1){
     if (numberToDo < attackerList.length){
       // Give invisibility to the next N ships in the firing order, excluding the caster
       attackerList.reverse();
@@ -435,9 +438,9 @@ function AddInvisibilityViaSATK_( duration, numberToDo, origin){
  */
 function AddTempAttributeViaSATKtoAll_( attributeName, amount, duration, shipClass){
   attributeName = String( attributeName).toLowerCase();
-  shipClass = String( shipClass).toLowerCase();
+  shipClass = String( shipClass).toLowerCase()||"";
   for (var i in fleet){
-    if (fleet[i].isDead === false) {
+    if (fleet[i].isDead === false){
       if (shipClass === "" || shipClass === fleet[i].class.toLowerCase()){
         fleet[i].boostFromSatk[attributeName].temp = amount*1;
         fleet[i].boostFromSatk[attributeName].tempTurns = duration*1;
@@ -464,10 +467,44 @@ function AddTempAttributeViaSATKtoRandom_( attributeName, amount, duration, numR
   }
   var nRolls = Math.min( numRecipients*1, choices.length);
   for (var i=0;i<nRolls;i++){
-    var rndRoll = Math.floor( Math.random()*choices.length);
-    var selection = choices.splice( rndRoll, 1);
+    var selection = choices.splice( Math.floor( Math.random()*choices.length), 1);
     fleet[selection].boostFromSatk[attributeName].temp = amount*1;
     fleet[selection].boostFromSatk[attributeName].tempTurns = duration*1;
+  }
+}
+
+/**
+ * function AddTempAttributeViaSATKtoNext_    Adds the specified amount to the specified attribute for up to numRecipients ships, chosen by firing order.
+ *                                            Temporary bonuses always overwrite other bonuses to that same attribute that were added in the same manner.
+ * @param {String} attributeName  The attribute to be temporarily modified
+ * @param {Number} amount         The magnitude of the temporary bonus
+ * @param {Integer} duration      The number of attacks which can be made before this buff expires
+ * @param {Integer} numRecipients The maximum number of ships which can recieve this buff
+ * @param {String} origin         The ship which cast this buff, if the casting ship should not receive it
+ */
+function AddTempAttributeViaSATKtoNext_( attributeName, amount, duration, numRecipients, origin){
+  attributeName = String( attributeName).toLowerCase();
+  origin = String( origin)||"";
+  // Get all non-dead ships in the fleet
+  var attackerList = MakeAttackOrder_( []]);
+  if (attackerList.length > 1){
+    if (numRecipients < attackerList.length){
+      // Give the attribute to the next N ships in the firing order, excluding the ship referenced by origin
+      attackerList.reverse();
+      for (var i=0;i<numRecipients;i++){
+        var selection = attackerList.pop();
+        if (selection == origin) selection = attackerList.pop();
+        fleet[selection].boostFromSatk[attributeName].temp = amount*1;
+        fleet[selection].boostFromSatk[attributeName].tempTurns = duration*1;
+      }
+    }
+    else {
+      // We are giving out as many or more attribute boosts as there are ships alive
+      for (var selection in attackerList){
+        fleet[selection].boostFromSatk[attributeName].temp = amount*1;
+        fleet[selection].boostFromSatk[attributeName].tempTurns = duration*1;
+      }
+    }
   }
 }
 
