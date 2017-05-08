@@ -352,6 +352,15 @@ function DoSpecialSATK_Effects_( attacker){
       attacker.boostFromSatk.dodge.temp = 80;
       attacker.boostFromSatk.dodge.tempTurns = 1;
       AddTempAttributeViaSATKtoNext_( "dodge", 80, 1, 1, "caroline");
+      break;
+    case "sturdy":
+      // Funky x5 attack is handled on spreadsheet S-ATK inputs (e.g. +1m to attribute, s-mod is x5 higher)
+      if ( Math.random() < 0.65) {
+        attacker.immunity.isImmune = true;
+        attacker.immunity.hitsLeft = 2;
+        attacker.immunity.turnsLeft = 1;
+      }
+      break;
     default:
       break;
   }
