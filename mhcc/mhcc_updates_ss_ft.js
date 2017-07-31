@@ -199,7 +199,7 @@ hunterBatchLoop:
             } else {
               batchHunters[i][3] = db[dbRow][3];         // Crown Change Date
             }
-            batchHunters[i][4] = new Date().getTime();   // Time of this update, the 'touched' value (must be unique!)
+            batchHunters[i][4] = (i == 0) ? new Date().getTime() : batchHunters[i-1][4]-0 + 1-0;   // Time of this update, the 'touched' value (must be unique!)
             batchHunters[i][5] = nB                      // Bronze
             batchHunters[i][6] = nS                      // Silver
             batchHunters[i][7] = nG                      // Gold
