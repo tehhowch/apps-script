@@ -37,13 +37,12 @@ var crownDBnumColumns = 12;
 function onOpen(){
   SpreadsheetApp.getActiveSpreadsheet().addMenu('Administration', [{name:"Add Members",functionName:"addFusionMember"},
                                                                    {name:"Delete Members",functionName:"delFusionMember"},
-                                                                   {name:"Refresh Scoreboard",functionName:"UpdateScoreboard"},
                                                                    {name:"Perform Crown Update",functionName:"UpdateDatabase"},
                                                                    {name:"Perform RecordCount Maintenance",functionName:"doBookending"},
                                                                    {name:"Database Size",functionName:"getDbSize"}]);
 }
 /**
- * function getMyDb_          Returns the enter data contents of the worksheet SheetDb to the calling code
+ * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling code
  *                            as a rectangular array. Does not supply header information.
  * @param  {Workbook} wb      The workbook containing the worksheet named SheetDb
  * @param  {Object} sortObj   An integer column number or an Object[][] of sort objects
@@ -66,21 +65,14 @@ function saveMyDb_(wb,db) {
   var lock = LockService.getScriptLock();
   lock.tryLock(30000);
   if ( lock.hasLock() ) {
-    // Have a lock on the db, now save
+    // Have a lock on the db, now save.
     var SS = wb.getSheetByName('SheetDb');
- //   if ( range == null) {
-      // No position input -> full db write -> no sorting needed
     if ( db.length < SS.getLastRow()-1 ) {
-      // new db is smaller than old db, so clear it out
+      // New db is smaller than old db, so clear it out first
       SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).setValue('');
     }
     SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
-//    } else {
-//     // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
-//      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).sort(1);
-//      SS.getRange(range[0],range[1],range[2],range[3]).setValues(db);
-//    }
-    SpreadsheetApp.flush(); // Commit changes (causing immediate failure as of 2017-02-21 for minidb writes
+    SpreadsheetApp.flush();
     lock.releaseLock();
     return true
   }
@@ -107,19 +99,19 @@ function UpdateDatabase() {
   // If the MHCC tiers are moved, this getRange target MUST be updated!
   var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
   if ( lastRan > numMembers*3 ) {
-    // Trim out records that don't offer different information
+    // Trim out records that don't offer different information.
     var progress = keepInterestingRecords_();
     if ( progress.saved === true ) {           // Resume update fetching
       PropertiesService.getScriptProperties().setProperty('lastRan', 0);
     } else {
-      throw new Error('keepInterestingRecords failed: '+progress.errmsg);
+      throw new Error('keepInterestingRecords failed: "'+progress.errmsg+'"');
     }
   } else if (lastRan >= numMembers) {
-    // Perform scoreboard update & set next trigger to perform record maintenance
+    // Perform scoreboard update & set next trigger to perform record maintenance.
     UpdateScoreboard();
     PropertiesService.getScriptProperties().setProperty('lastRan', numMembers*4);    // Next execution is maintenance
   } else {
-    // Grab a subset of the alphabetized member record
+    // Grab a subset of the alphabetized member record.
     var lock = LockService.getScriptLock();
     lock.waitLock(30000);
     if ( lock.hasLock() ) {
@@ -158,42 +150,45 @@ hunterBatchLoop:
               break hunterBatchLoop;
             break;
             default:
-              // Unknown new error: total abort
-              throw new Error('errmsg:'+e.message+' htr:'+htResponse.getContentText());
+              if(e.message.toLowerCase().indexOf('unexpected error: h') > -1 ) break hunterBatchLoop;
+              else {
+                // Unknown new error: total abort
+                throw new Error('HT GET - errmsg: "'+e.message+'"');
+              }
           }
         }
-        // Loop over our member subset batchHunters and parse the corresponding MM entry
+        // Loop over our member subset batchHunters and parse the corresponding MM entry.
         Logger.log(Object.keys(MM.hunters).length+' returned hunters out of '+batchHunters.length)
         for (var i=0;i<batchHunters.length;i++) {
           var j = 'ht_'+batchHunters[i][1];
           var dbRow = dbKeys[batchHunters[i][1]];           // store this members row in the large scoreboard dataset
           if ( typeof dbRow == 'undefined' ) {
-            // Should have found a row, but didn't. Explicitly request this member's update
+            // Should have found a row, but didn't. Explicitly request this member's update.
             var record = getMostRecentRecord_(batchHunters[i][1]);
             if ( record.length == crownDBnumColumns ) {
-              // Add to SheetDb
+              // Add to SheetDb.
               wb.getSheetByName('SheetDb').appendRow(record);
-              // Reindex rows
+              // Reindex rows.
               dbKeys = getDbIndex_(db,numMembers);
               dbRow = dbKeys[batchHunters[i][1]];
               if ( typeof dbRow == 'undefined') continue;
             } else {
-              // Move on to the next hunter in batchHunters
+              // Move on to the next hunter in batchHunters.
               continue
             }
           }
           if ( typeof MM.hunters[j] != 'undefined' ) {
-            // The hunter's ID was found in the MostMice object, and the update can be performed
+            // The hunter's ID was found in the MostMice object, and the update can be performed.
             var nB = 0, nS = 0, nG = 0;
             for ( var k in MM.hunters[j].mice ) {
-              // Assign crowns by summing over all mice
+              // Assign crowns by summing over all mice.
               if ( MM.hunters[j].mice[k] >= 500 ) nG++;
               else if ( MM.hunters[j].mice[k] >= 100 ) nS++;
               else if ( MM.hunters[j].mice[k] >= 10 ) nB++;
             }
-            // Adding columns onto our originally batchSize X 2 array
+            // Adding columns onto our originally batchSize X 2 array.
             batchHunters[i][2] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
-            // The previous crown data is stored in the most recent scoreboard update, in our db variable
+            // The previous crown data is stored in the most recent scoreboard update, in our db variable.
             if ( db[dbRow][7] != nG || db[dbRow][6] != nS || db[dbRow][5] != nB ) {
               batchHunters[i][3] = batchHunters[i][2];
             } else {
@@ -205,10 +200,10 @@ hunterBatchLoop:
             batchHunters[i][7] = nG                      // Gold
             batchHunters[i][8] = nG-0 + nS-0;            // MHCC Crowns
             batchHunters[i][9] = db[dbRow][9]            // The member's rank among all members
-            // Determine the MHCC rank & squirrel of this hunter
+            // Determine the MHCC rank & squirrel of this hunter.
             for ( var k = 0; k<aRankTitle.length; k++ ) {
               if ( batchHunters[i][8] >= aRankTitle[k][0] ) {
-                // Crown count meets/exceeds required crowns for this level
+                // Crown count meets/exceeds required crowns for this level.
                 batchHunters[i][10] = aRankTitle[k][2];  // Set the Squirrel value
                 break;
               }
@@ -297,19 +292,19 @@ function UpdateScoreboard() {
                        'https://apps.facebook.com/mousehunt/profile.php?snuid='+allHunters[i-1][1]
                       ])
       if ( i%150 == 0 ) scoreboardArr.push(['Rank','Last Seen','Last Crown','Squirrel Rank','G+S Crowns','Hunter','Profile Link'] )
-      // Store the time this rank was generated
+      // Store the time this rank was generated.
       allHunters[i-1][11]=startTime.getTime();
-      // Store the counter as the hunters' rank, then increment the counter
+      // Store the counter as the hunters' rank, then increment the counter.
       allHunters[i-1][9]=i++;
     }
     // 5) Write it to the spreadsheet
     var sheet = wb.getSheetByName('Scoreboard');
     sheet.getRange(2, 1, sheet.getLastRow(), scoreboardArr[0].length).setValue('');
     sheet.getRange(2, 1, scoreboardArr.length, scoreboardArr[0].length).setValues(scoreboardArr);
-    // Provide estimate of the next new scoreboard posting and the time this one was posted
+    // Provide estimate of the next new scoreboard posting and the time this one was posted.
     wb.getSheetByName('Members').getRange('I23').setValue((startTime-wb.getSheetByName('Members').getRange('H23').getValue())/(24*60*60*1000));
     wb.getSheetByName('Members').getRange('H23').setValue(startTime);
-    // Overwrite the latest db version with the version that has the proper ranks and ranktimes
+    // Overwrite the latest db version with the version that has the proper ranks and ranktimes.
     saveMyDb_(wb,allHunters);
 
   } else {
