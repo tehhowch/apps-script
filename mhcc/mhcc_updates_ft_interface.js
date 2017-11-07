@@ -467,7 +467,7 @@ function getNewLastRanValue_(origUID,origLastRan,diffMembers){
         } else {
           // Tough case here: we lost the exact point of reference needed for determining if deletions were before or after
           // where we've updated.
-
+          
           // shortcut assumption, to be changed at a later date
           newLastRan = origLastRan
         /*
@@ -539,7 +539,7 @@ function getDbSize(){
 /**
  * function doBackupTable_      Ensure that a copy of the database exists prior to
  *                              performing some major update, such as attempting to
- *                              remove all non-unique rows
+ *                              remove all non-unique rows.
  */
 function doBackupTable_(){
   var userBackup = 'MHCC_MostRecentCrownBackupID', scriptBackup = 'backupTableID';
@@ -643,12 +643,10 @@ function getTotalRowCount_(tblID){
   return totalRowCount;
 }
 /**
- * function doReplace_      Replaces the contents of the specified FusionTable with the
+ * function doReplace_      Replaces the contents of the specified FusionTable with the 
  *                          input array after sorting on its first element
  * @param {String} tblID    The table whose contents will be replaced
  * @param {Array} records   The new contents of the specified table
- * @return {Object}         Object indicating if the replace was successful, and the
- *                          error message if it was not
  */
 function doReplace_(tblID, records){
   if ( records.constructor != Array ) { throw new TypeError('Argument records was not type Array');}
@@ -656,23 +654,25 @@ function doReplace_(tblID, records){
   if ( tblID.length != 41) { throw new Error('Argument tbldID not a FusionTables id');}
   if ( records.length == 0 ) { throw new Error('Argument records must not be length 0');}
   records.sort();
-  var progress = {"saved":false,
-                "errmsg":"",
-                "uploadSize":Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100
-               };
-  Logger.log('New data is '+progress.uploadSize+' MB (rounded up)');
-  if ( progress.uploadSize >= 250 ) {
-    progress.errmsg = "Array exceeds maximum upload size";
-  } else {
+  var uploadSize = Math.ceil(records.length*getByteCount_(records[0].toString())/1024/1024*100)/100;
+  Logger.log('New data is '+uploadSize+' MB (rounded up)');
+  if ( uploadSize < 250 ) {
+    var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
     try {
-      var cUpload = Utilities.newBlob(array2CSV_(records),'application/octet-stream');
-      FusionTables.Table.replaceRows(tblID, cUpload)
-      var taskList = FusionTables.Task.list(tblID);
-      progress.saved = true;
+      FusionTables.Table.replaceRows(tblID, cUpload);
     }
-    catch(e){ progress.errmsg = e.message }
+    catch(e){ 
+      if (e.message.toLowerCase() == "empty response") {
+        // FusionTables didn't respond to the request
+        FusionTables.Table.replaceRows(tblID, cUpload);
+      }
+      else {
+        throw new Error(e); 
+      }
+    }
+  } else {
+    throw new Error('Upload size too large');
   }
-  return progress;
 }
 /**
  * function arrayTranspose Transposes the array if it is a 2D array, or throws an error if it is not
