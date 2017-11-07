@@ -39,7 +39,7 @@ function onOpen(){
                                                                    {name:"Delete Members",functionName:"delFusionMember"},
                                                                    {name:"Perform Crown Update",functionName:"UpdateDatabase"},
                                                                    {name:"Perform RecordCount Maintenance",functionName:"doBookending"},
-                                                                   {name:"Database Size",functionName:"getDbSize"}]);
+                                                                   {name:"Check Database Size",functionName:"getDbSize"}]);
 }
 /**
  * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling code
@@ -68,7 +68,7 @@ function saveMyDb_(wb,db) {
     // Have a lock on the db, now save.
     var SS = wb.getSheetByName('SheetDb');
     if ( db.length < SS.getLastRow()-1 ) {
-      // New db is smaller than old db, so clear it out first
+      // New db is smaller than old db, so clear it out first.
       SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).setValue('');
     }
     SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
@@ -100,12 +100,9 @@ function UpdateDatabase() {
   var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
   if ( lastRan > numMembers*3 ) {
     // Trim out records that don't offer different information.
-    var progress = keepInterestingRecords_();
-    if ( progress.saved === true ) {           // Resume update fetching
-      PropertiesService.getScriptProperties().setProperty('lastRan', 0);
-    } else {
-      throw new Error('keepInterestingRecords failed: "'+progress.errmsg+'"');
-    }
+    doBookending();
+    // Resume update fetching.
+    PropertiesService.getScriptProperties().setProperty('lastRan', 0);
   } else if (lastRan >= numMembers) {
     // Perform scoreboard update & set next trigger to perform record maintenance.
     UpdateScoreboard();
@@ -151,6 +148,7 @@ hunterBatchLoop:
             break;
             default:
               if(e.message.toLowerCase().indexOf('unexpected error: h') > -1 ) break hunterBatchLoop;
+              else if(e.message.toLowerCase().indexOf('timeout: h') > -1 ) break hunterBatchLoop;
               else {
                 // Unknown new error: total abort
                 throw new Error('HT GET - errmsg: "'+e.message+'"');
@@ -213,6 +211,7 @@ hunterBatchLoop:
         }
         mem2Update = [].concat(mem2Update,batchHunters);        // Stage this batch's data for a single write call
         lastRan = lastRan-0 + batchSize-0;                      // Increment lastRan for next batch's usage
+        Utilities.sleep(1);
       }
       if ( mem2Update.length > 0 ) {
         ftBatchWrite_(mem2Update);   // maximum API efficiency is with minimum write calls.
@@ -284,13 +283,13 @@ function UpdateScoreboard() {
     // 4) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
     while ( i <= allHunters.length ) {
       scoreboardArr.push([i,                                                                          // Rank
-                       Utilities.formatDate(new Date(allHunters[i-1][2]), 'EST', 'yyyy-MM-dd'),       // Last Seen
-                       Utilities.formatDate(new Date(allHunters[i-1][3]), 'EST', 'yyyy-MM-dd'),       // Last Crown
-                       allHunters[i-1][10],                                                            // Squirrel
-                       '=HYPERLINK("https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid='+allHunters[i-1][1]+'","'+allHunters[i-1][8]+'")',  // #MHCC Crowns
-                       allHunters[i-1][0],                                                            // Name
-                       'https://apps.facebook.com/mousehunt/profile.php?snuid='+allHunters[i-1][1]
-                      ])
+                          Utilities.formatDate(new Date(allHunters[i-1][2]), 'EST', 'yyyy-MM-dd'),       // Last Seen
+                          Utilities.formatDate(new Date(allHunters[i-1][3]), 'EST', 'yyyy-MM-dd'),       // Last Crown
+                          allHunters[i-1][10],                                                            // Squirrel
+                          '=HYPERLINK("https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid='+allHunters[i-1][1]+'","'+allHunters[i-1][8]+'")',  // #MHCC Crowns
+                          allHunters[i-1][0],                                                            // Name
+                          'https://apps.facebook.com/mousehunt/profile.php?snuid='+allHunters[i-1][1]
+                         ])
       if ( i%150 == 0 ) scoreboardArr.push(['Rank','Last Seen','Last Crown','Squirrel Rank','G+S Crowns','Hunter','Profile Link'] )
       // Store the time this rank was generated.
       allHunters[i-1][11]=startTime.getTime();
