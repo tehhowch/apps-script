@@ -1,42 +1,4 @@
 /**
- * function doRecordsMaintenance
- *      Run on set interval to ensure database size does not exceed 250mb. Works in 
- *         partnership with keepInterestingRecords to maintain a reasonable database
- *         size. Function keepInterestingRecords will prune away any duplicated 
- *         UID-LastSeen-Rank values, but so long as the combinations are new, they 
- *         would be kept. This ignores the Rank component and focuses on removing
- *         only the oldest LastSeen values, such that the member has a total number
- *         of records that is less than the maximum. 
- *      Obtains list of UIDs and LastSeen values that can be kept while ensuring the
- *         number of records per user does not exceed the specified maxRecords value.
- *      Then obtains list of ROWIDs corresponding to those UID and LastSeen pairs 
- *         that should be kept.
- *      Then performs a Table.replaceRows() to remove all other records that were not
- *         selected for retention. This avoids costly and time-consuming, per-record
- *         delete by rowid
- */
-function doRecordsMaintenance(){
-  var maxRecords = 400, startTime = new Date().getTime();
-  var keptUIDLastSeen = getKeptUIDLastSeen_(maxRecords);
-  var arrayDescription = {'0':{'val':"UID"},'1':{'val':"LastSeen"}};
-  var keptRowids = getKeptRowids_(ftid,arrayDescription,keptUIDLastSeen);
-  var totalNumRecords = getTotalRowCount_(ftid);
-  if ( keptRowids.length < totalNumRecords ) {
-    Logger.log('Removing '+(totalNumRecords-keptRowids.length)+' records...');
-    var records = retrieveWholeRecords_(keptRowids);
-    Logger.log(records.length+' '+keptRowids.length);
-//    var replaceProgress = doReplace_(records);
-//    if ( replaceProgress.saved ) {
-//      return true;
-//    } else {
-//      throw new Error(replaceProgress.errmsg);
-//      return false;
-//    }
-  } else {
-    Logger.log("All records were kept");
-  }
-}
-/**
  * function queryStringMaker_ Based on the inputs, construct the relevant queryStrings with fewer than 
  *                            8100 characters each.
  * @param {String} tblID      The FusionTable identifier for the desired table
@@ -164,7 +126,6 @@ function getKeptRowids_(tblID, arrHeader, valArray){
     // Convert from [ [rowid], [rowid], [rowid] ] to [rowid, rowid, rowid]
     var mapTime = new Date().getTime();
     rowidArr = rowidArr.map(function(value, index){return value[0]});
-    Logger.log(new Date().getTime() - mapTime);
     return rowidArr;
   }
   return [];
@@ -226,33 +187,23 @@ function keepInterestingRecords_(){
   var members = getUserBatch_(0, 100000);
   var rowids = identifyDiffSeenAndRankRecords_(members.map(function(value,index){return value[1]}));
   var totalRows = getTotalRowCount_(ftid);
-  var progress = {"saved":false,"errmsg":"","uploadSize":0};
   if ( rowids.length === totalRows ) {
-    progress.errmsg = 'All records are interesting';
-    progress.saved = true;
+    Logger.log('All records are interesting');
   } else if (rowids.length < totalRows ) {
-    if ( rowids.length == 0 ) {
-      progress.errmsg = 'No rowids returned';
-    } else { 
-      if (doBackupTable_() === false) {
-        progress.errmsg = "Couldn't back up existing table data";
-      } else {
+    if ( rowids.length > 0 ) {
+      if ( doBackupTable_() ) {
         var records = retrieveWholeRecords_(rowids,ftid);
-        if ( records.length === 0 ) {
-          progress.errmsg = 'No records returned from rowids';
+        if ( records.length > 0 ) {
+          doReplace_(ftid, records)
         } else {
-          progress = doReplace_(ftid, records)
-          if ( progress.saved === false) {
-            throw new Error(progress.errmsg);
-          }
+          throw new Error('Did not retrieve any rows from given rowids');
         }
       }
+    } else {
+      throw new Error('No rowids received from DiffSeenAndRank');
     }
-  } else {
-    throw new Error('More interesting records than records... How???');
   }
   Logger.log('keepInterestingRecords: '+((new Date().getTime() - startTime)/1000) +' sec');
-  return progress;
 }
 /**
  * function identifyDiffSeenAndRankRecords_   For the given members, returns the ROWIDs of all records 
@@ -323,33 +274,27 @@ function doBookending(){
   var rowids = identifyBookendRowids_(members.map(function(value,index){return value[1]}));
   var totalRowCount = getTotalRowCount_(ftid);
   Logger.log('Current non-bookend count: '+(totalRowCount-rowids.length)+' out of '+totalRowCount+' rows');
-  var progress = {"saved":false,"errmsg":"","uploadSize":0};
   if ( rowids.length === totalRowCount ) {
-    progress.errmsg = 'All records are bookends';
-    progress.saved = true;
-  } else if (rowids.length < totalRowCount ) {
+    Logger.log('All records are bookends');
+  } else if ( rowids.length > totalRowCount ) {
+    throw new Error('More bookending records than records... How???');
+  } else {
     if ( rowids.length == 0 ) {
-      progress.errmsg = 'No rowids returned';
-    } else { 
-      if (doBackupTable_() === false) {
-        progress.errmsg = "Couldn't back up existing table data";
+      throw new Error('No rowids returned for bookending.');
+    } else {
+      if ( doBackupTable_() === false ) {
+        throw new Error("Couldn't back up existing table data");
       } else {
         var records = retrieveWholeRecords_(rowids,ftid);
-        if ( records.length === 0 ) {
-          progress.errmsg = 'No records returned from rowids';
+        if ( records.length <= 0 ) {
+          throw new Error('No records returned from given bookend rowids');
         } else {
-          progress = doReplace_(ftid, records)
-          if ( progress.saved === false) {
-            throw new Error(progress.errmsg);
-          }
+          doReplace_(ftid, records)
         }
       }
     }
-  } else {
-    throw new Error('More bookending records than records... How???');
   }
   Logger.log('doBookending: '+((new Date().getTime() - startTime)/1000) +' sec');
-  return progress;
 }
 /**
  * function identifyBookendRowids_   For the given members, returns the ROWID array containing each
@@ -385,50 +330,54 @@ function identifyBookendRowids_(memUIDs){
   }
   // Categorize the large resultArr
   var lcMap = {};
-  for (var row=0;row<resultArr.length;row++){
-    var data = resultArr[row], usedRow = '';
+  var row = 0, data, cur_uid, cur_lastCrown, cur_row_id, cur_lastSeen, cur_Rank;
+  for (;row<resultArr.length;row++){
+    data = resultArr[row];
+    cur_uid = data[0];
+    cur_lastCrown = data[1];
+    cur_row_id = data[2];
+    cur_lastSeen = data[3];
+    cur_Rank = data[4];
     // Have we seen this member yet?
-    if ( typeof lcMap[data[0]] === 'undefined' ) lcMap[data[0]] = {'lc':{},'numOrig':1,'numDrop':0};
+    if ( typeof lcMap[cur_uid] === 'undefined' ) lcMap[cur_uid] = {'lc':{}};
     // Have we seen this member's crown change date before?
-    if ( typeof lcMap[data[0]].lc[data[1]] === 'undefined' ) {
+    if ( typeof lcMap[cur_uid].lc[cur_lastCrown] === 'undefined' ) {
       // No, so create a new object array describing when it was first and last seen, and associated ranks
-      lcMap[data[0]].lc[data[1]] = {"minLS":{"val":data[3],"rowid":data[2]},
-                                    "maxLS":{"val":data[3],"rowid":data[2]},
-                                    'minRank':{'val':data[4],'rowid':data[2]},
-                                    'maxRank':{'val':data[4],'rowid':data[2]}
+      lcMap[cur_uid].lc[cur_lastCrown] = {"minLS":{"val":cur_lastSeen,"rowid":cur_row_id},
+                                    "maxLS":{"val":cur_lastSeen,"rowid":cur_row_id},
+                                    'minRank':{'val':cur_Rank,'rowid':cur_row_id},
+                                    'maxRank':{'val':cur_Rank,'rowid':cur_row_id}
                                    }
     } else {
       // Yes, compare vs existing data
-      lcMap[data[0]].numOrig++;
-      if ( data[3] < lcMap[data[0]].lc[data[1]].minLS.val ) {
+      if ( cur_lastSeen < lcMap[cur_uid].lc[cur_lastCrown].minLS.val ) {
         // This row has the same crown change date, but occurred before the stored min value. Replace the stored LastSeen
-        lcMap[data[0]].lc[data[1]].minLS = {"val":data[3],"rowid":data[2]};
-      } else if ( data[3] > lcMap[data[0]].lc[data[1]].maxLS.val ) {
+        lcMap[cur_uid].lc[cur_lastCrown].minLS = {"val":cur_lastSeen,"rowid":cur_row_id};
+      } else if ( cur_lastSeen > lcMap[cur_uid].lc[cur_lastCrown].maxLS.val ) {
         // This row has the same crown change date, but occurred after the stored max value. Replace the stored LastSeen
-        lcMap[data[0]].lc[data[1]].maxLS = {"val":data[3],"rowid":data[2]};
-      } else {
-        usedRow = false;
+        lcMap[cur_uid].lc[cur_lastCrown].maxLS = {"val":cur_lastSeen,"rowid":cur_row_id};
       }
-      if ( data[4] < lcMap[data[0]].lc[data[1]].minRank.val ) {
+      if ( cur_Rank < lcMap[cur_uid].lc[cur_lastCrown].minRank.val ) {
         // Same crown change date, but lower rank than the stored min rank. Updated stored rank.
-        lcMap[data[0]].lc[data[1]].minRank = {'val':data[4],'rowid':data[2]};
-      } else if ( data[4] > lcMap[data[0]].lc[data[1]].maxRank.val ) {
+        lcMap[cur_uid].lc[cur_lastCrown].minRank = {'val':cur_Rank,'rowid':cur_row_id};
+      } else if ( cur_Rank > lcMap[cur_uid].lc[cur_lastCrown].maxRank.val ) {
         // Same crown change date, but higher rank than the stored max rank. Updated stored rank.
-        lcMap[data[0]].lc[data[1]].maxRank = {'val':data[4],'rowid':data[2]};
-      } else {
-        if ( usedRow === '' ) usedRow = false;
+        lcMap[cur_uid].lc[cur_lastCrown].maxRank = {'val':cur_Rank,'rowid':cur_row_id};
       }
-      if (usedRow === false) lcMap[data[0]].numDrop++;
     }
   }
   // Push the needed rowids
-  var keptRowids = []
+  var keptRowids = [];
   for (var mem in lcMap) {
     for (var lc in lcMap[mem].lc) {
-      if ( keptRowids.indexOf(lcMap[mem].lc[lc].minLS.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].minLS.rowid);
-      if ( keptRowids.indexOf(lcMap[mem].lc[lc].maxLS.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].maxLS.rowid);
-      if ( keptRowids.indexOf(lcMap[mem].lc[lc].minRank.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].minRank.rowid);
-      if ( keptRowids.indexOf(lcMap[mem].lc[lc].maxRank.rowid) === -1 ) keptRowids.push(lcMap[mem].lc[lc].maxRank.rowid);
+      // Rowids are unique to each user, but each user's entry may have the same minimum and maximum LastSeen for
+      // each LastCrown. This means only the last 4 records need to be checked to ensure no duplicate rowids.
+      var toAdd = [lcMap[mem].lc[lc].minLS.rowid];
+      if ( toAdd.indexOf(lcMap[mem].lc[lc].maxLS.rowid) === -1 ) toAdd.push(lcMap[mem].lc[lc].maxLS.rowid);
+      if ( toAdd.indexOf(lcMap[mem].lc[lc].minRank.rowid) === -1 ) toAdd.push(lcMap[mem].lc[lc].minRank.rowid);
+      if ( toAdd.indexOf(lcMap[mem].lc[lc].maxRank.rowid) === -1 ) toAdd.push(lcMap[mem].lc[lc].maxRank.rowid);
+      // Add the user's unique rows for this LastCrown to the rowid list for fetching.
+      while ( toAdd.length != 0 ) { keptRowids.push(toAdd.pop()); }
     }
   }
   Logger.log((new Date().getTime()-startTime)/1000 + ' sec to find bookend ROWIDs');
@@ -503,7 +452,6 @@ function keepOnlyUniqueRecords(){
               var memsLTs = ltMap[batchResult.rows[row][1]]||[];
               if ( memsLTs.indexOf(batchResult.rows[row][4]) == -1 ) {
                 // Did not find this LastTouched in this member's array of already-added LastTouched values
-//                if ( batchResult.rows[row][11] == 1480307602000 ) batchResult.rows[row][11] = batchResult.rows[row][2];
                 kept.push(batchResult.rows[row])
                 if ( memsLTs.length == 0 ) {
                   ltMap[batchResult.rows[row][1]]=[batchResult.rows[row][4]];
