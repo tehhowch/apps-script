@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27004.2008
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "mhcc_maintainer", "mhcc_maintainer\mhcc_maintainer.pyproj", "{16E36005-EED9-431F-96A8-D4430B2DA21B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{16E36005-EED9-431F-96A8-D4430B2DA21B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16E36005-EED9-431F-96A8-D4430B2DA21B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AEF07B25-3039-40C2-8C03-03E222820A30}
+	EndGlobalSection
+EndGlobal
