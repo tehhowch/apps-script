@@ -1,5 +1,7 @@
 # MHCC specific ignores
 fusion.txt
+credentials.dat
+backupTable.txt
 
 
 # General-purpose ignores
