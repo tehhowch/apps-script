@@ -2,6 +2,7 @@
 fusion.txt
 credentials.dat
 backupTable.txt
+staging.csv
 
 
 # General-purpose ignores
