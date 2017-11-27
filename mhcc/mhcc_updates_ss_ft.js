@@ -123,6 +123,7 @@ function UpdateDatabase()
   {
     UpdateScoreboard();
     PropertiesService.getScriptProperties().setProperty('lastRan', 0);
+    doWebhookPost_(props['mhDiscord']);
     doBackupTable_();
   }
   else
@@ -204,11 +205,23 @@ function UpdateDatabase()
               dbRow = dbKeys[batchHunters[i][1]];
               // Skip this hunter if their data is still missing.
               if (typeof dbRow == 'undefined')
+              {
+                // Splice out this row as it will not have the proper number of columns.
+                batchHunters.splice(i, 1);
+                // Decrement the index to maintain a valid iterator.
+                --i;
                 continue;
+              }
             }
             // Move on to the next hunter in batchHunters due to malformed record data.
             else
-              continue
+            {
+              // Splice out this row as it does not have the proper number of columns.
+              batchHunters.splice(i, 1);
+              // Decrement the index to maintain a valid iterator.
+              --i;
+              continue;
+            }
           }
           if (typeof MM.hunters[j] != 'undefined')
           {
@@ -250,7 +263,14 @@ function UpdateDatabase()
                 break;
               }
             // Store the time when this hunter's rank was determined.
-            batchHunters[i][11] = db[dbRow][11];
+            batchHunters[i][11] = db[dbRow][11];  
+          }
+          else
+          {
+            // Splice out this row as it will not have the proper number of columns.
+            batchHunters.splice(i, 1);
+            // Decrement the index to maintain a valid iterator.
+            --i;
           }
         }
         mem2Update = [].concat(mem2Update, batchHunters);       // Stage this batch's data for a single write call
@@ -366,4 +386,29 @@ function UpdateScoreboard()
       throw new Error('Unable to save snapshots retrieved from crown database');
   SpreadsheetApp.flush();
   console.info((new Date().getTime() - startTime.getTime()) / 1000 + ' sec for all scoreboard operations');
+}
+
+
+/**
+ * Webhook to MH Discord
+ *   Lets everyone know when the scoreboard has updated
+ */
+function doWebhookPost_(url)
+{
+  var hookObject = {
+    "content":"The MHCC Scoreboard just updated!\n[Check it out](https://docs.google.com/spreadsheets/d/e/2PACX-1vQG5g3vp-q7LRYug-yZR3tSwQzAdN7qaYFzhlZYeA32vLtq1mJcq7qhH80planwei99JtLRFAhJuTZn/pubhtml) or come visit us on [Facebook](<https://www.facebook.com/groups/MousehuntCenturyClub/>)",
+    "avatar_url":'https://i.imgur.com/RNDe7XK.jpg'
+  };
+  var params = {
+    "method":"post",
+    "payload":hookObject
+  };
+  try
+  {
+    UrlFetchApp.fetch(url, params);
+  }
+  catch (e)
+  {
+    console.info({message:'Webhook failed', exception: e});
+  }
 }
