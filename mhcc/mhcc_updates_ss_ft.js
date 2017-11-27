@@ -363,7 +363,7 @@ function UpdateScoreboard()
                           allHunters[rank - 1][0],                                                                       // Name
                           'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1]
                          ])
-      if (i % 150 == 0)
+      if (rank % 150 == 0)
         scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link']);
 
       // Store the time this rank was generated.
