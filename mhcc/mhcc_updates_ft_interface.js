@@ -159,10 +159,19 @@ function ftBatchWrite_(hdata)
   catch (e)
   {
     console.error(e);
+    var didPrint = false, badRows = 0;
     for (var row = 0; row < hdata.length; ++row)
-      if (hdata[row].length !== crownDBnumColumns)
-        console.log(row + ", data: " + hdata[row].toString());
-
+    {
+      if (hdata[row].length !== crownDBnumColumns && !didPrint)
+      {
+        console.warn(row + ", data: " + hdata[row].toString());
+        didPrint = true;
+        ++badRows;
+      }
+      else if (hdata[row].length !== crownDBnumColumns)
+        ++badRows;
+    }
+    console.warn(badRows + ' rows with incorrect column count out of ' + hdata.length);
     throw new Error('Unable to upload rows: ' + e.message);
   }
 }
