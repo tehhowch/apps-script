@@ -479,9 +479,9 @@ function delMember_(memList, startTime)
       var sql = "SELECT ROWID, UID FROM " + ftid + " WHERE UID = '" + memList[mem][1] + "'";
       var snapshots = FusionTables.Query.sqlGet(sql).rows || [];
       var confirmString = "Member '" + memList[mem][0] + "' has " + snapshots.length + " records.";
-      confirmString += "\\nThese cannot be removed faster than 2 per second, requiring at least ";
-      confirmString += Math.floor(1 + snapshots.length * 0.5) + " seconds.\\nYou have at most ";
-      confirmString += Math.floor(240 - (new Date.getTime() - startTime) / 1000) + "sec. of script time left.\\nBegin deletion? ";
+      confirmString += "\\nThese cannot be removed faster than 30 per minute, requiring at least ";
+      confirmString += Math.floor(1 + snapshots.length * 2) + " seconds.\\nYou have at most ";
+      confirmString += Math.floor(240 - (new Date().getTime() - startTime) / 1000) + "sec. of script time left.\\nBegin deletion? ";
       var resp = Browser.msgBox("Confirmation Required", confirmString, Browser.Buttons.YES_NO);
       if (resp.toLowerCase() === "yes")
       {
@@ -490,8 +490,8 @@ function delMember_(memList, startTime)
         while (((new Date().getTime() - startTime) / 1000 <= 250) && (row < snapshots.length))
         {
           FusionTables.Query.sql(sqlBase + snapshots[row][0] + "'");
-          // Limit the rate to <200 FusionTable queries per 100 seconds.
-          Utilities.sleep(502);
+          // Maximum rate is 30 writes per minute.
+          Utilities.sleep(2001);
           ++row;
         }
         console.log("Deleted " + row.toString() + " crown records for former member '" + memList[mem][0] + "'.");
