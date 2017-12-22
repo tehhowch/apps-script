@@ -747,11 +747,11 @@ function retrieveWholeRecords_(rowidArray, tblID)
  */
 function getTotalRowCount_(tblID)
 {
-  var sqlTotal = 'select ROWID from ' + tblID;
+  var sqlTotal = 'select COUNT(ROWID) from ' + tblID;
   try
   {
     var totalRowCount = FusionTables.Query.sqlGet(sqlTotal);
-    totalRowCount = totalRowCount.rows.length;
+    totalRowCount = totalRowCount.rows[0][0];
   }
   catch (e)
   {

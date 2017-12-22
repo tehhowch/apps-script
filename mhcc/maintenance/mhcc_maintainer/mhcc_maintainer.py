@@ -61,12 +61,12 @@ def GetUserBatch(start, limit):
 def GetTotalRowCount(tblID):
 	'''Queries the size of a table, in rows.
 	Uses SQLGet since only GET is done.''';
-	selectSQL = 'select ROWID from ' + tblID;
+	countSQL = 'select COUNT(ROWID) from ' + tblID;
 	print('Fetching total row count for table id', tblID);
 	start = time.perf_counter();
-	allRowIds = FusionTables.query().sqlGet(sql=selectSQL).execute();
+	allRowIds = FusionTables.query().sqlGet(sql=countSQL).execute();
 	print('Fetched total row count in', round(time.perf_counter() - start, 1),'sec.');
-	return len(allRowIds['rows']);
+	return allRowIds['rows'][0];
 
 
 
