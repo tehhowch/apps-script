@@ -40,9 +40,23 @@ function getDbIndexMap_(db, numMembers)
   // SheetDb as numMembers, though, this generally means that a UID appeared twice. This is not a
   // strict requirement, as combinations of member removal and member addition can reproduce it.
   if ((Object.keys(output).length < numMembers * 1) && (db.length === numMembers * 1))
-    throw new Error('Unique ID failed to be unique when indexing SheetDb by UID');
-
+  {
+    console.error({message:'Unique ID failed to be unique when indexing SheetDb by UID', dbIndex:output});
+    refreshDbIndexMap_();
+    throw new Error('Unique ID failed to be unique. Rewriting SheetDb index before next call...');
+  }
   return output;
+}
+
+/**
+ * function refreshDbIndexMap_  Rewrite SheetDb with fresh data from the FusionTable. Called if there
+ *                              is a uniqueness error.
+ */
+function refreshDbIndexMap_()
+{
+  var numMembers = FusionTables.Query.sqlGet("SELECT * FROM " + utbl).rows.length;
+  var db = getLatestRows_(numMembers);
+  saveMyDb_(SpreadsheetApp.openById(mhccSSkey), db);
 }
 /**
  * function getLatestRows_    Returns the record associated with the most recently touched snapshot
@@ -282,7 +296,7 @@ function addFusionMember()
       // Seek around to determine the new lastRan value.
       lastRan = getNewLastRanValue_(origUID, lastRan, mem2Add);
     }
-    SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added " + n.toString() + " new member(s) to the MHCC Member Crown Database", "Success!", 5);
+    SpreadsheetApp.getActiveSpreadsheet().toast("Successfully added new member(s) to the MHCC Member Crown Database", "Success!", 5);
     PropertiesService.getScriptProperties().setProperties({'numMembers':curUIDs.length.toString(), 'lastRan':lastRan.toString()});
   }
 }
@@ -347,15 +361,16 @@ function delFusionMember()
   if (mem2Del.length > 0) {
     var props = PropertiesService.getScriptProperties().getProperties();
     var lastRan = props.lastRan * 1 || 0;
+    var delMemberArray;
     // Adjust the data update start position based on the current cycle progress.
     if (lastRan >= curUIDs.length)
-      delMember_(mem2Del, startTime);
+      delMemberArray = delMember_(mem2Del, startTime);
     else
     {
       // We may be removing the member in the middle of a data update cycle.
       var origUID = getUserBatch_(lastRan, 1);
       origUID = origUID[0][1];
-      var delMemberArray = delMember_(mem2Del, startTime);
+      delMemberArray = delMember_(mem2Del, startTime);
       // Seek around to determine the new lastRan value.
       lastRan = getNewLastRanValue_(origUID, lastRan, delMemberArray);
     }
