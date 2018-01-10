@@ -123,7 +123,8 @@ function UpdateDatabase()
   {
     UpdateScoreboard();
     PropertiesService.getScriptProperties().setProperty('lastRan', 0);
-    doWebhookPost_(props['mhDiscord']);
+    if (Math.random() < 0.4)
+      doWebhookPost_(props['mhDiscord']);
     doBackupTable_();
   }
   else
@@ -132,10 +133,9 @@ function UpdateDatabase()
     lock.waitLock(30000);
     if (lock.hasLock())
     {
-      Logger.log('Started with ' + lastRan + ' completed member updates');
       // allMembers is an array of [Name, UID]
       var allMembers = getUserBatch_(0, numMembers * 1);
-      var mem2Update = [];
+      var mem2Update = [], skippedRows = [];
       // Update remaining members in sets of batchSize. Stop early if past "safe" runtime.
     hunterBatchLoop:
       while (((new Date().getTime() - startTime) / 1000 < 150) && (lastRan < numMembers))
@@ -207,7 +207,7 @@ function UpdateDatabase()
               if (typeof dbRow == 'undefined')
               {
                 // Splice out this row as it will not have the proper number of columns.
-                batchHunters.splice(i, 1);
+                skippedRows.push(batchHunters.splice(i, 1)[0]);
                 // Decrement the index to maintain a valid iterator.
                 --i;
                 continue;
@@ -217,7 +217,7 @@ function UpdateDatabase()
             else
             {
               // Splice out this row as it does not have the proper number of columns.
-              batchHunters.splice(i, 1);
+              skippedRows.push(batchHunters.splice(i, 1)[0]);
               // Decrement the index to maintain a valid iterator.
               --i;
               continue;
@@ -268,7 +268,7 @@ function UpdateDatabase()
           else
           {
             // Splice out this row as it will not have the proper number of columns.
-            batchHunters.splice(i, 1);
+            skippedRows.push(batchHunters.splice(i, 1)[0]);
             // Decrement the index to maintain a valid iterator.
             --i;
           }
@@ -281,6 +281,8 @@ function UpdateDatabase()
         ftBatchWrite_(mem2Update);
         PropertiesService.getScriptProperties().setProperty('lastRan', lastRan.toString());
       }
+      if (skippedRows.length > 0)
+        console.info({message:'Skipped ' + skippedRows.length + ' members', initialData:skippedRows});
       console.log('Through ' + lastRan + ' members, elapsed=' + ((new Date().getTime()) - startTime) / 1000 + ' sec');
       lock.releaseLock();
     }
@@ -379,7 +381,7 @@ function UpdateScoreboard()
     wb.getSheetByName('Members').getRange('I23').setValue((startTime - wb.getSheetByName('Members').getRange('H23').getValue()) / (24 * 3600 * 1000));
     wb.getSheetByName('Members').getRange('H23').setValue(startTime);
     // Overwrite the latest db version with the version that has the proper ranks and ranktimes.
-    saveMyDb_(wb,allHunters);
+    saveMyDb_(wb, allHunters);
 
   }
   else
