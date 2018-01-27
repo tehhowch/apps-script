@@ -363,10 +363,11 @@ function UpdateScoreboard()
                           allHunters[rank - 1][10],                                                                      // Squirrel
                           '=HYPERLINK("' + plotLink + allHunters[rank - 1][1] + '","' + allHunters[rank - 1][8] + '")',  // # MHCC Crowns
                           allHunters[rank - 1][0],                                                                       // Name
-                          'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1]
+                          'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1],
+                          'https://www.mousehuntgame.com/profile.php?snuid=' + allHunters[rank - 1][1]
                          ])
       if (rank % 150 == 0)
-        scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link']);
+        scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link', 'MHG']);
 
       // Store the time this rank was generated.
       allHunters[rank - 1][11] = startTime.getTime();
