@@ -3,7 +3,12 @@ fusion.txt
 credentials.dat
 backupTable.txt
 staging.csv
+auth.txt
+tables.txt
 
+# Python ignores
+__pycache__/*
+*.pyc
 
 # General-purpose ignores
 [Tt]humbs.db

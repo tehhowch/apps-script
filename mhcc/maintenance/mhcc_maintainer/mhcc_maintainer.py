@@ -13,6 +13,7 @@ from oauth2client.client import AccessTokenRefreshError
 from oauth2client.client import OAuth2WebServerFlow
 
 localKeys = {};
+tableList = {};
 
 scope = ['https://www.googleapis.com/auth/fusiontables',
 		 'https://www.googleapis.com/auth/drive'];
@@ -23,11 +24,23 @@ FusionTables = None;
 def Initialize():
 	'''Read in the FusionTable ID and the api keys for oAuth''';
 	global localKeys;
-	with open('fusion.txt') as f:
+	with open('auth.txt') as f:
 		for line in f:
 			(key, val) = line.split('=');
 			localKeys[key.strip()] = val.strip();
-	print('Initialized.');
+	with open('tables.txt') as f:
+		for line in f:
+			(key, val) = line.split('=');
+			tableList[key.strip()] = val.strip();
+	with open('backupTable.txt') as f:
+		for line in f:
+			if ',' in line:
+				(key, val) = line.split(',');
+				tableList[key.strip()] = val.strip();
+
+	print('Initialized. Found tables: ');
+	for key in tableList.keys():
+		print('\t' + key);
 
 
 
@@ -36,12 +49,14 @@ def Authorize():
 	flow = OAuth2WebServerFlow(localKeys['client_id'], localKeys['client_secret'], scope);
 	storage = Storage('credentials.dat');
 	credentials = storage.get();
-	if(credentials is None or credentials.invalid):
+	if credentials is None or credentials.invalid:
+		print('Reauthorization required... Launching auth flow');
 		credentials = tools.run_flow(flow, storage, tools.argparser.parse_args());
 	else:
-		print('Valid Credentials');
+		print('Valid Credentials.');
 	global FusionTables;
-	FusionTables = build('fusiontables', 'v2', credentials=credentials);#, cache='.cache');
+	print('Authorizing...', end='');
+	FusionTables = build('fusiontables', 'v2', credentials=credentials);
 	print('Authorized.');
 	
 
@@ -49,50 +64,56 @@ def Authorize():
 def GetUserBatch(start, limit):
 	'''Return up to @limit members, beginning with the index number @start
 	Uses SQLGet since only GET is done.''';
-	sql = 'SELECT Member, UID FROM ' + localKeys['userTable'] + ' ORDER BY Member ASC OFFSET ' + start.__str__() + ' LIMIT ' + limit.__str__();
+	sql = 'SELECT Member, UID FROM ' + tableList['users'] + ' ORDER BY Member ASC OFFSET ' + start.__str__() + ' LIMIT ' + limit.__str__();
 	print('Fetching at most', limit, 'members, starting with', start);
 	start = time.perf_counter();
 	resp = FusionTables.query().sqlGet(sql=sql).execute();
-	print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - start, 1), ' sec.');
-	return resp['rows'];
+	if resp and resp['rows']:
+		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - start, 1), ' sec.');
+		return resp['rows'];
+	else:
+		print('Received no data from user fetch query.')
+		return [];
 
 
-
-def GetTotalRowCount(tblID):
+def GetTotalRowCount(tableID):
 	'''Queries the size of a table, in rows.
 	Uses SQLGet since only GET is done.''';
-	countSQL = 'select COUNT(ROWID) from ' + tblID;
-	print('Fetching total row count for table id', tblID);
+	countSQL = 'select COUNT(ROWID) from ' + tableID;
+	print('Fetching total row count for table id', tableID);
 	start = time.perf_counter();
 	allRowIds = FusionTables.query().sqlGet(sql=countSQL).execute();
-	print('Fetched total row count in', round(time.perf_counter() - start, 1),'sec.');
-	return allRowIds['rows'][0];
+	if allRowIds and allRowIds['rows']:
+		print('Fetched total row count in', round(time.perf_counter() - start, 1),'sec.');
+		return allRowIds['rows'][0];
+	else:
+		print('Received no data from row count query.');
+		return 0;
 
 
-
-def RetrieveWholeRecords(rowids, tblID):
+def RetrieveWholeRecords(rowids, tableID):
 	'''Returns a list of lists (i.e. 2D array) corresponding to the full records
 	associated with the requested rowids in the specified table.
 	Uses SQLGet since only GET is done.''';
-	if(type(rowids) is not list):
+	if type(rowids) is not list:
 		raise TypeError('Expected list of rowids.');
-	elif(not rowids):
+	elif not rowids:
 		raise ValueError('Received empty list of rowids to retrieve.');
-	if(type(tblID) is not str):
+	if type(tableID) is not str:
 		raise TypeError('Expected string table ID.');
-	elif(len(tblID) != 41):
+	elif len(tableID) != 41:
 		raise ValueError('Received invalid table ID.');
 	records=[];
 	numNeeded = len(rowids);
 	rowids.reverse();
-	baseSQL = 'SELECT * FROM ' + tblID + ' WHERE ROWID IN (';
+	baseSQL = 'SELECT * FROM ' + tableID + ' WHERE ROWID IN (';
 	print('Retrieving', numNeeded, 'records.');
 	startTime = time.perf_counter();
-	while(rowids):
+	while rowids:
 		tailSQL = '';
 		sqlROWIDs = [];
 		batchTime = time.monotonic();
-		while(rowids and (len(baseSQL + tailSQL) <= 8000)):
+		while rowids and (len(baseSQL + tailSQL) <= 8000):
 			sqlROWIDs.append(rowids.pop());
 			tailSQL = ','.join(sqlROWIDs) + ')';
 		# Fetch the batch of records.
@@ -100,31 +121,36 @@ def RetrieveWholeRecords(rowids, tblID):
 		records.extend(resp['rows']);
 		elapsed = time.monotonic() - batchTime;
 		# Rate Limit
-		if(elapsed < .75):
+		if elapsed < .75:
 			time.sleep(.75 - elapsed);
-	if(len(records) != numNeeded):
+	if len(records) != numNeeded:
 		raise LookupError('Obtained different number of records than specified');
 	print('Retrieved', numNeeded, 'records in', time.perf_counter() - startTime,'sec.');
 	return records;
 
 
 
-def IdentifyDiffSeenAndRankRecords(uids):
+def IdentifyDiffSeenAndRankRecords(uids, tableID):
 	'''Returns a list of rowids for which the LastSeen values are unique, or the
 	rank is unique (for a given LastSeen), for the given members.
 	Uses SQLGet since only GET is done.''';
 	rowids = [];
+	if not tableID:
+		tableID = tableList['crowns'];
+	if not tableID:
+		return rowids;
+
 	uids.reverse();
 	lastSeen = {};
 	kept = set();
 	savings = 0;
-	baseSQL = 'SELECT ROWID, Member, UID, LastSeen, Rank FROM ' + localKeys['dataTable'] + ' WHERE UID IN (';
+	baseSQL = 'SELECT ROWID, Member, UID, LastSeen, Rank FROM ' + tableID + ' WHERE UID IN (';
 	print('Sifting through', len(uids), 'member\'s stored data.');
-	while(uids):
+	while uids:
 		tailSQL = '';
 		sqlUIDs = [];
 		batch = time.monotonic();
-		while((uids) and (len(baseSQL + tailSQL) <= 8000)):
+		while uids and (len(baseSQL + tailSQL) <= 8000):
 			sqlUIDs.append(uids.pop());
 			tailSQL = ','.join(sqlUIDs) + ') ORDER BY LastSeen ASC';
 		resp = FusionTables.query().sqlGet(sql=''.join([baseSQL, tailSQL])).execute();
@@ -140,22 +166,22 @@ def IdentifyDiffSeenAndRankRecords(uids):
 			ls = row[3].__str__();
 			r = row[4].__str__();
 			# Add a new member
-			if(uid not in lastSeen):
+			if uid not in lastSeen:
 				lastSeen[uid] = dict(ls=set(r));
 				kept.add(rowid);
 			# Add a new LastSeen to the dict.
-			elif(ls not in lastSeen[uid]):
+			elif ls not in lastSeen[uid]:
 				lastSeen[uid][ls]=set(r);
 				kept.add(rowid);
 			# Add a new Rank to the set.
-			elif(r not in lastSeen[uid][ls]):
+			elif r not in lastSeen[uid][ls]:
 				lastSeen[uid][ls].add(r);
 				kept.add(rowid);
 		# Store these new kept rows.
 		rowids.extend(kept);
 		savings += totalRecords - len(kept);
 		elapsed = time.monotonic() - batch;
-		if(elapsed < .75):
+		if elapsed < .75:
 			time.sleep(.75 - elapsed);
 
 	print('Found', savings, 'values to trim from', savings + len(rowids), 'records');
@@ -163,44 +189,51 @@ def IdentifyDiffSeenAndRankRecords(uids):
 
 
 
-def KeepInterestingRecords():
+def KeepInterestingRecords(tableID):
 	'''Removes duplicated crown records, keeping each member's records which
 	have a new LastSeen value, or a new Rank value.''';
 	startTime = time.perf_counter();
+	if not tableID:
+		tableID = tableList['crowns'];
+	if not tableID:
+		print('Invalid table id');
+		return;
 	memberList = GetUserBatch(0, 100000);
-	if(not memberList):
+	if not memberList:
 		print('No members returned');
 		return;
-	totalRows = GetTotalRowCount(localKeys['dataTable']);
+	totalRows = GetTotalRowCount(tableID);
 	uidList = list(row[1] for row in memberList);
-	rowids = IdentifyDiffSeenAndRankRecords(uidList);
-	if(not rowids):
+	rowids = IdentifyDiffSeenAndRankRecords(uidList, tableID);
+	if not rowids:
 		print('No rowids received');
 		return;
-	if(len(rowids) == totalRows):
+	if len(rowids) == totalRows:
 		print("All records are interesting");
 		return;
 	# Get the row data associated with the kept rowids
-	keptValues = RetrieveWholeRecords(rowids, localKeys['dataTable']);
+	keptValues = RetrieveWholeRecords(rowids, tableID);
 	# Back up the table before we do anything crazy.
-	BackupTable();
+	BackupTable(tableID);
 	# Do something crazy.
-	ReplaceTable(localKeys['dataTable'], keptValues);
+	ReplaceTable(tableID, keptValues);
 	print('KeepInterestingRecords: complete');
 	print(time.perf_counter() - startTime, ' total sec required.');
 
 
 
-def BackupTable():
+def BackupTable(tableID):
 	'''Creates a copy of the existing MHCC CrownRecord Database and logs the new table id.''';
-	backup = FusionTables.table().copy(tableId=localKeys['dataTable']).execute();
+	if not tableID:
+		tableID = tableList['crowns'];
+	backup = FusionTables.table().copy(tableId=tableID).execute();
 	now = datetime.datetime.utcnow();
 	newName = 'MHCC_CrownHistory_AsOf_' + '-'.join(x.__str__() for x in [now.year, now.month, now.day, now.hour, now.minute]);
 	backup['name'] = newName;
 	FusionTables.table().update(tableId=backup['tableId'], body=backup).execute();
 	with open('backupTable.txt','a') as f:
 		csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[newName, backup['tableId']]]);
-	print('Backup completed to new tableId =', backup['tableId']);
+	print('Backup completed to new table \'' + newName + '\' with id =', backup['tableId']);
 	return newName;
 
 
@@ -219,7 +252,7 @@ def GetSizeEstimate(values, numSamples):
 	'''Estimates the upload size of a 2D array without needing to make the actual
 	upload file. Averages @numSamples different rows to improve result statistics.''';
 	rowCount = len(values);
-	if(numSamples >= .1 * rowCount):
+	if numSamples >= .1 * rowCount:
 		numSamples = round(.03 * rowCount);
 	sampled = random.sample(range(rowCount), numSamples);
 	uploadSize = 0.;
@@ -230,19 +263,19 @@ def GetSizeEstimate(values, numSamples):
 
 
 
-def ReplaceTable(tblID, newValues):
-	if(type(newValues) is not list):
+def ReplaceTable(tableID, newValues):
+	if type(newValues) is not list:
 		raise TypeError('Expected value array as list of lists.');
-	elif(not newValues):
+	elif not newValues:
 		raise ValueError('Received empty value array.');
-	elif(type(newValues[0]) is not list):
+	elif type(newValues[0]) is not list:
 		raise TypeError('Expected value array as list of lists.');
-	if(type(tblID) is not str):
+	if type(tableID) is not str:
 		raise TypeError('Expected string table id.');
-	elif(len(tblID) != 41):
+	elif len(tableID) != 41:
 		raise ValueError('Table id is not of sufficient length.');
 	# Estimate the upload size by averaging the size of several random rows.
-	print('Replacing table with id =', tblID);
+	print('Replacing table with id =', tableID);
 	estSize = GetSizeEstimate(newValues, 5);
 	print('Approx. new upload size =', estSize, ' MB.');
 
@@ -250,7 +283,7 @@ def ReplaceTable(tblID, newValues):
 	newValues.sort();
 	mediaFile = MakeMediaFile(newValues);
 
-	response = FusionTables.table().replaceRows(tableId=tblID, media_body=mediaFile, encoding='auto-detect').execute();
+	response = FusionTables.table().replaceRows(tableId=tableID, media_body=mediaFile, encoding='auto-detect').execute();
 	print('Replacement completed in', round(time.perf_counter() - start, 1), 'sec.');
 
 
@@ -258,5 +291,5 @@ def ReplaceTable(tblID, newValues):
 if (__name__ == "__main__"):
 	Initialize();
 	Authorize();
-	KeepInterestingRecords();
+	KeepInterestingRecords(tableList['crowns']);
 	
