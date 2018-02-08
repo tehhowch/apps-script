@@ -6,6 +6,7 @@ import csv
 import random
 
 from googleapiclient.discovery import build
+from googleapiclient.http import HttpError
 from googleapiclient.http import MediaFileUpload
 from oauth2client import tools
 from oauth2client.file import Storage
@@ -61,17 +62,68 @@ def Authorize():
 	
 
 
+def GetQueryResult(query):
+	'''Perform a FusionTable query and return the result as a list.
+	If the response is larger than 10 MB, this will use a resumable / media download request.
+	The query is assumed to be complete, i.e. specifying the target table.'''
+	if FusionTables is None:
+		raise EnvironmentError('FusionTables not authenticated or built as a service.');
+		return '';
+	if not ValidateQuery(query):
+		return '';
+	result = {};
+	response = FusionTables.query().sqlGet(sql=query);
+	try:
+		result = response.execute();
+	except HttpError as e:
+		# Try as a media download instead.
+		
+		return {};
+
+	if not ValidateQueryResult(result):
+		return {};
+	return ExtractQueryResult(result);
+
+
+
+def ValidateQuery(query):
+	'''Inspect the given query to ensure it is actually a query and includes a table.'''
+	l = query.lower();
+	if 'select' not in l:
+		return False;
+	if 'from' not in l:
+		return False;
+	return True;
+
+
+
+def ValidateQueryResult(queryResult):
+	'''Checks the returned response from FusionTables to ensure it has output.'''
+	if (not queryResult) or ('rows' not in queryResult.keys()) or (not queryResult['rows']):
+		return False;
+	return True;
+
+
+
+def ExtractQueryResult(queryResult):
+	'''Extracts the given response from FusionTables into an array-like result. Specifically, gets the 'rows' property.'''
+	if not queryResult or not queryResult['rows']:
+		return [];
+	return queryResult;
+
+
+
 def GetUserBatch(start, limit):
 	'''Return up to @limit members, beginning with the index number @start
 	Uses SQLGet since only GET is done.''';
 	sql = 'SELECT Member, UID FROM ' + tableList['users'] + ' ORDER BY Member ASC OFFSET ' + start.__str__() + ' LIMIT ' + limit.__str__();
 	print('Fetching at most', limit, 'members, starting with', start);
 	start = time.perf_counter();
-	resp = FusionTables.query().sqlGet(sql=sql).execute();
-	if resp and resp['rows']:
+	resp = GetQueryResult(sql);
+	try:
 		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - start, 1), ' sec.');
 		return resp['rows'];
-	else:
+	except:
 		print('Received no data from user fetch query.')
 		return [];
 
@@ -82,11 +134,11 @@ def GetTotalRowCount(tableID):
 	countSQL = 'select COUNT(ROWID) from ' + tableID;
 	print('Fetching total row count for table id', tableID);
 	start = time.perf_counter();
-	allRowIds = FusionTables.query().sqlGet(sql=countSQL).execute();
-	if allRowIds and allRowIds['rows']:
+	allRowIds = GetQueryResult(countSQL);
+	try:
 		print('Fetched total row count in', round(time.perf_counter() - start, 1),'sec.');
 		return allRowIds['rows'][0];
-	else:
+	except:
 		print('Received no data from row count query.');
 		return 0;
 
@@ -117,8 +169,12 @@ def RetrieveWholeRecords(rowids, tableID):
 			sqlROWIDs.append(rowids.pop());
 			tailSQL = ','.join(sqlROWIDs) + ')';
 		# Fetch the batch of records.
-		resp = FusionTables.query().sqlGet(sql=''.join([baseSQL, tailSQL])).execute();
-		records.extend(resp['rows']);
+		resp = GetQueryResult(''.join([baseSQL, tailSQL]));
+		try:
+			records.extend(resp['rows']);
+		except:
+			print('Failed on query: ' + ''.join([baseSQL + tailSQL]));
+			return [];
 		elapsed = time.monotonic() - batchTime;
 		# Rate Limit
 		if elapsed < .75:
@@ -153,10 +209,14 @@ def IdentifyDiffSeenAndRankRecords(uids, tableID):
 		while uids and (len(baseSQL + tailSQL) <= 8000):
 			sqlUIDs.append(uids.pop());
 			tailSQL = ','.join(sqlUIDs) + ') ORDER BY LastSeen ASC';
-		resp = FusionTables.query().sqlGet(sql=''.join([baseSQL, tailSQL])).execute();
+		resp = GetQueryResult(''.join([baseSQL, tailSQL]));
+		try:
+			totalRecords = len(resp['rows']);
+		except:
+			print('Failed query: ' + ''.join([baseSQL, tailSQL]));
+			return [];
 		lastSeen.clear();
 		kept.clear();
-		totalRecords = len(resp['rows']);
 		# The rows increase in LastSeen values, so a single member's rows are
 		# scattered throughout it. However, this member will always be only in
 		# this response object.
@@ -238,14 +298,27 @@ def BackupTable(tableID):
 
 
 
-def MakeMediaFile(values):
-	'''Returns a mediafile with UTF-8 encoding, for use with FusionTable API calls
+def MakeMediaFile(values, path):
+	'''Returns a MediaFile with UTF-8 encoding, for use with FusionTable API calls
 	that expect a media_body parameter.
-	Also creates a hard disk backup.''';
-	with open('staging.csv', 'w', newline='', encoding='utf-8') as f:
+	Also creates a hard disk backup (to facilitate the MediaFile creation).''';
+	MakeLocalCopy(values, path, 'w');
+	return MediaFileUpload(path, mimetype='application/octet-stream');
+
+
+
+def MakeLocalCopy(values, path, fileMode):
+	'''Writes the given values to disk in the given location.
+	Example path: 'staging.csv' -> write file 'staging.csv' in the script's directory.'''
+	if (not values) or (not path):
+		raise ValueError('Needed both values to save and a path to save.');
+	if not fileMode:
+		fileMode = 'w';
+	if fileMode == 'r':
+		raise ValueError('File mode must be write-capable.');
+	with open(path, fileMode, newline = '', encoding = 'utf-8') as f:
 		csv.writer(f, strict=True).writerows(values);
-	return MediaFileUpload('staging.csv', mimetype='application/octet-stream');
-	
+
 
 
 def GetSizeEstimate(values, numSamples):
