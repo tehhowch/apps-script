@@ -80,36 +80,27 @@ function getNewMembers_(toAdd)
 
 
 
-// Loop over all days leading up to this one, and grab the most recent row still on that date.
-// e.g. get 2017-12-31 23:59:59, 2018-01-01 23:59:59, etc.
-function importExistingDailyData(members)
+// Get records with unique LastSeen values just prior to and during this competition.
+// If a competitor has not been seen in the 7 days prior to this competition's start date,
+// their starting counts will be from the first record seen during the competition.
+function importExistingDailyData(members, compStartDate)
 {
   if(!members)
     members = getCompetitors_();
+  if(!compStartDate)
+    compStartDate = new Date(Date.UTC(2018, 0, 1));
   
-  var begin = new Date(Date.UTC(2018, 0, 2));
-  var end = new Date();
-  // Create a query for each day that has elapsed.
   var rowidQueries = [];
-  while(begin < end)
-  {
-    var queryBegin = new Date(begin);
-    queryBegin.setUTCDate(queryBegin.getUTCDate() - 1);
-    rowidQueries.push(getRowidQueries_(members, queryBegin, begin));
-    begin.setUTCDate(begin.getUTCDate() * 1 + 1 * 1);
-  }
-  // Evaluate each day's query to collect the needed ROWID information.
-  var rowids = extractROWIDs_(doSQLGET_(rowidQueries));
-  // Search for the preliminary starting counts record from the whole month of December.
-  // (If maintenance is run, it is possible that a member's record from the 31st does not exist.
-  // Due to GWH, it is unlikely that members do not have a record change in the whole month of December.)
-  var firstQuery = getRowidQueries_(members, new Date(Date.UTC(2017, 10, 1)), new Date(Date.UTC(2018, 0, 1)));
-  rowids.push(extractStartingROWID_(doSQLGET_(firstQuery)));
   
-  // Construct the query to obtain the desired log information.
-  var queries = getRowQueries_(rowids);
+  // Get the starting record by querying the start date, minus 7 days.
+  var begin = new Date(Date.UTC(compStartDate.getUTCFullYear(), compStartDate.getUTCMonth(), compStartDate.getUTCDate()));
+  begin.setUTCDate(begin.getUTCDate() - 7);
+  var end = new Date();
+  var rowidQueries = getRowidQueries_(members, begin, end);
+  var rowids = extractROWIDs_(doSQLGET_(rowidQueries));
+  
   // Collect the desired data rows
-  var data = doSQLGET_(queries);
+  var data = doSQLGET_(getRowQueries_(rowids));
   var toPrint = formatRows_(data, members);
   printLog_(toPrint);
 }
@@ -134,19 +125,22 @@ function getCompetitors_()
 
 
 
-// Construct the desired queries to get the rowids for records falling within the datespan.
+// Construct the desired queries to get the rowids for records with LastSeen values that fall
+// within the given datespan. If the query would exceed the allowed POST length (~8000 char)
+// then multiple queries will be returned.
 function getRowidQueries_(members, dateStart, dateEnd)
 {
   if(!members || dateStart == dateEnd)
   {
-    console.warn({message:"Insufficient data for querying",data:{members:members, dateStart:dateStart, dateEnd:dateEnd}});
-    return members;
+    console.warn({message:"Insufficient data for querying", data:{members:members, dateStart:dateStart, dateEnd:dateEnd}});
+    return [];
   }
+  
   var queries = [];
   var memUIDs = members.map( function (value, index) { return value[2] } );
-  var SQL = "SELECT ROWID, UID, LastTouched FROM " + ftid + " WHERE LastTouched < " + dateEnd.getTime();
-  SQL += " AND LastTouched >= " + dateStart.getTime() + " AND UID IN (";
-  var sqlEnd = ") ORDER BY UID ASC, LastTouched DESC";
+  var SQL = "SELECT ROWID, UID, LastSeen, LastTouched FROM " + ftid + " WHERE LastSeen < " + dateEnd.getTime();
+  SQL += " AND LastSeen >= " + dateStart.getTime() + " AND UID IN (";
+  var sqlEnd = ") ORDER BY UID ASC, LastSeen ASC, LastTouched ASC";
   while(memUIDs.length)
   {
     queries.push(SQL);
@@ -166,65 +160,31 @@ function getRowidQueries_(members, dateStart, dateEnd)
 // Extract the desired rowids from the day's data.
 function extractROWIDs_(queryData)
 {
-  if(!queryData || !queryData.length || queryData[0].length != 3)
+  if(!queryData || !queryData.length || queryData[0].length != 4)
     return [];
   
-  // ROWID | Member ID (ascending) | LastTouched (descending).
-  // Iterate rows and keep the first value for each new member for each date.
+  // ROWID | Member ID (ascending) | LastSeen (ascending) | LastTouched (ascending).
+  // Iterate rows and keep the first value for each new member for each LS
+  // (i.e. the first record of a new LastSeen instance).
   var rowids = [];
   var seen = {};
   for(var row = 0; row < queryData.length; ++row)
   {
     try {
-      // Check if the member and this date is known.
+      // Check if the member and this LastSeen is known.
       var uid = queryData[row][1];
-      var day = new Date(queryData[row][2]);
-      day = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()));
-      if(seen[uid] && seen[uid][day])
-        continue;
-      // Check if this member is known (but the date is not).
-      else if(seen[uid])
-      {
-        seen[uid][day] = true;
-        rowids.push(queryData[row][0]);
-      }
-      // Add a new member and the new date.
-      else
-      {
-        seen[uid] = {};
-        seen[uid][day] = true;
-        rowids.push(queryData[row][0]);
-      }
-    }
-    catch(e)
-    {
-      console.error({error:e, data:{row:row, data:queryData, seen:seen}});
-    }
-  }
-  return rowids;
-}
-function extractStartingROWID_(queryData)
-{
-  if(!queryData || !queryData.length || queryData[0].length != 3)
-    return [];
-  
-  // ROWID | Member ID (ascending) | LastTouched (descending).
-  // Iterate rows and keep the first value for each new member.
-  var rowids = [];
-  var seen = {};
-  for(var row = 0; row < queryData.length; ++row)
-  {
-    try {
-      // Check if the member and this date is known.
-      var uid = queryData[row][1];
-      var day = new Date(queryData[row][2]);
-      day = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()));
-      if(seen[uid])
+      var ls = new Date(queryData[row][2]);
+      // If we have seen this particular LastSeen, we don't need to collect this next record.
+      if(seen[uid] && seen[uid][ls])
         continue;
       else
       {
-        seen[uid] = true;
+        // This is a new rowid that needs to be fetched.
         rowids.push(queryData[row][0]);
+        // Update the tracking container.
+        if(!seen[uid])
+          seen[uid] = {};
+        seen[uid][ls] = true;
       }
     }
     catch(e)
@@ -237,7 +197,7 @@ function extractStartingROWID_(queryData)
   
 
 
-// Construct data queries from the given rowids.
+// Convert the input array of rowids into queries for the desired data.
 // [['Member', 'Link', 'Date', 'Last Seen', 'Last Crown', 'Gold', 'Silver', 'Bronze']];
 function getRowQueries_(rowids)
 {
@@ -419,13 +379,13 @@ function doScoreboardUpdate()
       historyLink: "https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid=" + memberList[row][2],
       startSilver: 0,
       startGold: 0,
-      startRecordDate: new Date(2020, 0, 1),
+      startRecordDate: new Date(2099, 0, 1),
       currentRecordDate: new Date(0),
       gold: 0,
       silver: 0,
       bronze: 0,
-      lastSeen: new Date(2020, 0, 1),
-      lastCrown: new Date(2020, 0, 1),
+      lastSeen: new Date(0),
+      lastCrown: new Date(0),
       data: []
     };
   
@@ -449,10 +409,9 @@ function doScoreboardUpdate()
     for(var row = 0; row < members[name].data.length; ++row)
     {
       var recordDate = new Date(members[name].data[row][2]);
-      // Since the default "start" record is after the end of the competition, and these datasets are
-      // chronologically ascending, the first record that is before the default is the starting metric.
-      // If others are greater than it but also before the start time of the competition, those are to
-      // be used instead.
+      // Only records with a relevant LastSeen value have been collected (within 7 days of the comp start). The
+      // first one that is non-zero is used as the starting count record (unless others records closer to the
+      // beginning of the competition are available).
       if(members[name].data[row][bronzeIndex] > 0 && (recordDate < members[name].startRecordDate
          || (recordDate < competitionBegin && recordDate >= members[name].startRecordDate)))
       {
@@ -490,7 +449,7 @@ function doScoreboardUpdate()
       ]
     );
   
-  // Sort the scoreboard data table.
+  // Sort the scoreboard data table by silvers earned.
   output.sort(
     function (a, b) { if(a[2]*1 < b[2]*1){ return 1; } else if(a[2]*1 > b[2]*1) { return -1; } return 0; }
   );
