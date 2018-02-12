@@ -35,17 +35,24 @@ function addCompetitor()
   }
   
   // Import the existing data for these people.
+  var wb = SpreadsheetApp.openById(ssid);
+  var n = 0;
   if(toAdd.length)
   {
-    importExistingDailyData(toAdd);
-    var memberSheet = SpreadsheetApp.openById(ssid).getSheetByName('Competitors');
+    n = importExistingDailyData(toAdd);
+    var memberSheet = wb.getSheetByName('Competitors');
     memberSheet.getRange(1 * 1 + memberSheet.getLastRow() * 1, 1, toAdd.length, toAdd[0].length).setValues(toAdd);
   }
-  if(toAdd.length || skipped.length)
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      "Finished adding data for " + toAdd.length + " unique competitors.\nSkipped: "
-      + skipped.length + " competitor(s) since they were already added.");
-  console.info({message:'Ran adder function', data:{toAdd:toAdd, skipped:skipped}});
+  var message = '';
+  if(n > 0)
+    message += 'Added ' + n + ' rows of data for ' + toAdd.length + ' unique competitors.\n';
+  if(n == 0 && toAdd.length)
+    message += 'Added competitor(s) that had no data rows as of the last MHCC database update. Be sure to click their profile(s)!\n';
+  if(skipped.length)
+    message += 'Skipped ' + skipped.length + ' competitor(s) since they were already added.';
+  if(message != '')
+    wb.toast(message);
+  console.info({message:'Ran adder function', data:{toAdd:toAdd, skipped:skipped, rowsAdded:n}});
 }
 
 
@@ -101,8 +108,7 @@ function importExistingDailyData(members, compStartDate)
   
   // Collect the desired data rows
   var data = doSQLGET_(getRowQueries_(rowids));
-  var toPrint = formatRows_(data, members);
-  printLog_(toPrint);
+  return printLog_(formatRows_(data, members));
 }
 
 
@@ -286,11 +292,11 @@ function formatRows_(rows, competitors)
 
 
 
-// Write to the end of the log sheet
+// Write to the end of the log sheet, and return the number of rows added.
 function printLog_(newRows)
 {
   if(!newRows || !newRows[0])
-    return;
+    return 0;
   // Access the "Daily Log" spreadsheet.
   var log = SpreadsheetApp.openById(ssid).getSheetByName('Daily Log');
   
@@ -307,13 +313,14 @@ function printLog_(newRows)
     if(newRows[row].length != numCol)
     {
       console.error({message:"Incorrect log width in row " + row, data:{data:newRows, badRow:newRows[row]}});
-      return;
+      return 0;
     }
   
   // Append new logs to the end of the log sheet.
   log.getRange(1 + log.getLastRow(), 1, newRows.length, newRows[0].length).setValues(newRows);
   SpreadsheetApp.flush();
   sortLog_(log);
+  return newRows.length;
 }
 
 
@@ -357,8 +364,8 @@ function runDaily()
     var queries = getRowQueries_(rowids);
     var data = doSQLGET_(queries);
     var toPrint = formatRows_(data);
-    printLog_(toPrint);
-    doScoreboardUpdate();
+    if(printLog_(toPrint))
+      doScoreboardUpdate();
   }
   
   console.info({message:'Ran daily crown race update', data:toPrint});
