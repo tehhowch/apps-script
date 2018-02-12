@@ -79,7 +79,7 @@ function getNewMembers_(toAdd)
     ui.ButtonSet.YES_NO
   );
   if(confirmation == ui.Button.YES)
-    toAdd.push([nameResponse.getResponseText(), uidResponse.getResponseText(), uid]);
+    toAdd.push([String(nameResponse.getResponseText()).trim(), String(uidResponse.getResponseText()).trim(), uid]);
   
   // Check if more should be added.
   return ui.Button.YES == ui.alert("Add another?", ui.ButtonSet.YES_NO);
