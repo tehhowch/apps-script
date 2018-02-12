@@ -243,9 +243,18 @@ function doSQLGET_(queries)
       console.error("No query to perform");
     else
     {
-      var response = FusionTables.Query.sqlGet(sql);
-      if(response.rows)
-        data = [].concat(data, response.rows);
+      try
+      {
+        var response = FusionTables.Query.sqlGet(sql);
+        if(response.rows)
+          data = [].concat(data, response.rows);
+      }
+      catch(e)
+      {
+        console.error({message:'SQL get error from FusionTables',params:{error:e, query:sql, remaining:queries}});
+        // Re-raise the error.
+        throw e;
+      }
     }
     // Obey API rate limits.
     if(queries.length)
