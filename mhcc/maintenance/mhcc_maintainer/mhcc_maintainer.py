@@ -8,6 +8,7 @@ import json
 
 from googleapiclient.discovery import build
 from googleapiclient.http import HttpError
+from googleapiclient.http import HttpRequest
 from googleapiclient.http import MediaFileUpload
 from oauth2client import tools
 from oauth2client.file import Storage
@@ -75,8 +76,13 @@ def GetQueryResult(query, rowSize = 1., offsetStart = 0, maxReturned = float("in
 	If the response would be larger than 10 MB, this will perform several requests.
 	The query is assumed to be complete, i.e. specifying the target table, and also
 	appendable (i.e. has no existing LIMIT or OFFSET parameters).
+	@params:
+		query		- Required	: The SQL statement (Show, Select, Describe) to execute (string)
+		rowSize		- Optional	: The expected size of an individual returned row, in kB (double)
+		offsetStart	- Optional	: The global offset desired, i.e. what would normally be placed after an "OFFSET" descriptor (int)
+		maxReturned	- Optional	: The global maximum number of records the query should return, i.e. what would normally be placed after a "LIMIT" descriptor (int)
 	'''
-	if not ValidateQuery(query):
+	if not ValidateGetQuery(query):
 		return {};
 	
 	# Multi-query parameters.
@@ -118,9 +124,9 @@ def GetQueryResult(query, rowSize = 1., offsetStart = 0, maxReturned = float("in
 
 
 
-def ValidateQuery(query):
+def ValidateGetQuery(query = ''):
 	'''
-	Inspect the given query to ensure it is actually a query and includes a table.
+	Inspect the given query to ensure it is actually a SQL GET query and includes a table.
 	'''
 	l = query.lower();
 	if ('select' not in l) and ('show' not in l) and ('describe' not in l):
@@ -149,11 +155,11 @@ def ValidateQueryResult(queryResult):
 
 
 
-def ExtractQueryResultFromByteString(queryResult):
+def ExtractQueryResultFromByteString(queryResult = b''):
 	'''
 	Convert the received bytestring from an alt=media request into a true FusionTables JSON response.
 	'''
-	if not queryResult:
+	if len(queryResult) == 0:
 		return {};
 	ft = {'kind': "fusiontables#sqlresponse"};
 	columnSeparator = ',';
@@ -164,6 +170,81 @@ def ExtractQueryResultFromByteString(queryResult):
 	ft['columns'] = data.pop(0);
 	ft['rows'] = data;
 	return ft;
+
+
+
+def ReplaceRows(tableId = '', newRows = []):
+	'''
+	Performs a FusionTables.tables().replaceRows() call to the input table, replacing its contents with the input rows.
+	@params:
+		tableID		- Required	: the FusionTable to update (String)
+		newRows		- Required	: the values to overwrite the FusionTable with (list of lists)
+	'''
+	if not tableId or not newRows:
+		return;
+
+	# Create a resumable MediaFileUpload containing the "interesting" data to retain.
+	upload = MakeMediaFile(newRows, 'staging.csv', True);
+	# Try the upload twice (which requires creating a new request).
+	if upload and upload.resumable():
+		if not StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect')):
+			return StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect'));
+	elif upload:
+		if not Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect')):
+			return Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect'));
+	return True;
+
+
+
+def Upload(request):
+	'''
+	Upload a non-resumable media file.
+	@params:
+		request		- Required	: an HttpRequest with an upload Media that might not support next_chunk().
+	'''
+	if not request:
+		return False;
+
+	try:
+		response = request.execute(num_retries = 2);
+		return True;
+	except HttpError as e:
+		print('Upload failed:', e);
+		return False;
+
+
+
+def StepUpload(request):
+	'''
+	Print the percentage complete for a given upload while it is executing.
+	@params:
+		request		- Required	: an HttpRequest that supports next_chunk() (i.e., is resumable).
+	@return Bool
+		False		: the upload failed.
+		True		: the upload succeeded.
+	'''
+	if not request:
+		return False;
+	
+	done = None;
+	fails = 0;
+	while done is None:
+		try:
+			status, done = request.next_chunk();
+			printProgressBar(status.progress() if status else 1., 1., 'Uploading...', length = 50);
+		except HttpError as e:
+			if e.resp.status in [404]:
+				print();
+				return False;
+			elif e.resp.status in [500, 502, 503, 504] and fails < 5:
+				time.sleep(1000 * (2 ^ fails));
+				++fails;
+			else:
+				print();
+				print('Upload failed:', e);
+				return False;
+	print();
+	return True;
 
 
 
@@ -200,13 +281,14 @@ def GetUserBatch(start, limit = 10000):
 	sql = 'SELECT Member, UID FROM ' + tableList['users'] + ' ORDER BY Member ASC';
 	print('Fetching at most', limit, 'members, starting with', start);
 	startTime = time.perf_counter();
-	resp = GetQueryResult(query = sql, offsetStart = start, maxReturned = limit);
+	resp = GetQueryResult(sql, .1, start, limit);
 	try:
 		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - startTime, 1), ' sec.');
 		return resp['rows'];
 	except:
 		print('Received no data from user fetch query.')
 		return [];
+
 
 
 def GetTotalRowCount(tableID):
@@ -234,7 +316,7 @@ def RetrieveWholeRecords(rowids, tableID):
 	@params:
 		rowids		- Required	: the rows in the table to be fully obtained (unsigned)
 		tableID		- Required	: the FusionTable to obtain records from (String)
-	@return:	fusiontable#sqlresponse
+	@return:	list of records from the indicated FusionTable.
 	'''
 	if type(rowids) is not list:
 		raise TypeError('Expected list of rowids.');
@@ -352,7 +434,7 @@ def KeepInterestingRecords(tableID):
 	startTime = time.perf_counter();
 	if not tableID:
 		tableID = tableList['crowns'];
-	if not tableID:
+	if not tableID or len(tableID) != 41:
 		print('Invalid table id');
 		return;
 	memberList = GetUserBatch(0, 100000);
@@ -397,14 +479,14 @@ def BackupTable(tableID):
 
 
 
-def MakeMediaFile(values, path):
+def MakeMediaFile(values, path, isResumable = None):
 	'''
 	Returns a MediaFile with UTF-8 encoding, for use with FusionTable API calls
 	that expect a media_body parameter.
 	Also creates a hard disk backup (to facilitate the MediaFile creation).
 	'''
 	MakeLocalCopy(values, path, 'w');
-	return MediaFileUpload(path, mimetype='application/octet-stream');
+	return MediaFileUpload(path, mimetype='application/octet-stream', resumable = isResumable);
 
 
 
@@ -456,13 +538,11 @@ def ReplaceTable(tableID, newValues):
 	print('Replacing table with id =', tableID);
 	estSize = GetSizeEstimate(newValues, 5);
 	print('Approx. new upload size =', estSize, ' MB.');
-
+	
 	start = time.perf_counter();
 	newValues.sort();
-	mediaFile = MakeMediaFile(newValues);
-
-	response = FusionTables.table().replaceRows(tableId=tableID, media_body=mediaFile, encoding='auto-detect').execute();
-	print('Replacement completed in', round(time.perf_counter() - start, 1), 'sec.');
+	print('Replacement completed in' if ReplaceRows(tableID, newValues) else 'Replacement failed after',
+	   round(time.perf_counter() - start, 1), 'sec.');
 
 
 
