@@ -309,6 +309,7 @@ def GetTotalRowCount(tableID):
 		return int(0);
 
 
+
 def RetrieveWholeRecords(rowids, tableID):
 	'''
 	Returns a list of lists (i.e. 2D array) corresponding to the full records
@@ -372,10 +373,14 @@ def IdentifyDiffSeenAndRankRecords(uids, tableID):
 		return rowids;
 
 	uids.reverse();
-	lastSeen = {};
-	kept = set();
 	savings = 0;
 	memberCount = len(uids);
+	# Index the column headers to find the indices of interest.
+	ROWID_INDEX = 0;
+	UID_INDEX = 2;
+	LASTSEEN_INDEX = 3;
+	RANK_INDEX = 4;
+
 	baseSQL = 'SELECT ROWID, Member, UID, LastSeen, Rank FROM ' + tableID + ' WHERE UID IN (';
 	print('Sifting through', memberCount, 'member\'s stored data.');
 	printProgressBar(memberCount - len(uids), memberCount, "Members sifted: ", "", 1, 50);
@@ -386,34 +391,20 @@ def IdentifyDiffSeenAndRankRecords(uids, tableID):
 		while uids and (len(baseSQL + tailSQL) <= 8000):
 			sqlUIDs.append(uids.pop());
 			tailSQL = ','.join(sqlUIDs) + ') ORDER BY LastSeen ASC';
-		resp = GetQueryResult(''.join([baseSQL, tailSQL]), 0.2);
+		resp = GetQueryResult(''.join([baseSQL, tailSQL]), 0.1);
 		try:
 			totalRecords = len(resp['rows']);
 		except:
+			print();
 			return [];
-		lastSeen.clear();
-		kept.clear();
-		# The rows increase in LastSeen values, so a single member's rows are
-		# scattered throughout it. However, this member will always be only in
-		# this response object.
-		for row in resp['rows']:
-			rowid = row[0].__str__();
-			uid = row[2].__str__();
-			ls = row[3].__str__();
-			r = row[4].__str__();
-			# Add a new member
-			if uid not in lastSeen:
-				lastSeen[uid] = dict(ls=set(r));
-				kept.add(rowid);
-			# Add a new LastSeen to the dict.
-			elif ls not in lastSeen[uid]:
-				lastSeen[uid][ls]=set(r);
-				kept.add(rowid);
-			# Add a new Rank to the set.
-			elif r not in lastSeen[uid][ls]:
-				lastSeen[uid][ls].add(r);
-				kept.add(rowid);
-		# Store these new kept rows.
+		# Each rowid should only occur once (i.e. a list should be
+		# sufficient), but use a Set container just to be sure.
+		kept = set();
+		seen = {};
+		[kept.add(row[ROWID_INDEX]) for row in resp['rows']
+			if IsInterestingRecord(row, UID_INDEX, LASTSEEN_INDEX, RANK_INDEX, seen)];
+		
+		# Store these interesting rows for later retrieval.
 		rowids.extend(kept);
 		savings += totalRecords - len(kept);
 		elapsed = time.monotonic() - batch;
@@ -424,6 +415,49 @@ def IdentifyDiffSeenAndRankRecords(uids, tableID):
 	print('Found', savings, 'values to trim from', savings + len(rowids), 'records');
 	return rowids;
 
+
+
+def IsInterestingRecord(record = [], uidIndex = 0, lsIndex = 0, rankIndex = 0, tracker = {}):
+	'''
+	Shared method used to identify which rows of the input are interesting and should be kept.
+	Modifies the passed tracker dictionary to support repeated calls (i.e. while querying to get the input)
+	@params:
+		record		- Required	:	An individual crown record (or subset) (list)
+		uidIndex	- Required	:	The column index for the UID (unsigned)
+		lsIndex		- Required	:	The column index for the LastSeen datestamp (unsigned)
+		rankIndex	- Required	:	The column index for the Rank value (unsigned)
+		tracker		- Required	:	A dict<uid, dict<LastSeen, set(intStr)>> object that tracks seen members, dates, and ranks.
+	@return:	bool
+	'''
+	if not record:
+		return False;
+	if len({uidIndex, lsIndex, rankIndex}) < 3:
+		raise ValueError('Different properties given same column index.');
+	
+	try:
+		uid = record[uidIndex].__str__();
+		ls = record[lsIndex].__str__();
+		rank = record[rankIndex].__str__();
+	except Exception as e:
+		print('Invalid access into record:\n', record, '\n', uidIndex, lsIndex, rankIndex, '\n', e);
+		return False;
+
+	# We should keep this record if:
+	# 1) It belongs to an as-yet unseen member.
+	if uid not in tracker:
+		tracker[uid] = dict([(ls, {rank})]);
+	# 2) It is (the first) record for a given date.
+	elif ls not in tracker[uid]:
+		tracker[uid][ls] = {rank};
+	# 3) The member has a different rank than previously seen.
+	elif rank not in tracker[uid][ls]:
+		tracker[uid][ls].add(rank);
+	# Otherwise, we don't care about it.
+	else:
+		return False;
+
+	return True;
+		
 
 
 def KeepInterestingRecords(tableID):
@@ -536,7 +570,7 @@ def ReplaceTable(tableID, newValues):
 		raise ValueError('Table id is not of sufficient length.');
 	# Estimate the upload size by averaging the size of several random rows.
 	print('Replacing table with id =', tableID);
-	estSize = GetSizeEstimate(newValues, 5);
+	estSize = GetSizeEstimate(newValues, 10);
 	print('Approx. new upload size =', estSize, ' MB.');
 	
 	start = time.perf_counter();
