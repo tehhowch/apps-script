@@ -184,14 +184,15 @@ def ReplaceRows(tableId = '', newRows = []):
 		return;
 
 	# Create a resumable MediaFileUpload containing the "interesting" data to retain.
-	upload = MakeMediaFile(newRows, 'staging.csv', True);
+	sep = ';';
+	upload = MakeMediaFile(newRows, 'staging.csv', True, sep);
 	# Try the upload twice (which requires creating a new request).
 	if upload and upload.resumable():
-		if not StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect')):
-			return StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect'));
+		if not StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'auto-detect', delimiter = sep)):
+			return StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'auto-detect', delimiter = sep));
 	elif upload:
-		if not Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect')):
-			return Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect'));
+		if not Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect', delimiter = sep)):
+			return Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect', delimiter = sep));
 	return True;
 
 
@@ -237,7 +238,7 @@ def StepUpload(request):
 				print();
 				return False;
 			elif e.resp.status in [500, 502, 503, 504] and fails < 5:
-				time.sleep(1000 * (2 ^ fails));
+				time.sleep(2 ^ fails);
 				++fails;
 			else:
 				print();
@@ -277,11 +278,12 @@ def GetUserBatch(start, limit = 10000):
 	@params:
 		start		- Required	: the first index to return a user for (unsigned).
 		limit		- Optional	: the number of data pairs to be returned (unsigned).
+	@return:	list[list[Member, UID]]
 	'''
 	sql = 'SELECT Member, UID FROM ' + tableList['users'] + ' ORDER BY Member ASC';
 	print('Fetching at most', limit, 'members, starting with', start);
 	startTime = time.perf_counter();
-	resp = GetQueryResult(sql, .1, start, limit);
+	resp = GetQueryResult(sql, .03, start, limit);
 	try:
 		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - startTime, 1), ' sec.');
 		return resp['rows'];
@@ -436,7 +438,7 @@ def IsInterestingRecord(record = [], uidIndex = 0, lsIndex = 0, rankIndex = 0, t
 	
 	try:
 		uid = record[uidIndex].__str__();
-		ls = record[lsIndex].__str__();
+		ls = int(record[lsIndex]).__str__();
 		rank = record[rankIndex].__str__();
 	except Exception as e:
 		print('Invalid access into record:\n', record, '\n', uidIndex, lsIndex, rankIndex, '\n', e);
@@ -460,6 +462,69 @@ def IsInterestingRecord(record = [], uidIndex = 0, lsIndex = 0, rankIndex = 0, t
 		
 
 
+def ValidateRetrievedRecords(records = [], sourceTableId = ''):
+	'''
+	Inspect the given records to ensure that each member with a record in source table has a record in the
+	retrieved records, and that the given records satisfy the same uniqueness criteria that was used to obtain
+	them from the source table.
+	'''
+	if not records or not sourceTableId or len(sourceTableId) != 41:
+		return False;
+	# Determine how many rows exist per user in the source table. Every member with at least 1 row should
+	# have at least 1 and at most as many rows in the retrieved records list.
+	perUserSQL = 'SELECT UID, COUNT(Gold) FROM ' + sourceTableId + ' GROUP BY UID';
+	sourceRowCounts = GetQueryResult(perUserSQL, .05);
+	currentMembers = set([row[1] for row in GetUserBatch(0)]);
+
+	# Parse the given records into a dict<str, int> object to simplify comparison between the two datasets.
+	recordRowCounts = {};
+	errorRows = [];
+	for row in records:
+		if len(row) != 12:
+			errorRows.append(row);
+		# Always count this row, even if it was erroneously too short or too long. The UID is
+		# in the 2nd column. (Because [] does not default-construct, handling KeyError is
+		# necessary, as one will occur for the first record of each member.)
+		try:
+			recordRowCounts[str(row[1])] += 1;
+		except KeyError:
+			recordRowCounts[str(row[1])] = 1;
+	if errorRows:
+		print(errorRows);
+
+	# Loop the source counts to verify the individual has data in the supplied records.
+	isValid = True;
+	for row in sourceRowCounts['rows']:
+		if int(row[1]) > 0:
+			# Validation rules apply only to current members.
+			if row[0] not in currentMembers:
+				continue;
+			# If a member in the source table is also a current member, removing their data is unallowable.
+			elif row[0] not in recordRowCounts:
+				print('Upload would remove all data for member with ID', row[0], '(currently', row[1], 'rows)');
+				isValid = False;
+			# The uploaded data should not have 0 rows, or more rows than the source, for each member.
+			elif recordRowCounts[row[0]] > int(row[1]) or recordRowCounts[row[0]] < 1:
+				print('Upload has improper row count for member with ID', row[0]);
+				isValid = False;
+	
+	# Perform the uniqueness checks on the records (all should be "interesting").
+	# Index the column headers to find the indices of interest.
+	UID_INDEX = 1;
+	LASTSEEN_INDEX = 2;
+	RANK_INDEX = 9;
+	seen = {};
+	valids = 0;
+	for row in records:
+		if not IsInterestingRecord(row, UID_INDEX, LASTSEEN_INDEX, RANK_INDEX, seen):
+			isValid = False;
+			break;
+
+	print('Validation of new records', 'completed.' if isValid else 'failed.');
+	return isValid;
+
+
+
 def KeepInterestingRecords(tableID):
 	'''
 	Removes duplicated crown records, keeping each member's records which
@@ -471,13 +536,12 @@ def KeepInterestingRecords(tableID):
 	if not tableID or len(tableID) != 41:
 		print('Invalid table id');
 		return;
-	memberList = GetUserBatch(0, 100000);
-	if not memberList:
+	uids = [row[1] for row in GetUserBatch(0, 100000)];
+	if not uids:
 		print('No members returned');
 		return;
 	totalRows = GetTotalRowCount(tableID);
-	uidList = list(row[1] for row in memberList);
-	rowids = IdentifyDiffSeenAndRankRecords(uidList, tableID);
+	rowids = IdentifyDiffSeenAndRankRecords(uids, tableID);
 	if not rowids:
 		print('No rowids received');
 		return;
@@ -486,10 +550,11 @@ def KeepInterestingRecords(tableID):
 		return;
 	# Get the row data associated with the kept rowids
 	keptValues = RetrieveWholeRecords(rowids, tableID);
-	# Back up the table before we do anything crazy.
-	BackupTable(tableID);
-	# Do something crazy.
-	ReplaceTable(tableID, keptValues);
+	if ValidateRetrievedRecords(keptValues, tableID):
+		# Back up the table before we do anything crazy.
+		BackupTable(tableID);
+		# Do something crazy.
+		ReplaceTable(tableID, keptValues);
 	print('KeepInterestingRecords: complete');
 	print(time.perf_counter() - startTime, ' total sec required.');
 
@@ -498,6 +563,7 @@ def KeepInterestingRecords(tableID):
 def BackupTable(tableID):
 	'''
 	Creates a copy of the existing MHCC CrownRecord Database and logs the new table id.
+	Does not delete the previous backup (and thus can result in a space quota exception).
 	'''
 	if not tableID:
 		tableID = tableList['crowns'];
@@ -513,18 +579,18 @@ def BackupTable(tableID):
 
 
 
-def MakeMediaFile(values, path, isResumable = None):
+def MakeMediaFile(values, path, isResumable = None, delimiter = ','):
 	'''
 	Returns a MediaFile with UTF-8 encoding, for use with FusionTable API calls
 	that expect a media_body parameter.
 	Also creates a hard disk backup (to facilitate the MediaFile creation).
 	'''
-	MakeLocalCopy(values, path, 'w');
-	return MediaFileUpload(path, mimetype='application/octet-stream', resumable = isResumable);
+	MakeLocalCopy(values, path, 'w', delimiter);
+	return MediaFileUpload(path, mimetype = 'application/octet-stream', resumable = isResumable);
 
 
 
-def MakeLocalCopy(values, path, fileMode):
+def MakeLocalCopy(values, path, fileMode, delimiter = ','):
 	'''
 	Writes the given values to disk in the given location.
 	Example path: 'staging.csv' -> write file 'staging.csv' in the script's directory.
@@ -536,7 +602,7 @@ def MakeLocalCopy(values, path, fileMode):
 	if fileMode == 'r':
 		raise ValueError('File mode must be write-capable.');
 	with open(path, fileMode, newline = '', encoding = 'utf-8') as f:
-		csv.writer(f, strict=True).writerows(values);
+		csv.writer(f, strict = True, delimiter = delimiter).writerows(values);
 
 
 
