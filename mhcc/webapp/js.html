@@ -18,7 +18,6 @@
     document.getElementById('crownHistory').innerHTML = e.message;
     document.getElementById('rankHistory').innerHTML = "";
   }
-  // Global chart handles to enable redrawing
   /*
    * No error occurred while loading the crown and rank data. Use the passed data to plot
    * @param {Object} input  an object with properties 'crownHistory','rankHistory', and memberName
@@ -47,7 +46,7 @@
                                 options:chOptions
                                });
       chWrapper.draw();
-
+      
       // Rank History (Rank 1 at top)
       input.rankHistory = [].concat(input.rankHeader, input.rankData.map(function(value,index){return [new Date(value[0]), value[1], value[2]+" crowns:\nRank: "+value[1]]}));
       var rh = google.visualization.arrayToDataTable(input.rankHistory,false);  // First row is headers, cols of ranktime | rank | #mhcc
@@ -60,8 +59,8 @@
                       }
       var rankDelta = Math.abs(input.rankHistory[input.rankHistory.length-1][1] - input.rankHistory[1][1]);
       if ( rankDelta >= 1000 ) {
-          rhOptions.vAxis.logScale = true;
-          rhOptions.vAxis.minValue=Math.round(input.rankHistory[input.rankHistory.length-1][1]/10);
+        rhOptions.vAxis.logScale = true;
+        rhOptions.vAxis.minValue=Math.round(input.rankHistory[input.rankHistory.length-1][1]/10);
       }
       rhWrapper = new google.visualization.ChartWrapper({
                                 containerId:'rankHistory',
@@ -70,12 +69,13 @@
                                 options:rhOptions
                                });
       rhWrapper.draw();
-
+      
     } else {
       console.log(input)
     }
   }
 
+  
   google.charts.load('current', {packages:['corechart']});
   google.charts.setOnLoadCallback(loadData(document.getElementById('member').innerHTML));
   $(window).resize(
@@ -89,3 +89,4 @@
      }
      );
 </script>
+
