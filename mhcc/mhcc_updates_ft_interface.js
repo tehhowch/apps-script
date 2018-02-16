@@ -201,7 +201,8 @@ function addFusionMember()
 {
   var getMembers = true, gotDb=false, hasMatch = true;
   var mem2Add = [], curMems=[], matchedIndex = -1;
-  while (getMembers)
+  var start = new Date().getTime();
+  while (getMembers && (((new Date().getTime()) - start) / 1000 < 250))
   {
     var name = String(getMemberName2AddorDel_());
     var UID = "";
