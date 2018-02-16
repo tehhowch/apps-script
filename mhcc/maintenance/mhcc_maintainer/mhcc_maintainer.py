@@ -181,18 +181,18 @@ def ReplaceRows(tableId = '', newRows = []):
 		newRows		- Required	: the values to overwrite the FusionTable with (list of lists)
 	'''
 	if not tableId or not newRows:
-		return;
-
+		return False;
+	
 	# Create a resumable MediaFileUpload containing the "interesting" data to retain.
-	sep = ';';
+	sep = ',';
 	upload = MakeMediaFile(newRows, 'staging.csv', True, sep);
 	# Try the upload twice (which requires creating a new request).
 	if upload and upload.resumable():
-		if not StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'auto-detect', delimiter = sep)):
-			return StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'auto-detect', delimiter = sep));
+		if not StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep)):
+			return StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep));
 	elif upload:
-		if not Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect', delimiter = sep)):
-			return Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'auto-detect', delimiter = sep));
+		if not Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep)):
+			return Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep));
 	return True;
 
 
@@ -281,11 +281,10 @@ def GetUserBatch(start, limit = 10000):
 	@return:	list[list[Member, UID]]
 	'''
 	sql = 'SELECT Member, UID FROM ' + tableList['users'] + ' ORDER BY Member ASC';
-	print('Fetching at most', limit, 'members, starting with', start);
 	startTime = time.perf_counter();
 	resp = GetQueryResult(sql, .03, start, limit);
 	try:
-		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - startTime, 1), ' sec.');
+		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - startTime, 1), ' sec. Wanted <=', limit, 'after index', start);
 		return resp['rows'];
 	except:
 		print('Received no data from user fetch query.')
@@ -304,7 +303,7 @@ def GetTotalRowCount(tableID):
 	start = time.perf_counter();
 	allRowIds = GetQueryResult(countSQL);
 	try:
-		print('Found', int(allRowIds['rows'][0][0]), 'rows in', round(time.perf_counter() - start, 1), 'sec.)');
+		print('Found', int(allRowIds['rows'][0][0]), 'rows in', round(time.perf_counter() - start, 1), 'sec.');
 		return int(allRowIds['rows'][0][0]);
 	except:
 		print('Received no data from row count query.');
@@ -555,8 +554,7 @@ def KeepInterestingRecords(tableID):
 		BackupTable(tableID);
 		# Do something crazy.
 		ReplaceTable(tableID, keptValues);
-	print('KeepInterestingRecords: complete');
-	print(time.perf_counter() - startTime, ' total sec required.');
+	print('KeepInterestingRecords: Completed in', time.perf_counter() - startTime, ' total sec.');
 
 
 
@@ -649,5 +647,5 @@ def ReplaceTable(tableID, newValues):
 if (__name__ == "__main__"):
 	Initialize();
 	Authorize();
+	# Perform maintenance.
 	KeepInterestingRecords(tableList['crowns']);
-	
