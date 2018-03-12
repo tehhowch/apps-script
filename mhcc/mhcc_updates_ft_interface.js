@@ -60,65 +60,79 @@ function refreshDbIndexMap_()
 }
 /**
  * function getLatestRows_    Returns the record associated with the most recently touched snapshot
- *                            for each member. Called by UpdateScoreboard. Returns a single record
- *                            per member so long as every record has a different LastTouched value.
- *                            First queries each UID's maximum LastTouched value, then queries the
- *                            specific LastTouched values. Only 571 LastTouched values are queried
- *                            at a time to avoid SQL length overrun (len=8092, maxlen=8100).
- * @param  {Integer} nMembers The total number of members in the database
+ *                            for each current member. Called by UpdateScoreboard. Returns a single
+ *                            record per member so long as every record has a different LastTouched
+ *                            value. First finds each UID's maximum LastTouched value, then gets the
+ *                            associated row (after verifying the member is current).  A query with
+ *                            "UID IN ( ... ) AND LastTouched IN ( ... )" would greatly *relax* the
+ *                            unique LastTouched requirement, but would not eliminate it.
  * @return {Array[]}          N-by-crownDBnumColumns Array for UpdateScoreboard to parse.
  */
-function getLatestRows_(nMembers)
+function getLatestRows_()
 {
-  var sql = "SELECT UID, MAXIMUM(LastTouched) FROM " + ftid + " GROUP BY UID";
-  var mostRecentRecordTimes = FusionTables.Query.sqlGet(sql);
-  var numReturnedMembers = mostRecentRecordTimes.rows.length;
-  if (numReturnedMembers > 0)
+  // Query for the most recent records of all persons with data.
+  var ltSQL = "SELECT UID, MAXIMUM(LastTouched) FROM " + ftid + " GROUP BY UID";
+  var mostRecentRecordTimes = FusionTables.Query.sqlGet(ltSQL);
+  if (!mostRecentRecordTimes || !mostRecentRecordTimes.rows || !mostRecentRecordTimes.rows.length)
   {
-    if (numReturnedMembers < nMembers)
-      throw new Error((nMembers - numReturnedMembers).toString() + " members are missing scoreboard records");
-    else if (numReturnedMembers > nMembers)
-      throw new Error("Script membercount is " + (numReturnedMembers - nMembers).toString() + " too low");
-    else
-    {
-      var batchSize = 571, snapshots = [], batchResult = [], nReturned = 0;
-      var totalQueries = 1 + Math.ceil(numReturnedMembers / batchSize);
-      while (mostRecentRecordTimes.rows.length > 0)
-      {
-        var ltArray = [], batchStartTime = new Date().getTime();
-        for (var row = 0; row < batchSize; ++row)
-          if (mostRecentRecordTimes.rows.length > 0)
-          {
-            var member = mostRecentRecordTimes.rows.pop();
-            ltArray.push(member[1]);
-          }
-
-        sql = "SELECT * FROM " + ftid + " WHERE LastTouched IN (" + ltArray.join(",") + ") ORDER BY Member ASC";
-        try
-        {
-          batchResult = FusionTables.Query.sql(sql);
-          nReturned += batchResult.rows.length * 1;
-          snapshots = [].concat(snapshots, batchResult.rows);
-          // Avoid exceeding API rate limits (30 / min and 5 / sec)
-          var elapsedMillis = new Date().getTime() - batchStartTime;
-          if (totalQueries > 29)
-            Utilities.sleep(2001-elapsedMillis);
-          else if (elapsedMillis < 200)
-            Utilities.sleep(201-elapsedMillis);
-        }
-        catch (e)
-        {
-          console.error(e);
-          throw new Error('Batchsize likely too large. SQL length was =' + sql.length);
-        }
-      }
-      if (snapshots.length !== numReturnedMembers)
-        throw new Error('Did not receive the proper number of scoreboard records');
-      else
-        return snapshots;
-    }
+    console.error({message:"Invalid response from FusionTable API.", data:mostRecentRecordTimes});
+    return [];
   }
-  return [];
+  
+  // Query for those members that are still current.
+  var members = getUserBatch_(0, 100000);
+  if (!members || !members.length || !members[0].length)
+  {
+    console.error({message:"No members returned from call to getUserBatch", data:members});
+    return [];
+  }
+
+  // Construct an associative map object for checking the uid from records against current members.
+  var valids = {};
+  members.forEach(function (pair) { valids[pair[1]] = pair[0]});
+  
+  // The maximum SQL request length for the API is ~8100 characters (via POST), e.g. ~571 17-digit time values.
+  var totalQueries = 1 + Math.ceil(members.length / 571);
+  var snapshots = [], batchResult = [];
+  var baseSQL = "SELECT * FROM " + ftid + " WHERE LastTouched IN (";
+  var tail = ") ORDER BY Member ASC";
+  while (mostRecentRecordTimes.rows.length > 0)
+  {
+    // Assemble a query.
+    var lastTouched = [], batchStart = new Date().getTime();
+    do {
+      var member = mostRecentRecordTimes.rows.pop();
+      if (valids[member[1]])
+        lastTouched.push(member[1]);
+    } while (mostRecentRecordTimes.rows.length > 0 && (baseSQL + lastTouched.join(",") + tail).length < 8100);
+    
+    // Execute the query.
+    try
+    {
+      batchResult = FusionTables.Query.sqlGet(baseSQL + lastTouched.join(",") + tail);
+    }
+    catch (e)
+    {
+      console.error({message:"Error while fetching whole rows", sql:baseSQL + lastTouched.join(",") + tail, error:e});
+      return [];
+    }
+    snapshots = [].concat(snapshots, batchResult.rows);
+    
+    // Sleep to avoid exceeding ratelimits (30 / min, 5 / sec).
+    var elapsed = new Date().getTime() - batchStart;
+    if (totalQueries > 29)
+      Utilities.sleep(2001 - elapsed);
+    else if (elapsed < 200)
+      Utilities.sleep(201 - elapsed);
+  }
+  // Log any current members who weren't included in the fetched data.
+  if (snapshots.length !== members.length)
+  {
+    for(var rc = 0, len = snapshots.length; rc < len; ++rc)
+      delete valids[snapshots[rc][1]];
+    console.debug({message:"Some members lack scoreboard records", data:valids});
+  }
+  return snapshots;
 }
 /**
  * function getUserHistory_   Queries the crown data snapshots for the given user and returns crown

@@ -76,8 +76,8 @@ function getMyDb_(wb, sortObj)
  */
 function saveMyDb_(wb, db)
 {
-  if (db == null)
-    return 1;
+  if (!wb || !db || !db.length || !db[0].length)
+    return false;
   var lock = LockService.getScriptLock();
   lock.tryLock(30000);
   if (lock.hasLock())
@@ -86,7 +86,10 @@ function saveMyDb_(wb, db)
     var SS = wb.getSheetByName('SheetDb');
     // If the new db is smaller, the old db must be cleared first.
     if (db.length < SS.getLastRow() - 1)
-      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).setValue('');
+    {
+      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).clearContent();
+      SpreadsheetApp.flush();
+    }
     SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
     SpreadsheetApp.flush();
     lock.releaseLock();
@@ -341,7 +344,7 @@ function UpdateScoreboard()
   PropertiesService.getScriptProperties().setProperty("numMembers", numMembers.toString());
   // To build the scoreboard....
   // 1) Request the most recent snapshots of all members
-  var db = getLatestRows_(numMembers);
+  var db = getLatestRows_();
   // 2) Store it on SheetDb
   var didSave = saveMyDb_(wb, db);
   if (didSave)
