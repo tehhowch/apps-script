@@ -510,3 +510,26 @@ function keepOnlyUniqueRecords()
       console.log('Cannot trim out any records - only have uniques left!');
   }
 }
+/**
+ * function arrayTranspose Transposes the array if it is a 2D array. Throws an error if it is not.
+ * @param {Array[]} oldArr   The array to be transposed.
+ * @return {Array[]}         The transposed array.
+ */
+function arrayTranspose_(oldArr)
+{
+  if (oldArr.constructor != Array)
+    throw new TypeError('Array to transpose is not an array');
+  else if (oldArr[0].constructor != Array)
+    throw new TypeError('Array is 1D - not transposable');
+  else if (oldArr[0][0].constructor === Array)
+    throw new TypeError('Array has too many dimensions');
+
+  var newArr = [];
+  for (var nr = 0; nr < oldArr[0].length; ++nr)
+  {
+    newArr[nr] = [];
+    for (var nc = 0; nc < oldArr.length; ++nc)
+      newArr[nr][nc] = oldArr[nc][nr];
+  }
+  return newArr;
+}
