@@ -102,7 +102,7 @@ function getLatestRows_()
     var lastTouched = [], batchStart = new Date().getTime();
     do {
       var member = mostRecentRecordTimes.rows.pop();
-      if (valids[member[1]])
+      if (valids[member[0]])
         lastTouched.push(member[1]);
     } while (mostRecentRecordTimes.rows.length > 0 && (baseSQL + lastTouched.join(",") + tail).length < 8100);
     
