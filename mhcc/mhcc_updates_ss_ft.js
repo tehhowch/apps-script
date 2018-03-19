@@ -105,8 +105,7 @@ function saveMyDb_(wb, db)
  */
 function UpdateDatabase()
 {
-  var startTime = new Date().getTime();
-  var batchSize = 127;
+  var batchSize = 127, startTime = new Date()
   var wb = SpreadsheetApp.openById(mhccSSkey);
   var db = getMyDb_(wb, 1);
   var props = PropertiesService.getScriptProperties().getProperties();
@@ -141,7 +140,7 @@ function UpdateDatabase()
       var mem2Update = [], skippedRows = [];
       // Update remaining members in sets of batchSize. Stop early if past "safe" runtime.
     hunterBatchLoop:
-      while (((new Date().getTime() - startTime) / 1000 < 150) && (lastRan < numMembers))
+      while (((new Date() - startTime) / 1000 < 150) && (lastRan < numMembers))
       {
         var batchHunters = allMembers.slice(lastRan, lastRan - 0 + batchSize - 0);
         var urlIDs = [];
@@ -178,15 +177,15 @@ function UpdateDatabase()
               break hunterBatchLoop;
             break;
             default:
-              if (e.message.toLowerCase().indexOf('unexpected error: h') > -1)
-                break hunterBatchLoop;
-              else if (e.message.toLowerCase().indexOf('timeout: h') > -1)
+              if (e.message.toLowerCase().indexOf('unexpected error: h') > -1
+                  || e.message.toLowerCase().indexOf('timeout: h') > -1)
                 break hunterBatchLoop;
               else
               {
                 // Unknown new error: total abort
-                console.error(e);
-                throw new Error('HT GET - errmsg: "' + e.message + '"');
+                e.message = "HT GET - errmsg: " + e.message;
+                console.error({message: e.message, mem2Update: mem2Update, batchHunters: batchHunters, uids: urlIDs, lastRan: lastRan, response: htResponse});
+                throw e;
               }
           }
         }
@@ -194,14 +193,15 @@ function UpdateDatabase()
         for (var i = 0; i < batchHunters.length; ++i)
         {
           var j = 'ht_' + batchHunters[i][1];
-          var dbRow = dbKeys[batchHunters[i][1]];           // store this members row in the large scoreboard dataset
+          // Remember which row in the large scoreboard dataset corresponds to this member.
+          var dbRow = dbKeys[batchHunters[i][1]];
           if (typeof dbRow == 'undefined')
           {
             // Should have found a row, but didn't. Explicitly request this member's update.
             var record = getMostRecentRecord_(batchHunters[i][1]);
             if (record.length == crownDBnumColumns)
             {
-              // Add to SheetDb.
+              // Add it to SheetDb.
               wb.getSheetByName('SheetDb').appendRow(record);
               // Reindex rows.
               dbKeys = getDbIndexMap_(db, numMembers);
@@ -226,7 +226,15 @@ function UpdateDatabase()
               continue;
             }
           }
-          if (typeof MM.hunters[j] != 'undefined')
+          // Attempt to update the member's data with a result from HornTracker.
+          if (!MM.hunters[j] || typeof MM.hunters[j] == 'undefined')
+          {
+            // Splice out this row as it will not have the proper number of columns.
+            skippedRows.push(batchHunters.splice(i, 1)[0]);
+            // Decrement the index to maintain a valid iterator.
+            --i;
+          }
+          else
           {
             // The hunter's ID was found in the MostMice object, and the update can be performed.
             var nB = 0, nS = 0, nG = 0;
@@ -268,25 +276,17 @@ function UpdateDatabase()
             // Store the time when this hunter's rank was determined.
             batchHunters[i][11] = db[dbRow][11];  
           }
-          else
-          {
-            // Splice out this row as it will not have the proper number of columns.
-            skippedRows.push(batchHunters.splice(i, 1)[0]);
-            // Decrement the index to maintain a valid iterator.
-            --i;
-          }
         }
         mem2Update = [].concat(mem2Update, batchHunters);       // Stage this batch's data for a single write call
-        lastRan = lastRan-0 + batchSize-0;                      // Increment lastRan for next batch's usage
+        lastRan += batchSize-0;                      // Increment lastRan for next batch's usage
       }
       if (mem2Update.length > 0)
       {
         ftBatchWrite_(mem2Update);
         PropertiesService.getScriptProperties().setProperty('lastRan', lastRan.toString());
       }
-      if (skippedRows.length > 0)
-        console.info({message:'Skipped ' + skippedRows.length + ' members', initialData:skippedRows});
-      console.log('Through ' + lastRan + ' members, elapsed=' + ((new Date().getTime()) - startTime) / 1000 + ' sec');
+
+      console.log({message: 'Through ' + lastRan + ' members, elapsed=' + (new Date() - startTime) / 1000 + ' sec. (Skipped ' + skippedRows.length + ')', skipped: skippedRows});
       lock.releaseLock();
     }
   }
@@ -308,17 +308,15 @@ function UpdateStale_(wb, lostTime)
     // based on the last time the member's profile was seen.
     var db = getMyDb_(wb,3);
     var lostSheet = wb.getSheetByName('"Lost" Hunters');
-    var staleArray = [], startTime = new Date().getTime();
-    for (var i = 0; i < db.length; ++i)
+    var staleArray = [], len = db.length, startTime = new Date().getTime();
+    for (var i = 0; i < len; ++i)
     {
       if (startTime - db[i][2] > lostTime)
-      {
         staleArray.push([db[i][0],
                           Utilities.formatDate(new Date(db[i][2]), 'EST', 'yyyy-MM-dd'),
                           "https://apps.facebook.com/mousehunt/profile.php?snuid=" + db[i][1],
                           "https://www.mousehuntgame.com/profile.php?snuid=" + db[i][1]
                         ]);
-      }
       // Snapshots were ordered oldest -> newest, so quit once the first non-old record is found.
       else
         break;
@@ -355,10 +353,10 @@ function UpdateScoreboard()
     // 3) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
     // particular crown total should rank above someone who (was seen) attaining it at a later time.
     var allHunters = getMyDb_(wb, [{column:9, ascending:false}, {column:4, ascending:true}, {column:3, ascending:true}]);
-    var scoreboardArr = [], rank = 1;
+    var scoreboardArr = [], len = allHunters.length, rank = 1;
     var plotLink = 'https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid=';
     // 4) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
-    while (rank <= allHunters.length)
+    while (rank <= len)
     {
       scoreboardArr.push([rank,
                           Utilities.formatDate(new Date(allHunters[rank - 1][2]), 'EST', 'yyyy-MM-dd'),                  // Last Seen
@@ -391,7 +389,7 @@ function UpdateScoreboard()
   else
       throw new Error('Unable to save snapshots retrieved from crown database');
   SpreadsheetApp.flush();
-  console.info((new Date().getTime() - startTime.getTime()) / 1000 + ' sec for all scoreboard operations');
+  console.info((new Date() - startTime) / 1000 + ' sec for all scoreboard operations');
 }
 
 
