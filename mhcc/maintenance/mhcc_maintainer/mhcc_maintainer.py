@@ -144,7 +144,7 @@ def ValidateQueryResult(queryResult):
 	dictionary: 'rows' object (i.e. fusiontables#sqlresponse)
 	'''
 	if not queryResult:
-		return false;
+		return False;
 	# A dictionary query result should have a 'rows' key.
 	if type(queryResult) == dict and ('rows' not in queryResult.keys()):
 		return False;
