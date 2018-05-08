@@ -173,6 +173,30 @@ def ExtractQueryResultFromByteString(queryResult = b''):
 
 
 
+def ImportRows(tableId = '', newRows = []):
+	'''
+	Performs a FusionTables.tables().importRows() call to the input table, adding the given contents to its existing rows.
+	@params:
+		tableId		- Required	: the FusionTable to update (String)
+		newRows		- Required	: the values to add to the FusionTable (list of lists)
+	'''
+	if not tableId or not newRows:
+		return False;
+
+	# Create a resumable MediaFileUpload containing the data.
+	sep = ',';
+	upload = MakeMediaFile(newRows, 'staging.csv', True, sep);
+	# Try the upload twice (which requires creating a new request).
+	if upload and upload.resumable():
+		if not StepUpload(FusionTables.table().importRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep)):
+			return StepUpload(FusionTables.table().importRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep));
+	elif upload:
+		if not Upload(FusionTables.table().importRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep)):
+			return Upload(FusionTables.table().importRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep));
+	return True;
+
+
+
 def ReplaceRows(tableId = '', newRows = []):
 	'''
 	Performs a FusionTables.tables().replaceRows() call to the input table, replacing its contents with the input rows.
@@ -197,7 +221,7 @@ def ReplaceRows(tableId = '', newRows = []):
 
 
 
-def Upload(request):
+def Upload(request = None):
 	'''
 	Upload a non-resumable media file.
 	@params:
@@ -215,7 +239,7 @@ def Upload(request):
 
 
 
-def StepUpload(request):
+def StepUpload(request = None):
 	'''
 	Print the percentage complete for a given upload while it is executing.
 	@params:
@@ -292,7 +316,7 @@ def GetUserBatch(start, limit = 10000):
 
 
 
-def GetTotalRowCount(tableID):
+def GetTotalRowCount(tableID = ''):
 	'''
 	Queries the size of a table, in rows.
 	@params:	tableID	- Required	: the FusionTable to determine a row count for.
@@ -311,7 +335,7 @@ def GetTotalRowCount(tableID):
 
 
 
-def RetrieveWholeRecords(rowids, tableID):
+def RetrieveWholeRecords(rowids = [], tableID = ''):
 	'''
 	Returns a list of lists (i.e. 2D array) corresponding to the full records
 	associated with the requested rowids in the specified table.
@@ -361,7 +385,7 @@ def RetrieveWholeRecords(rowids, tableID):
 
 
 
-def IdentifyDiffSeenAndRankRecords(uids, tableID):
+def IdentifyDiffSeenAndRankRecords(uids = [], tableID = ''):
 	'''
 	Returns a list of rowids for which the LastSeen values are unique, or the
 	rank is unique (for a given LastSeen), for the given members.
@@ -524,7 +548,7 @@ def ValidateRetrievedRecords(records = [], sourceTableId = ''):
 
 
 
-def KeepInterestingRecords(tableID):
+def KeepInterestingRecords(tableID = ''):
 	'''
 	Removes duplicated crown records, keeping each member's records which
 	have a new LastSeen value, or a new Rank value.
@@ -553,19 +577,20 @@ def KeepInterestingRecords(tableID):
 		# Back up the table before we do anything crazy.
 		BackupTable(tableID);
 		# Do something crazy.
-		ReplaceTable(tableID, keptValues);
+		ImportTable(tableID, keptValues);
+		#ReplaceTable(tableID, keptValues);
 	print('KeepInterestingRecords: Completed in', time.perf_counter() - startTime, ' total sec.');
 
 
 
-def BackupTable(tableID):
+def BackupTable(tableID = ''):
 	'''
 	Creates a copy of the existing MHCC CrownRecord Database and logs the new table id.
 	Does not delete the previous backup (and thus can result in a space quota exception).
 	'''
 	if not tableID:
 		tableID = tableList['crowns'];
-	backup = FusionTables.table().copy(tableId=tableID).execute();
+	backup = FusionTables.table().copy(tableId=tableID, copyPresentation=True).execute();
 	now = datetime.datetime.utcnow();
 	newName = 'MHCC_CrownHistory_AsOf_' + '-'.join(x.__str__() for x in [now.year, now.month, now.day, now.hour, now.minute]);
 	backup['name'] = newName;
@@ -604,7 +629,7 @@ def MakeLocalCopy(values, path, fileMode, delimiter = ','):
 
 
 
-def GetSizeEstimate(values, numSamples):
+def GetSizeEstimate(values = [], numSamples = 5):
 	'''
 	Estimates the upload size of a 2D array without needing to make the actual
 	upload file. Averages @numSamples different rows to improve result statistics.
@@ -621,7 +646,7 @@ def GetSizeEstimate(values, numSamples):
 
 
 
-def ReplaceTable(tableID, newValues):
+def ReplaceTable(tableID = '', newValues = []):
 	if type(newValues) is not list:
 		raise TypeError('Expected value array as list of lists.');
 	elif not newValues:
@@ -640,6 +665,34 @@ def ReplaceTable(tableID, newValues):
 	start = time.perf_counter();
 	newValues.sort();
 	print('Replacement completed in' if ReplaceRows(tableID, newValues) else 'Replacement failed after',
+	   round(time.perf_counter() - start, 1), 'sec.');
+
+
+
+def ImportTable(referenceID = '', newValues = []):
+	if type(newValues) is not list:
+		raise TypeError('Expected value array as list of lists.');
+	elif not newValues:
+		raise ValueError('Received empty value array.');
+	elif type(newValues[0]) is not list:
+		raise TypeError('Expected value array as list of lists.');
+	if type(referenceID) is not str:
+		raise TypeError('Expected string table id.');
+	elif len(referenceID) != 41:
+		raise ValueError('Table id is not of sufficient length.');
+	# Estimate the upload size by averaging the size of several random rows.
+	estSize = GetSizeEstimate(newValues, 10);
+	print('Approx. new upload size =', estSize, ' MB.');
+
+	start = time.perf_counter();
+	newValues.sort();
+	referenceTable = FusionTables.table().get(tableId=referenceID).execute();
+	referenceTable['name'] = "New Crowns FusionTable";
+	newTable = FusionTables.table().insert(body=referenceTable).execute();
+	print('Created new table', newTable['name'], 'with id=', newTable['tableId'], 'from reference table with id=', referenceID);
+	with open('tables.txt', 'a') as f:
+		csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[newTable['name'] + " = " + newTable['tableId']]]);
+	print('Upload completed in' if ImportRows(newTable['tableId'], newValues) else 'Upload failed after',
 	   round(time.perf_counter() - start, 1), 'sec.');
 
 
