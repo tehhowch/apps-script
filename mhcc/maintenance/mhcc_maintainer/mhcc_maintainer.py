@@ -18,8 +18,10 @@ from oauth2client.client import OAuth2WebServerFlow
 localKeys = {};
 tableList = {};
 
-scope = ['https://www.googleapis.com/auth/fusiontables',
-		 'https://www.googleapis.com/auth/drive'];
+scope = [
+	'https://www.googleapis.com/auth/fusiontables',
+	'https://www.googleapis.com/auth/drive'
+];
 FusionTables = None;
 
 # Script which performs maintenance functions for the MHCC FusionTable and
@@ -29,19 +31,20 @@ def Initialize():
 	Read in the FusionTable ID and the api keys for oAuth
 	'''
 	global localKeys;
+	stripChars = ' "\n\r';
 	with open('auth.txt') as f:
 		for line in f:
 			(key, val) = line.split('=');
-			localKeys[key.strip()] = val.strip();
+			localKeys[key.strip(stripChars)] = val.strip(stripChars);
 	with open('tables.txt') as f:
 		for line in f:
 			(key, val) = line.split('=');
-			tableList[key.strip()] = val.strip();
+			tableList[key.strip(stripChars)] = val.strip(stripChars);
 	with open('backupTable.txt') as f:
 		for line in f:
 			if ',' in line:
 				(key, val) = line.split(',');
-				tableList[key.strip()] = val.strip();
+				tableList[key.strip(stripChars)] = val.strip(stripChars);
 
 	print('Initialized. Found tables: ');
 	for key in tableList.keys():
@@ -186,13 +189,19 @@ def ImportRows(tableId = '', newRows = []):
 	# Create a resumable MediaFileUpload containing the data.
 	sep = ',';
 	upload = MakeMediaFile(newRows, 'staging.csv', True, sep);
+	kwargs = {
+		'tableId': tableId,
+		'media_body': upload,
+		'media_mime_type': 'application/octet-stream',
+		'encoding': 'UTF-8',
+		'delimiter': sep};
 	# Try the upload twice (which requires creating a new request).
 	if upload and upload.resumable():
-		if not StepUpload(FusionTables.table().importRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep)):
-			return StepUpload(FusionTables.table().importRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep));
+		if not StepUpload(FusionTables.table().importRows(**kwargs)):
+			return StepUpload(FusionTables.table().importRows(**kwargs));
 	elif upload:
-		if not Upload(FusionTables.table().importRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep)):
-			return Upload(FusionTables.table().importRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep));
+		if not Upload(FusionTables.table().importRows(**kwargs)):
+			return Upload(FusionTables.table().importRows(**kwargs));
 	return True;
 
 
@@ -201,7 +210,7 @@ def ReplaceRows(tableId = '', newRows = []):
 	'''
 	Performs a FusionTables.tables().replaceRows() call to the input table, replacing its contents with the input rows.
 	@params:
-		tableID		- Required	: the FusionTable to update (String)
+		tableId		- Required	: the FusionTable to update (String)
 		newRows		- Required	: the values to overwrite the FusionTable with (list of lists)
 	'''
 	if not tableId or not newRows:
@@ -210,14 +219,70 @@ def ReplaceRows(tableId = '', newRows = []):
 	# Create a resumable MediaFileUpload containing the "interesting" data to retain.
 	sep = ',';
 	upload = MakeMediaFile(newRows, 'staging.csv', True, sep);
+	kwargs = {
+		'tableId': tableId,
+		'media_body': upload,
+		'media_mime_type': 'application/octet-stream',
+		'encoding': 'UTF-8',
+		'delimiter': sep};
 	# Try the upload twice (which requires creating a new request).
 	if upload and upload.resumable():
-		if not StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep)):
-			return StepUpload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, media_mime_type = 'application/octet-stream', encoding = 'UTF-8', delimiter = sep));
+		try:
+			if not StepUpload(FusionTables.table().replaceRows(**kwargs)):
+				return StepUpload(FusionTables.table().replaceRows(**kwargs));
+		except HttpError as e:
+			if e.resp.status in [417] and e._get_reason() == 'Table will exceed allowed maximum size':
+				# The goal is to replace the table's rows, so every existing row will be deleted anyway.
+				# If the table's current data is too large, such that old + new >= 250, then Error 417
+				# is returned. Handle this by explicitly deleting the rows first, then uploading the data.
+				DeleteRows(tableId);
+				return StepUpload(FusionTables.table().importRows(**kwargs));
+			raise e;
 	elif upload:
-		if not Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep)):
-			return Upload(FusionTables.table().replaceRows(tableId = tableId, media_body = upload, encoding = 'UTF-8', delimiter = sep));
+		if not Upload(FusionTables.table().replaceRows(**kwargs)):
+			return Upload(FusionTables.table().replaceRows(**kwargs));
 	return True;
+
+
+
+def DeleteRows(tableId = ''):
+	'''
+	Performs a FusionTables.tables().sql(sql=DELETE) operation, with an empty value array.
+	'''
+	if not tableId or len(tableId) != 41:
+		return False;
+	kwargs = {'sql': "DELETE FROM " + tableId};
+	request = FusionTables.query().sql(**kwargs);
+	response = request.execute();
+	print();
+	print("Deleted rows:", response['rows'][0][0]);
+	while True:
+		tasks = GetAllTasks(tableId);
+		if tasks and len(tasks) > 0:
+			print(tasks[0]['type'],"progress:", tasks[0]['progress']);
+		else:
+			break;
+	return True;
+
+
+
+def GetAllTasks(tableId = ''):
+	'''
+	Performs as many FusionTables.task().list() queries as is needed to obtain all active tasks for the given FusionTable
+	'''
+	if type(tableId) is not str:
+		raise TypeError('Expected string table ID.');
+	elif len(tableId) != 41:
+		raise ValueError('Received invalid table ID \'' + tableId + '\'');
+	request = FusionTables.task().list(tableId = tableId);
+	response = request.execute();
+	taskList = [];
+	while response is not None and 'items' in response.keys():
+		taskList.extend(response['items']);
+		print("Querying tasks.", len(taskList), "found so far...");
+		request = FusionTables.task().list_next(previous_request = request, previous_response = response);
+		response = request.execute();
+	return taskList;
 
 
 
@@ -264,6 +329,9 @@ def StepUpload(request = None):
 			elif e.resp.status in [500, 502, 503, 504] and fails < 5:
 				time.sleep(2 ^ fails);
 				++fails;
+			elif e.resp.status in [417] and (fails < 5) and (e._get_reason() == 'Table will exceed allowed maximum size'):
+				print();
+				raise e;
 			else:
 				print();
 				print('Upload failed:', e);
@@ -291,7 +359,7 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     bar = fill * filledLength + '-' * (length - filledLength)
     print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = '\r')
     # Print New Line on Complete
-    if iteration == total:
+    if iteration >= total:
         print()
 
 
@@ -308,7 +376,7 @@ def GetUserBatch(start, limit = 10000):
 	startTime = time.perf_counter();
 	resp = GetQueryResult(sql, .03, start, limit);
 	try:
-		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - startTime, 1), ' sec. Wanted <=', limit, 'after index', start);
+		print('Fetched', len(resp['rows']), 'members in', round(time.perf_counter() - startTime, 1), 'sec. Wanted <=', limit, 'after index', start);
 		return resp['rows'];
 	except:
 		print('Received no data from user fetch query.')
@@ -316,14 +384,14 @@ def GetUserBatch(start, limit = 10000):
 
 
 
-def GetTotalRowCount(tableID = ''):
+def GetTotalRowCount(tableId = ''):
 	'''
 	Queries the size of a table, in rows.
-	@params:	tableID	- Required	: the FusionTable to determine a row count for.
+	@params:	tableId	- Required	: the FusionTable to determine a row count for.
 	@return:	long
 	'''
-	countSQL = 'select COUNT(ROWID) from ' + tableID;
-	print('Fetching total row count for table id', tableID);
+	countSQL = 'select COUNT(ROWID) from ' + tableId;
+	print('Fetching total row count for table id', tableId);
 	start = time.perf_counter();
 	allRowIds = GetQueryResult(countSQL);
 	try:
@@ -335,27 +403,27 @@ def GetTotalRowCount(tableID = ''):
 
 
 
-def RetrieveWholeRecords(rowids = [], tableID = ''):
+def RetrieveWholeRecords(rowids = [], tableId = ''):
 	'''
 	Returns a list of lists (i.e. 2D array) corresponding to the full records
 	associated with the requested rowids in the specified table.
 	@params:
 		rowids		- Required	: the rows in the table to be fully obtained (unsigned)
-		tableID		- Required	: the FusionTable to obtain records from (String)
+		tableId		- Required	: the FusionTable to obtain records from (String)
 	@return:	list of records from the indicated FusionTable.
 	'''
 	if type(rowids) is not list:
 		raise TypeError('Expected list of rowids.');
 	elif not rowids:
 		raise ValueError('Received empty list of rowids to retrieve.');
-	if type(tableID) is not str:
+	if type(tableId) is not str:
 		raise TypeError('Expected string table ID.');
-	elif len(tableID) != 41:
+	elif len(tableId) != 41:
 		raise ValueError('Received invalid table ID.');
-	records=[];
+	records = [];
 	numNeeded = len(rowids);
 	rowids.reverse();
-	baseSQL = 'SELECT * FROM ' + tableID + ' WHERE ROWID IN (';
+	baseSQL = 'SELECT * FROM ' + tableId + ' WHERE ROWID IN (';
 	print('Retrieving', numNeeded, 'records:');
 	startTime = time.perf_counter();
 	printProgressBar(numNeeded - len(rowids), numNeeded, "Record retrieval: ", "", 1, 50);
@@ -380,21 +448,21 @@ def RetrieveWholeRecords(rowids = [], tableID = ''):
 	
 	if len(records) != numNeeded:
 		raise LookupError('Obtained different number of records than specified');
-	print('Retrieved', numNeeded, 'records in', time.perf_counter() - startTime,'sec.');
+	print('Retrieved', numNeeded, 'records in', time.perf_counter() - startTime, 'sec.');
 	return records;
 
 
 
-def IdentifyDiffSeenAndRankRecords(uids = [], tableID = ''):
+def IdentifyDiffSeenAndRankRecords(uids = [], tableId = ''):
 	'''
 	Returns a list of rowids for which the LastSeen values are unique, or the
 	rank is unique (for a given LastSeen), for the given members.
 	Uses SQLGet since only GET is done.
 	'''
 	rowids = [];
-	if not tableID:
-		tableID = tableList['crowns'];
-	if not tableID:
+	if not tableId:
+		tableId = tableList['crowns'];
+	if not tableId:
 		return rowids;
 
 	uids.reverse();
@@ -406,7 +474,7 @@ def IdentifyDiffSeenAndRankRecords(uids = [], tableID = ''):
 	LASTSEEN_INDEX = 3;
 	RANK_INDEX = 4;
 
-	baseSQL = 'SELECT ROWID, Member, UID, LastSeen, Rank FROM ' + tableID + ' WHERE UID IN (';
+	baseSQL = 'SELECT ROWID, Member, UID, LastSeen, Rank FROM ' + tableId + ' WHERE UID IN (';
 	print('Sifting through', memberCount, 'member\'s stored data.');
 	printProgressBar(memberCount - len(uids), memberCount, "Members sifted: ", "", 1, 50);
 	while uids:
@@ -548,23 +616,23 @@ def ValidateRetrievedRecords(records = [], sourceTableId = ''):
 
 
 
-def KeepInterestingRecords(tableID = ''):
+def KeepInterestingRecords(tableId = ''):
 	'''
 	Removes duplicated crown records, keeping each member's records which
 	have a new LastSeen value, or a new Rank value.
 	'''
 	startTime = time.perf_counter();
-	if not tableID:
-		tableID = tableList['crowns'];
-	if not tableID or len(tableID) != 41:
+	if not tableId:
+		tableId = tableList['crowns'];
+	if not tableId or len(tableId) != 41:
 		print('Invalid table id');
 		return;
 	uids = [row[1] for row in GetUserBatch(0, 100000)];
 	if not uids:
 		print('No members returned');
 		return;
-	totalRows = GetTotalRowCount(tableID);
-	rowids = IdentifyDiffSeenAndRankRecords(uids, tableID);
+	totalRows = GetTotalRowCount(tableId);
+	rowids = IdentifyDiffSeenAndRankRecords(uids, tableId);
 	if not rowids:
 		print('No rowids received');
 		return;
@@ -572,31 +640,30 @@ def KeepInterestingRecords(tableID = ''):
 		print("All records are interesting");
 		return;
 	# Get the row data associated with the kept rowids
-	keptValues = RetrieveWholeRecords(rowids, tableID);
-	if ValidateRetrievedRecords(keptValues, tableID):
+	keptValues = RetrieveWholeRecords(rowids, tableId);
+	if ValidateRetrievedRecords(keptValues, tableId):
 		# Back up the table before we do anything crazy.
-		BackupTable(tableID);
+		BackupTable(tableId);
 		# Do something crazy.
-		ImportTable(tableID, keptValues);
-		#ReplaceTable(tableID, keptValues);
-	print('KeepInterestingRecords: Completed in', time.perf_counter() - startTime, ' total sec.');
+		ReplaceTable(tableId, keptValues);
+	print('KeepInterestingRecords: Completed in', time.perf_counter() - startTime, 'total sec.');
 
 
 
-def BackupTable(tableID = ''):
+def BackupTable(tableId = ''):
 	'''
 	Creates a copy of the existing MHCC CrownRecord Database and logs the new table id.
 	Does not delete the previous backup (and thus can result in a space quota exception).
 	'''
-	if not tableID:
-		tableID = tableList['crowns'];
-	backup = FusionTables.table().copy(tableId=tableID, copyPresentation=True).execute();
+	if not tableId:
+		tableId = tableList['crowns'];
+	backup = FusionTables.table().copy(tableId=tableId, copyPresentation=True).execute();
 	now = datetime.datetime.utcnow();
 	newName = 'MHCC_CrownHistory_AsOf_' + '-'.join(x.__str__() for x in [now.year, now.month, now.day, now.hour, now.minute]);
 	backup['name'] = newName;
 	FusionTables.table().update(tableId=backup['tableId'], body=backup).execute();
-	with open('backupTable.txt','a') as f:
-		csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[newName, backup['tableId']]]);
+	with open('backupTable.txt', 'a') as f:
+		csv.writer(f, quoting = csv.QUOTE_ALL).writerows([[newName, backup['tableId']]]);
 	print('Backup completed to new table \'' + newName + '\' with id =', backup['tableId']);
 	return newName;
 
@@ -646,25 +713,25 @@ def GetSizeEstimate(values = [], numSamples = 5):
 
 
 
-def ReplaceTable(tableID = '', newValues = []):
+def ReplaceTable(tableId = '', newValues = []):
 	if type(newValues) is not list:
 		raise TypeError('Expected value array as list of lists.');
 	elif not newValues:
 		raise ValueError('Received empty value array.');
 	elif type(newValues[0]) is not list:
 		raise TypeError('Expected value array as list of lists.');
-	if type(tableID) is not str:
+	if type(tableId) is not str:
 		raise TypeError('Expected string table id.');
-	elif len(tableID) != 41:
+	elif len(tableId) != 41:
 		raise ValueError('Table id is not of sufficient length.');
 	# Estimate the upload size by averaging the size of several random rows.
-	print('Replacing table with id =', tableID);
+	print('Replacing table with id =', tableId);
 	estSize = GetSizeEstimate(newValues, 10);
 	print('Approx. new upload size =', estSize, ' MB.');
 	
 	start = time.perf_counter();
 	newValues.sort();
-	print('Replacement completed in' if ReplaceRows(tableID, newValues) else 'Replacement failed after',
+	print('Replacement completed in' if ReplaceRows(tableId, newValues) else 'Replacement failed after',
 	   round(time.perf_counter() - start, 1), 'sec.');
 
 
@@ -686,19 +753,38 @@ def ImportTable(referenceID = '', newValues = []):
 
 	start = time.perf_counter();
 	newValues.sort();
-	referenceTable = FusionTables.table().get(tableId=referenceID).execute();
+	referenceTable = FusionTables.table().get(tableId = referenceID).execute();
 	referenceTable['name'] = "New Crowns FusionTable";
-	newTable = FusionTables.table().insert(body=referenceTable).execute();
+	newTable = FusionTables.table().insert(body = referenceTable).execute();
 	print('Created new table', newTable['name'], 'with id=', newTable['tableId'], 'from reference table with id=', referenceID);
 	with open('tables.txt', 'a') as f:
-		csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[newTable['name'] + " = " + newTable['tableId']]]);
+		csv.writer(f, quoting = csv.QUOTE_ALL).writerows([[newTable['name'] + " = " + newTable['tableId']]]);
 	print('Upload completed in' if ImportRows(newTable['tableId'], newValues) else 'Upload failed after',
 	   round(time.perf_counter() - start, 1), 'sec.');
+
+
+
+def PickTable():
+	'''
+	Request user input to determine the FusionTable to operate on.
+	'''
+	choice = None;
+	while choice is None:
+		typed = input("Enter the table name from above, or a table id: ");
+		if len(typed) == 41:
+			choice = typed;
+		elif typed in tableList.keys():
+			choice = tableList[typed];
+		else:
+			print("Unable to use your input.");
+	return choice;
 
 
 
 if (__name__ == "__main__"):
 	Initialize();
 	Authorize();
+	# Ask for the table to operate on
+	id = PickTable();
 	# Perform maintenance.
-	KeepInterestingRecords(tableList['crowns']);
+	KeepInterestingRecords(id);
