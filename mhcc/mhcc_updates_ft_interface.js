@@ -619,19 +619,37 @@ function getNewLastRanValue_(origUID, origLastRan, diffMembers)
  */
 function getDbSize()
 {
+  var sizeData = getDbSizeData_();
+  var sizeStr = 'The crown database has ' + sizeData['nRows'] + ' entries, each consuming ~';
+  sizeStr += sizeData['kbSize'] + ' kB of space, based on ';
+  sizeStr += sizeData['samples'] + ' sampled rows.<br>The total database size is ~';
+  sizeStr += sizeData['totalSize'] + ' mB.<br>The maximum size allowed is 250 MB.';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(sizeStr), "Database Size");
+}
+function getDbSizeData_()
+{
   var nRows = getTotalRowCount_(ftid);
-  var row2get = Math.floor(nRows * Math.random());
-  var rowData = FusionTables.Query.sqlGet('select * from ' + ftid + " OFFSET " + row2get + " LIMIT 1");
-  if (!rowData.rows || !rowData.rows.length || !rowData.rows[0].length)
-    return;
+  var toGet = [], samples = 10;
+  for (var n = 0; n < samples; ++n)
+    toGet.push(Math.floor(nRows * Math.random()));
+
+  var rowSizes = [];
+  toGet.forEach(function (row) {
+    var resp = FusionTables.Query.sqlGet("SELECT * FROM " + ftid + " OFFSET " + row + " LIMIT 1");
+    if(!resp.rows || !resp.rows.length || !resp.rows[0].length)
+    {
+      rowSizes.push(0);
+      --samples;
+    }
+    else
+      rowSizes.push(getByteCount_(resp.rows[0].toString()));
+  });
+  if(!samples) return;
   
-  var rowSize = getByteCount_(rowData.rows[0].toString());
-  var kbSize = Math.ceil(rowSize * 1000 / 1024) / 1000;
+  var kbSize = rowSizes.reduce(function (kb, bytes) { return (kb + Math.ceil(bytes * 1000 / 1024) / 1000); }, 0) / samples;
   var totalSize = Math.ceil(kbSize * nRows * 1000 / 1024) / 1000;
-  var sizeStr = 'The crown database has ' + nRows.toString() + ' entries, each consuming ~';
-  sizeStr += kbSize.toString() + ' kB of space.\\nThe total database size is ~';
-  sizeStr += totalSize.toString() + ' mB.\\nThe maximum size allowed is 250 MB.';
-  Browser.msgBox("Database Size", sizeStr, Browser.Buttons.OK);
+  kbSize = Math.round(kbSize * 1000) / 1000;
+  return {kbSize: kbSize, totalSize: totalSize, nRows: nRows, samples: samples};
 }
 /**
  * function doBackupTable_      Ensure that a copy of the database exists prior to performing some
