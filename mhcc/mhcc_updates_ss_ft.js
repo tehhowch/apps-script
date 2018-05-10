@@ -42,8 +42,12 @@
  *  fields and values. Click the current value for lastRan (e.g. 2364) and replace it with 0.
  *  Click "Save" or press "Enter" to commit your change.
  */
+// @OnlyCurrentDoc
 var mhccSSkey = '1P8UDv4j2lPM0hAKw4EbBT_GtvlOgFYeARV16NzWA6pc';
 var crownDBnumColumns = 12;
+// Change this number when additional rows containing special titles (like "Super Secret Squirrel") get added.
+// This only needs to change when rows are added - if values of existing rows are changed, all is well. :)
+var numCustomTitles = 16;
 /**
  * function onOpen()      Sets up the admin's menu from the spreadsheet interface.
  */
@@ -106,7 +110,7 @@ function saveMyDb_(wb, db)
 function UpdateDatabase()
 {
   var batchSize = 127, startTime = new Date()
-  var wb = SpreadsheetApp.openById(mhccSSkey);
+  var wb = SpreadsheetApp.getActive();
   var db = getMyDb_(wb, 1);
   var props = PropertiesService.getScriptProperties().getProperties();
   // Database records count (may be larger than the written db on SheetDb)
@@ -119,7 +123,7 @@ function UpdateDatabase()
   // Read in the MHCC tiers as a 13x3 array.
   // If the MHCC tiers are moved, this getRange target MUST be updated!
   var sheet = wb.getSheetByName('Members');
-  var aRankTitle = sheet.getRange(3, 8, 13, 3).getValues();
+  var aRankTitle = sheet.getRange(3, 8, numCustomTitles, 3).getValues();
   // After each Scoreboard operation, a backup of the FusionTable database should be created.
   if (lastRan >= numMembers)
   {
@@ -337,7 +341,7 @@ function UpdateStale_(wb, lostTime)
 function UpdateScoreboard()
 {
   var startTime = new Date();
-  var wb = SpreadsheetApp.openById(mhccSSkey);
+  var wb = SpreadsheetApp.getActive();
   var numMembers = FusionTables.Query.sqlGet("SELECT * FROM " + utbl).rows.length;
   PropertiesService.getScriptProperties().setProperty("numMembers", numMembers.toString());
   // To build the scoreboard....
@@ -348,14 +352,17 @@ function UpdateScoreboard()
   if (didSave)
   {
     // If a member hasn't been seen in the last 20 days, then request a high-priority update
+    console.time('stale');
     UpdateStale_(wb, 20 * 86400 * 1000);
-
+    console.timeEnd('stale');
+    
     // 3) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
     // particular crown total should rank above someone who (was seen) attaining it at a later time.
     var allHunters = getMyDb_(wb, [{column:9, ascending:false}, {column:4, ascending:true}, {column:3, ascending:true}]);
     var scoreboardArr = [], len = allHunters.length, rank = 1;
-    var plotLink = 'https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid=';
+    var plotLink = 'https://script.google.com/macros/s/AKfycbxvvtBNQ66BBlB-md1jn_y-TlujQf1ytDkYG-7nEAG4SDaecMFF/exec?uid=';
     // 4) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
+    console.time('Build Scoreboard Array');
     while (rank <= len)
     {
       scoreboardArr.push([rank,
@@ -367,7 +374,7 @@ function UpdateScoreboard()
                           'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1],
                           'https://www.mousehuntgame.com/profile.php?snuid=' + allHunters[rank - 1][1]
                          ])
-      if (rank % 150 == 0)
+      if (rank % 150 === 0)
         scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link', 'MHG']);
 
       // Store the time this rank was generated.
@@ -375,6 +382,7 @@ function UpdateScoreboard()
       // Store the counter as the hunters' rank, then increment the counter.
       allHunters[rank - 1][9] = rank++;
     }
+    console.timeEnd('Build Scoreboard Array');
     // 5) Write it to the spreadsheet
     var sheet = wb.getSheetByName('Scoreboard');
     sheet.getRange(2, 1, sheet.getLastRow(), scoreboardArr[0].length).setValue('');

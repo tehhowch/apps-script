@@ -58,7 +58,7 @@ function getDbIndexMap_(db, numMembers, isRepeat)
  */
 function refreshDbIndexMap_()
 {
-  var ss = SpreadsheetApp.openById(mhccSSkey);
+  var ss = SpreadsheetApp.getActive();
   saveMyDb_(ss, getLatestRows_());
   return getMyDb_(ss, 1);
 }
@@ -159,12 +159,12 @@ function getUserHistory_(UID, blGroup)
   else
     sql += "RankTime FROM " + ftid + " WHERE UID IN (" + UID.toString() + ") ORDER BY LastSeen ASC";
 
-  var resp = FusionTables.Query.sqlGet(sql);
+  var resp = FusionTables.Query.sqlGet(sql, {quotaUser: String(UID)});
   if (typeof resp.rows == 'undefined')
     throw new Error('No data for UID=' + UID);
 
   if (resp.rows.length > 0)
-    return { "user": resp.rows[0][0], "headers": resp.columns, "dataset": resp.rows };
+    return {"user": resp.rows[resp.rows.length - 1][0], "headers": resp.columns, "dataset": resp.rows};
   else
     return "";
 }
@@ -433,7 +433,7 @@ function addMember2Fusion_(memList)
     return;
 
   var rt = new Date(), resp = [], memCsv = [], crownCsv = [], readded = [];
-  var dbSheet = SpreadsheetApp.openById(mhccSSkey).getSheetByName('SheetDb');
+  var dbSheet = SpreadsheetApp.getActive().getSheetByName('SheetDb');
   var newRank = dbSheet.getLastRow();
   
   // Create two arrays of the new members' data for CSV upload via importRows.
