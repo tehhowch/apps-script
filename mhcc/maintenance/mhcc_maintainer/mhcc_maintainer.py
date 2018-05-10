@@ -1,10 +1,11 @@
 #! /usr/bin/python3
 
-import time
-import datetime
 import csv
-import random
+import datetime
 import json
+import os
+import random
+import time
 
 from googleapiclient.discovery import build
 from googleapiclient.http import HttpError
@@ -23,29 +24,24 @@ scope = [
 	'https://www.googleapis.com/auth/drive'
 ];
 FusionTables = None;
+Drive = None;
 
 # Script which performs maintenance functions for the MHCC FusionTable and
 # initiates a resumable upload to handle the large dataset
 def Initialize():
 	'''
-	Read in the FusionTable ID and the api keys for oAuth
+	Read in the FusionTable IDs and the data for OAuth
 	'''
-	global localKeys;
+	global localKeys, tableList;
 	stripChars = ' "\n\r';
 	with open('auth.txt') as f:
 		for line in f:
 			(key, val) = line.split('=');
 			localKeys[key.strip(stripChars)] = val.strip(stripChars);
-	with open('tables.txt') as f:
-		for line in f:
-			(key, val) = line.split('=');
-			tableList[key.strip(stripChars)] = val.strip(stripChars);
-	with open('backupTable.txt') as f:
-		for line in f:
-			if ',' in line:
-				(key, val) = line.split(',');
-				tableList[key.strip(stripChars)] = val.strip(stripChars);
-
+	with open('tables.txt', 'r', newline = '') as f:
+		for line in csv.reader(f, quoting = csv.QUOTE_ALL):
+			tableList[line[0]] = line[1];
+	
 	print('Initialized. Found tables: ');
 	for key in tableList.keys():
 		print('\t' + key);
@@ -69,8 +65,91 @@ def Authorize():
 	FusionTables = build('fusiontables', 'v2', credentials=credentials);
 	if FusionTables is None:
 		raise EnvironmentError('FusionTables not authenticated or built as a service.');
+	global Drive;
+	Drive = build('drive','v3', credentials = credentials);
+	if Drive is None:
+		raise EnvironmentError('Drive not authenticated or built as a service.');
 	print('Authorized.');
 	
+
+
+def VerifyKnownTables():
+	'''
+	Inspect every table in the tableList dict, to ensure that the table key is valid.
+	Invalid table keys (such as those belonging to deleted or trashed files) are removed.
+	If a FusionTable is in the trash and owned by the executing user, it is deleted.
+	'''
+	if not tableList:
+		print("No known list of tables");
+		return;
+	elif len(tableList.items()) == 0:
+		return;
+	if not FusionTables or not Drive:
+		print("Authorization is required to validate tables.");
+		return;
+
+	def ReadDriveResponse(_, response, exception):
+		def ValidateTable(table):
+			# If the table is not trashed, keep it.
+			if table['trashed'] is False:
+				return True;
+			# If the table can be deleted, delete it.
+			if table['ownedByMe'] is True and table['capabilities']['canDelete'] is True:
+				nonlocal batchDeletes;
+				batchDeletes.add(FusionTables.table().delete(tableId = table['id']));
+			return False;
+
+		nonlocal valids, batchDeletes;
+		if exception is None and ValidateTable(response):
+			valids[response['name']] = response['id'];
+
+	valids = {};
+	kwargs = {
+		'fileId': None,
+		'fields': 'id,name,trashed,ownedByMe,capabilities/canDelete'}
+	# Collect the data requests in a batch request.
+	batchGets = Drive.new_batch_http_request(callback = ReadDriveResponse);
+	batchDeletes = FusionTables.new_batch_http_request(callback = None);
+	for name, tableId in tableList.items():
+		# Obtain the file as known to Drive.
+		kwargs['fileId'] = tableId;
+		batchGets.add(Drive.files().get(**kwargs));
+	batchGets.execute();
+	# Delete any of the user's trashed FusionTables.
+	if len(batchDeletes._requests.items()) > 0:
+		batchDeletes.execute();
+	if len(valids.items()) < len(tableList.items()) and len(valids.items()) > 0:
+		# Rewrite the tables.txt file as CSV.
+		print('Rewriting list of known tables (invalid tables have been removed).');
+		with open('tables.txt', 'w', newline = '') as f:
+			toWrite = [];
+			for tableName, tableID in valids.items():
+				toWrite.append([tableName, tableID]);
+			csv.writer(f, quoting = csv.QUOTE_ALL).writerows(toWrite);
+		
+
+
+def GetModifiedInfo(fileId = ''):
+	'''
+	Acquire the modifiedTime of the referenced table via the Drive service. The version will change when almost any part of the table is changed.
+	@params: fileId	- Required	: The file ID (table ID) of a file known to Google Drive
+	@return:	dict			: A dictionary containing the RFC3339 modified timestamp from Google Drive, the equivalent aware datetime object, and the file metadata
+	'''
+	if type(fileId) is not str:
+		raise TypeError('Expected string table ID.');
+	elif len(fileId) != 41:
+		raise ValueError('Received invalid table ID.');
+	kwargs = {'fileId': fileId, 'fields': 'id,mimeType,modifiedTime,version'};
+	request = Drive.files().get(**kwargs);
+	fusionFile = request.execute();
+	try:
+		return {'modifiedString': fusionFile['modifiedTime'],
+		  'modifiedDatetime': datetime.datetime.strptime(fusionFile['modifiedTime'][:-1] + '+0000', '%Y-%m-%dT%H:%M:%S.%f%z'),
+		  'file': fusionFile};
+	except Exception as e:
+		print('Acquisition of modification info failed.', e);
+		return {'modifiedString': None, 'modifiedDatetime': None, 'file': None};
+
 
 
 def GetQueryResult(query, rowSize = 1., offsetStart = 0, maxReturned = float("inf")):
@@ -84,6 +163,7 @@ def GetQueryResult(query, rowSize = 1., offsetStart = 0, maxReturned = float("in
 		rowSize		- Optional	: The expected size of an individual returned row, in kB (double)
 		offsetStart	- Optional	: The global offset desired, i.e. what would normally be placed after an "OFFSET" descriptor (int)
 		maxReturned	- Optional	: The global maximum number of records the query should return, i.e. what would normally be placed after a "LIMIT" descriptor (int)
+	@return:	dict			: A dictionary conforming to fusiontables#sqlresponse formatting, equivalent to what would be returned as though only a single query were made.
 	'''
 	if not ValidateGetQuery(query):
 		return {};
@@ -130,6 +210,8 @@ def GetQueryResult(query, rowSize = 1., offsetStart = 0, maxReturned = float("in
 def ValidateGetQuery(query = ''):
 	'''
 	Inspect the given query to ensure it is actually a SQL GET query and includes a table.
+	@params: query	- Required	: The SQL to be sent to FusionTables via FusionTables.query().sqlGet / .sqlGet_media	(str)
+	@return:	bool			: Whether or not it is a GET request (vs PUT, PATCH, DELETE, etc.) and specifies a target FusionTable.
 	'''
 	l = query.lower();
 	if ('select' not in l) and ('show' not in l) and ('describe' not in l):
@@ -145,6 +227,8 @@ def ValidateQueryResult(queryResult):
 	Checks the returned query result from FusionTables to ensure it has the minimum value.
 	bytestring: a newline separator (i.e. header and a value).
 	dictionary: 'rows' object (i.e. fusiontables#sqlresponse)
+	@params: queryResult	- Required	: a response given by a SQL request to FusionTables.query()
+	@return:	bool					: Whether or not this query result has parsable data.
 	'''
 	if not queryResult:
 		return False;
@@ -161,6 +245,8 @@ def ValidateQueryResult(queryResult):
 def ExtractQueryResultFromByteString(queryResult = b''):
 	'''
 	Convert the received bytestring from an alt=media request into a true FusionTables JSON response.
+	@params: queryResult	- Required	: A bytestring of input data
+	@return:	dict					: A dictionary conforming to fusiontables#sqlresponse
 	'''
 	if len(queryResult) == 0:
 		return {};
@@ -176,42 +262,13 @@ def ExtractQueryResultFromByteString(queryResult = b''):
 
 
 
-def ImportRows(tableId = '', newRows = []):
-	'''
-	Performs a FusionTables.tables().importRows() call to the input table, adding the given contents to its existing rows.
-	@params:
-		tableId		- Required	: the FusionTable to update (String)
-		newRows		- Required	: the values to add to the FusionTable (list of lists)
-	'''
-	if not tableId or not newRows:
-		return False;
-
-	# Create a resumable MediaFileUpload containing the data.
-	sep = ',';
-	upload = MakeMediaFile(newRows, 'staging.csv', True, sep);
-	kwargs = {
-		'tableId': tableId,
-		'media_body': upload,
-		'media_mime_type': 'application/octet-stream',
-		'encoding': 'UTF-8',
-		'delimiter': sep};
-	# Try the upload twice (which requires creating a new request).
-	if upload and upload.resumable():
-		if not StepUpload(FusionTables.table().importRows(**kwargs)):
-			return StepUpload(FusionTables.table().importRows(**kwargs));
-	elif upload:
-		if not Upload(FusionTables.table().importRows(**kwargs)):
-			return Upload(FusionTables.table().importRows(**kwargs));
-	return True;
-
-
-
 def ReplaceRows(tableId = '', newRows = []):
 	'''
 	Performs a FusionTables.tables().replaceRows() call to the input table, replacing its contents with the input rows.
 	@params:
 		tableId		- Required	: the FusionTable to update (String)
 		newRows		- Required	: the values to overwrite the FusionTable with (list of lists)
+	@return:	bool			: Whether or not the indicated FusionTable's rows were replaced with the input rows.
 	'''
 	if not tableId or not newRows:
 		return False;
@@ -235,8 +292,10 @@ def ReplaceRows(tableId = '', newRows = []):
 				# The goal is to replace the table's rows, so every existing row will be deleted anyway.
 				# If the table's current data is too large, such that old + new >= 250, then Error 417
 				# is returned. Handle this by explicitly deleting the rows first, then uploading the data.
-				DeleteRows(tableId);
-				return StepUpload(FusionTables.table().importRows(**kwargs));
+				if DeleteAllRows(tableId):
+					return StepUpload(FusionTables.table().importRows(**kwargs));
+				else:
+					return False;
 			raise e;
 	elif upload:
 		if not Upload(FusionTables.table().replaceRows(**kwargs)):
@@ -245,23 +304,29 @@ def ReplaceRows(tableId = '', newRows = []):
 
 
 
-def DeleteRows(tableId = ''):
+def DeleteAllRows(tableId = ''):
 	'''
 	Performs a FusionTables.tables().sql(sql=DELETE) operation, with an empty value array.
+	@params: tableId	- Required	: The ID of the FusionTable which should have all rows deleted.
+	@return:	bool				: Whether or not the delete operation succeeded. 
 	'''
 	if not tableId or len(tableId) != 41:
 		return False;
 	kwargs = {'sql': "DELETE FROM " + tableId};
-	request = FusionTables.query().sql(**kwargs);
-	response = request.execute();
-	print();
-	print("Deleted rows:", response['rows'][0][0]);
+	try:
+		response = FusionTables.query().sql(**kwargs).execute();
+	except Exception as e:
+		print(e);
+		return False;
+
 	while True:
 		tasks = GetAllTasks(tableId);
 		if tasks and len(tasks) > 0:
-			print(tasks[0]['type'],"progress:", tasks[0]['progress']);
+			print(tasks[0]['type'], "progress:", tasks[0]['progress']);
+			time.sleep(1);
 		else:
 			break;
+	print("Deleted rows:", response['rows'][0][0]);
 	return True;
 
 
@@ -269,19 +334,21 @@ def DeleteRows(tableId = ''):
 def GetAllTasks(tableId = ''):
 	'''
 	Performs as many FusionTables.task().list() queries as is needed to obtain all active tasks for the given FusionTable
+	@params: tableId	- Required	: The ID of the FusionTable which should be queried for running tasks (such as row deletion).
+	@return:	list				: A list of all fusiontable#task dicts that are running or scheduled to run. 
 	'''
 	if type(tableId) is not str:
 		raise TypeError('Expected string table ID.');
 	elif len(tableId) != 41:
 		raise ValueError('Received invalid table ID \'' + tableId + '\'');
-	request = FusionTables.task().list(tableId = tableId);
-	response = request.execute();
 	taskList = [];
-	while response is not None and 'items' in response.keys():
-		taskList.extend(response['items']);
-		print("Querying tasks.", len(taskList), "found so far...");
-		request = FusionTables.task().list_next(previous_request = request, previous_response = response);
+	request = FusionTables.task().list(tableId = tableId);
+	while request is not None:
 		response = request.execute();
+		if 'items' in response.keys():
+			taskList.extend(response['items']);
+			print("Querying tasks.", len(taskList), "found so far...");
+		request = FusionTables.task().list_next(request, response);
 	return taskList;
 
 
@@ -289,8 +356,8 @@ def GetAllTasks(tableId = ''):
 def Upload(request = None):
 	'''
 	Upload a non-resumable media file.
-	@params:
-		request		- Required	: an HttpRequest with an upload Media that might not support next_chunk().
+	@params: request	- Required	: an HttpRequest with an upload Media that might not support next_chunk().
+	@return:	bool				: Whether or not the upload succeeded.
 	'''
 	if not request:
 		return False;
@@ -309,9 +376,8 @@ def StepUpload(request = None):
 	Print the percentage complete for a given upload while it is executing.
 	@params:
 		request		- Required	: an HttpRequest that supports next_chunk() (i.e., is resumable).
-	@return Bool
-		False		: the upload failed.
-		True		: the upload succeeded.
+	@return Bool				: Whether or not the upload succeeded.
+	@throws			: HttpError 417. This error indicates if the FusionTable size limit will be exceeded.
 	'''
 	if not request:
 		return False;
@@ -372,7 +438,7 @@ def GetUserBatch(start, limit = 10000):
 		limit		- Optional	: the number of data pairs to be returned (unsigned).
 	@return:	list[list[Member, UID]]
 	'''
-	sql = 'SELECT Member, UID FROM ' + tableList['users'] + ' ORDER BY Member ASC';
+	sql = 'SELECT Member, UID FROM ' + tableList['MHCC Members'] + ' ORDER BY Member ASC';
 	startTime = time.perf_counter();
 	resp = GetQueryResult(sql, .03, start, limit);
 	try:
@@ -388,7 +454,7 @@ def GetTotalRowCount(tableId = ''):
 	'''
 	Queries the size of a table, in rows.
 	@params:	tableId	- Required	: the FusionTable to determine a row count for.
-	@return:	long
+	@return:	long				: The number of rows in the FusionTable.
 	'''
 	countSQL = 'select COUNT(ROWID) from ' + tableId;
 	print('Fetching total row count for table id', tableId);
@@ -410,7 +476,7 @@ def RetrieveWholeRecords(rowids = [], tableId = ''):
 	@params:
 		rowids		- Required	: the rows in the table to be fully obtained (unsigned)
 		tableId		- Required	: the FusionTable to obtain records from (String)
-	@return:	list of records from the indicated FusionTable.
+	@return:	list			: Complete records from the indicated FusionTable.
 	'''
 	if type(rowids) is not list:
 		raise TypeError('Expected list of rowids.');
@@ -458,12 +524,16 @@ def IdentifyDiffSeenAndRankRecords(uids = [], tableId = ''):
 	Returns a list of rowids for which the LastSeen values are unique, or the
 	rank is unique (for a given LastSeen), for the given members.
 	Uses SQLGet since only GET is done.
+	@params:
+		uids		- Required	:	Member identifiers (for whom records should be retrieved). (list)
+		tableId		- Required	:	The ID of the FusionTable with records to retrieve. (str)
+	@return:	list			:	The ROWIDs of records which should be retrieved.
 	'''
 	rowids = [];
-	if not tableId:
-		tableId = tableList['crowns'];
-	if not tableId:
-		return rowids;
+	if not tableId or type(tableId) != str or len(tableId) != 41:
+		raise ValueError('Invalid table ID received.');
+	if not uids:
+		raise ValueError('Invalid UIDs received.');
 
 	uids.reverse();
 	savings = 0;
@@ -487,8 +557,9 @@ def IdentifyDiffSeenAndRankRecords(uids = [], tableId = ''):
 		resp = GetQueryResult(''.join([baseSQL, tailSQL]), 0.1);
 		try:
 			totalRecords = len(resp['rows']);
-		except:
+		except Exception as e:
 			print();
+			print(e);
 			return [];
 		# Each rowid should only occur once (i.e. a list should be
 		# sufficient), but use a Set container just to be sure.
@@ -520,7 +591,7 @@ def IsInterestingRecord(record = [], uidIndex = 0, lsIndex = 0, rankIndex = 0, t
 		lsIndex		- Required	:	The column index for the LastSeen datestamp (unsigned)
 		rankIndex	- Required	:	The column index for the Rank value (unsigned)
 		tracker		- Required	:	A dict<uid, dict<LastSeen, set(intStr)>> object that tracks seen members, dates, and ranks.
-	@return:	bool
+	@return:	bool			:	Whether or not the input record should be uploaded.
 	'''
 	if not record:
 		return False;
@@ -558,6 +629,10 @@ def ValidateRetrievedRecords(records = [], sourceTableId = ''):
 	Inspect the given records to ensure that each member with a record in source table has a record in the
 	retrieved records, and that the given records satisfy the same uniqueness criteria that was used to obtain
 	them from the source table.
+	@params:
+		records		- Required	:	All records that are to be uploaded to the FusionTable (list of lists)
+		sourceTableId - Required:	The FusionTable that will be uploaded to (str)
+	@return:	bool			:	Whether or not the input records are valid and can be uploaded.
 	'''
 	if not records or not sourceTableId or len(sourceTableId) != 41:
 		return False;
@@ -607,9 +682,13 @@ def ValidateRetrievedRecords(records = [], sourceTableId = ''):
 	seen = {};
 	valids = 0;
 	for row in records:
-		if not IsInterestingRecord(row, UID_INDEX, LASTSEEN_INDEX, RANK_INDEX, seen):
-			isValid = False;
-			break;
+		try:
+			if not IsInterestingRecord(row, UID_INDEX, LASTSEEN_INDEX, RANK_INDEX, seen):
+				isValid = False;
+				break;
+		except Exception as e:
+			print(e);
+			return False;
 
 	print('Validation of new records', 'completed.' if isValid else 'failed.');
 	return isValid;
@@ -620,13 +699,12 @@ def KeepInterestingRecords(tableId = ''):
 	'''
 	Removes duplicated crown records, keeping each member's records which
 	have a new LastSeen value, or a new Rank value.
+	@params: tableId	- Required	:	The FusionTable ID which should have extraneous records removed.
+	@return:	None
 	'''
 	startTime = time.perf_counter();
-	if not tableId:
-		tableId = tableList['crowns'];
-	if not tableId or len(tableId) != 41:
-		print('Invalid table id');
-		return;
+	if not tableId or type(tableId) != str or len(tableId) != 41:
+		raise ValueError('Invalid table id');
 	uids = [row[1] for row in GetUserBatch(0, 100000)];
 	if not uids:
 		print('No members returned');
@@ -639,9 +717,16 @@ def KeepInterestingRecords(tableId = ''):
 	if len(rowids) == totalRows:
 		print("All records are interesting");
 		return;
-	# Get the row data associated with the kept rowids
-	keptValues = RetrieveWholeRecords(rowids, tableId);
-	if ValidateRetrievedRecords(keptValues, tableId):
+	
+	keptValues = None if not CanUseLocalCopy(tableId, 'staging.csv') else ReadLocalCopy('staging.csv');
+	isValid = (keptValues is not None and len(keptValues) == len(rowids) and ValidateRetrievedRecords(keptValues, tableId));
+	if not isValid:
+		# Local data cannot be used, so get the row data associated with rowids.
+		keptValues = RetrieveWholeRecords(rowids, tableId);
+		# Validate this downloaded data.
+		isValid = ValidateRetrievedRecords(keptValues, tableId);
+
+	if isValid:
 		# Back up the table before we do anything crazy.
 		BackupTable(tableId);
 		# Do something crazy.
@@ -654,18 +739,25 @@ def BackupTable(tableId = ''):
 	'''
 	Creates a copy of the existing MHCC CrownRecord Database and logs the new table id.
 	Does not delete the previous backup (and thus can result in a space quota exception).
+	@params: tableId	- Required	:	The ID for a FusionTable which should be copied. (str)
+	@return:	dict				:	The minimal metadata for the copied FusionTable (id, name, description).
 	'''
 	if not tableId:
-		tableId = tableList['crowns'];
-	backup = FusionTables.table().copy(tableId=tableId, copyPresentation=True).execute();
+		raise ValueError("Missing input table ID.");
+	backup = FusionTables.table().copy(tableId = tableId, copyPresentation = True, fields = 'tableId,name,description').execute();
 	now = datetime.datetime.utcnow();
 	newName = 'MHCC_CrownHistory_AsOf_' + '-'.join(x.__str__() for x in [now.year, now.month, now.day, now.hour, now.minute]);
 	backup['name'] = newName;
-	FusionTables.table().update(tableId=backup['tableId'], body=backup).execute();
-	with open('backupTable.txt', 'a') as f:
+	backup['description'] = 'Automatically generated backup of tableId=' + tableId;
+	kwargs = {
+		'tableId': backup['tableId'],
+		'body': backup,
+		'fields': 'tableId,name,description'};
+	FusionTables.table().patch(**kwargs).execute();
+	with open('tables.txt', 'a', newline = '') as f:
 		csv.writer(f, quoting = csv.QUOTE_ALL).writerows([[newName, backup['tableId']]]);
-	print('Backup completed to new table \'' + newName + '\' with id =', backup['tableId']);
-	return newName;
+	print('Backup of table', tableId, 'completed, new table logged to disk.');
+	return backup;
 
 
 
@@ -692,7 +784,67 @@ def MakeLocalCopy(values, path, fileMode, delimiter = ','):
 	if fileMode == 'r':
 		raise ValueError('File mode must be write-capable.');
 	with open(path, fileMode, newline = '', encoding = 'utf-8') as f:
-		csv.writer(f, strict = True, delimiter = delimiter).writerows(values);
+		csv.writer(f, strict = True, delimiter = delimiter, quoting = csv.QUOTE_NONNUMERIC).writerows(values);
+
+
+
+def CanUseLocalCopy(tableId = '', fileName = ''):
+	'''
+	Returns True if the local data can be used in lieu of downloading records from the FusionTable.
+	Returns False if the local data is missing or out-of-date.
+	Checks the local directory for the presence of the input file, and if it is present, determines its modification
+    time. This modification time is then compared to the modification time of the given FusionTable. If the FusionTable
+    was modified more recently than the local data, the records must be reacquired.
+	'''
+	if type(tableId) is not str or type(fileName) is not str:
+		raise TypeError('Expected string filename and string table ID.');
+	elif len(tableId) != 41:
+		raise ValueError('Received invalid table ID');
+	elif len(fileName) == 0:
+		raise ValueError('Received invalid filename.');
+	
+	# Ensure the file exists.
+	try:
+		with open(fileName, 'r'): pass;
+	except FileNotFoundError as e:
+		return False;
+	except Exception as e:
+		print(e);
+		return False;
+
+	# Obtain the last modified time for the FusionTable.
+	info = GetModifiedInfo(tableId);
+	# Obtain the last modified time for the local file.
+	localModTime = datetime.datetime.fromtimestamp(os.path.getmtime(fileName), datetime.timezone.utc);
+	print('FusionTable last modified:\t', info['modifiedDatetime'], '\nlocal data last modified:\t', localModTime);
+	if localModTime > info['modifiedDatetime']:
+		print('Local saved data modified more recently than remote FusionTable. Attempting to use saved data.');
+		return True;
+	print('Remote FusionTable modified more recently than local saved data. Record analysis and download is required.');
+	return False;
+
+
+	
+def ReadLocalCopy(fileName = '', delimiter = ','):
+	'''
+	Attempt to load a CSV from the local directory containing the most recently downloaded data.
+	If the file exists and the remote FusionTable has not been modified since the data was acquired,
+	upload the data instead of re-performing record inspection and download (since the same result would
+	be obtained).
+	'''
+	if type(fileName) is not str:
+		raise TypeError('Expected string filename');
+	diskValues = [];
+	try:
+		with open(fileName, 'r', newline = '', encoding = 'utf-8') as f:
+			dataReader = csv.reader(f, strict = True, delimiter = delimiter, quoting = csv.QUOTE_NONNUMERIC);
+			diskValues = [row for row in dataReader];
+		print("Imported data from disk:", len(diskValues), "rows.");
+		print("Row length:", len(diskValues[0]));
+	except Exception as e:
+		print(e);
+		return None;
+	return diskValues;
 
 
 
@@ -736,34 +888,6 @@ def ReplaceTable(tableId = '', newValues = []):
 
 
 
-def ImportTable(referenceID = '', newValues = []):
-	if type(newValues) is not list:
-		raise TypeError('Expected value array as list of lists.');
-	elif not newValues:
-		raise ValueError('Received empty value array.');
-	elif type(newValues[0]) is not list:
-		raise TypeError('Expected value array as list of lists.');
-	if type(referenceID) is not str:
-		raise TypeError('Expected string table id.');
-	elif len(referenceID) != 41:
-		raise ValueError('Table id is not of sufficient length.');
-	# Estimate the upload size by averaging the size of several random rows.
-	estSize = GetSizeEstimate(newValues, 10);
-	print('Approx. new upload size =', estSize, ' MB.');
-
-	start = time.perf_counter();
-	newValues.sort();
-	referenceTable = FusionTables.table().get(tableId = referenceID).execute();
-	referenceTable['name'] = "New Crowns FusionTable";
-	newTable = FusionTables.table().insert(body = referenceTable).execute();
-	print('Created new table', newTable['name'], 'with id=', newTable['tableId'], 'from reference table with id=', referenceID);
-	with open('tables.txt', 'a') as f:
-		csv.writer(f, quoting = csv.QUOTE_ALL).writerows([[newTable['name'] + " = " + newTable['tableId']]]);
-	print('Upload completed in' if ImportRows(newTable['tableId'], newValues) else 'Upload failed after',
-	   round(time.perf_counter() - start, 1), 'sec.');
-
-
-
 def PickTable():
 	'''
 	Request user input to determine the FusionTable to operate on.
@@ -784,6 +908,7 @@ def PickTable():
 if (__name__ == "__main__"):
 	Initialize();
 	Authorize();
+	VerifyKnownTables();
 	# Ask for the table to operate on
 	id = PickTable();
 	# Perform maintenance.
