@@ -1,0 +1,112 @@
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+  /*
+   * Once chart libraries load,
+   *   Run the server-side function loadUserData()
+   *   If the data loaded successfully, we run the client function "dataLoadedOK"
+   *   If Apps Script throws an error (i.e. no UID given), run the client function "dataNotLoadedOK"
+   */
+  function loadData(uid)
+  {
+    google.script.run
+      .withSuccessHandler(dataLoadedOK)
+      .withFailureHandler(dataNotLoadedOK)
+      .loadUserData(uid);
+  };
+  /*
+   * Some error occurred while loading the user's crown and rank data. Based on the passed parameter
+   * 'e', we could determine which had the error and attempt to reload it
+   */
+  function dataNotLoadedOK(e)
+  {
+    document.getElementById('crownHistory').innerHTML = e.message;
+    document.getElementById('rankHistory').innerHTML = "";
+  }
+  /*
+   * No error occurred while loading the crown and rank data. Use the passed data to plot
+   * @param {Object} input  an object with properties 'crownHistory','rankHistory', and memberName
+   */
+  var rhWrapper, chWrapper;
+  function dataLoadedOK(input)
+  {
+    if (!input || !input.length)
+	{
+      console.log(input);
+      return;
+    }
+    
+    // Crown History (Bronze as Line, Silver & Gold as stacked area, Total as Line
+    input.crownHistory = [].concat(
+	  input.crownHeader,
+	  input.crownData.map(function(value) {
+	    return [new Date(value[0]), value[1], value[2], value[3], value[4]];
+	  })
+	);
+    var ch = google.visualization.arrayToDataTable(input.crownHistory, false);
+    var chOptions = {
+      title: String(input.memberName + '\'s Crowns History'),
+      pointSize: 4,
+      focusTarget: 'category',
+      hAxis: {title: 'Snapshot Date'},
+      vAxis: {title: 'Crown Counts', minValue: 0},
+      seriesType: 'steppedArea',
+      isStacked: true,
+      series: {0: {type: 'line'}, 3: {type: 'line'}},
+      colors: ['brown','silver','gold','black'],
+      explorer: {axis: 'horizontal'}
+    };
+    chWrapper = new google.visualization.ChartWrapper({
+      containerId: 'crownHistory',
+      chartType: 'ComboChart',
+      dataTable: ch,
+      options: chOptions
+    });
+      
+    // Rank History (Rank 1 at top)
+    input.rankHistory = [].concat(
+	  input.rankHeader,
+	  input.rankData.map(function(value) {
+	    return [new Date(value[0]), value[1], value[2] + " crowns:\nRank: " + value[1]]
+      })
+	);
+	// First row is headers, cols of ranktime | rank | #mhcc
+    var rh = google.visualization.arrayToDataTable(input.rankHistory, false);
+    rh.setColumnProperty(2, 'role', 'tooltip');
+    var rhOptions = {
+      title: String(input.memberName + '\'s MHCC Rank History'),
+      pointSize: 5,
+      hAxis: {title: 'Ranking Date'},
+      vAxis: {title: 'Rank', direction: -1, minValue: 1, logScale: false},
+      explorer: {axis: 'horizontal'}
+    };
+    var rankDelta = Math.abs(input.rankHistory[input.rankHistory.length - 1][1] - input.rankHistory[1][1]);
+    if (rankDelta >= 1000) {
+      rhOptions.vAxis.logScale = true;
+      rhOptions.vAxis.minValue = Math.round(input.rankHistory[input.rankHistory.length - 1][1] / 10);
+    }
+    rhWrapper = new google.visualization.ChartWrapper({
+      containerId: 'rankHistory',
+      chartType: 'LineChart',
+      dataTable: rh,
+      options: rhOptions
+    });
+    
+    drawAll();
+  }
+
+  
+  google.charts.load('current', {packages: ['corechart']});
+  google.charts.setOnLoadCallback(loadData(document.getElementById('member').innerHTML));
+  // Redraw the charts a half-second after the page stops resizing.
+  $(window).resize(function() {
+    if (this.resizeTO)
+      clearTimeout(this.resizeTO);
+    this.resizeTO = setTimeout(function(){ $(this).trigger('resizeEnd');}, 500);
+  });
+  $(window).on('resizeEnd', drawAll);
+  function drawAll() {
+    rhWrapper.draw();
+    chWrapper.draw();
+  }
+</script>
