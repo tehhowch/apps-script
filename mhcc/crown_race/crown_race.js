@@ -1,3 +1,4 @@
+// @OnlyCurrentDoc
 function onOpen()
 {
   SpreadsheetApp.getActiveSpreadsheet()
@@ -7,13 +8,11 @@ function onOpen()
                ]);
 }
 
-
-
 // Collect several names & UIDs to add to the sheet. Performs a duplicate check based on UIDs.
 function addCompetitor()
 {
   var startTime = new Date().getTime();
-  var existing = getCompetitors_().map( function (value, index) { return value[2] } );
+  var existing = getCompetitors_().map(function (value) {return value[2];} );
   
   // Create a dialog to get the new person(s).
   var newMembers = [];
@@ -28,14 +27,14 @@ function addCompetitor()
   var toAdd = [], skipped = [];
   for(var maybe = 0; maybe < newMembers.length; ++maybe)
   {
-    if(existing.indexOf(newMembers[maybe][2]) == -1)
+    if(existing.indexOf(newMembers[maybe][2]) === -1)
       toAdd.push(newMembers[maybe]);
     else
       skipped.push(newMembers[maybe]);
   }
   
   // Import the existing data for these people.
-  var wb = SpreadsheetApp.openById(ssid);
+  var wb = SpreadsheetApp.getActive();
   var n = 0;
   if(toAdd.length)
   {
@@ -52,7 +51,7 @@ function addCompetitor()
     message += 'Skipped ' + skipped.length + ' competitor(s) since they were already added.';
   if(message != '')
     wb.toast(message);
-  console.info({message:'Ran adder function', data:{toAdd:toAdd, skipped:skipped, rowsAdded:n}});
+  console.info({message: 'Ran adder function', data: {toAdd: toAdd, skipped: skipped, rowsAdded: n}});
 }
 
 
@@ -63,13 +62,13 @@ function getNewMembers_(toAdd)
   var nameResponse = ui.prompt(
     "Adding new competitors...", "Enter the new competitor's name", ui.ButtonSet.OK_CANCEL
   );
-  if(nameResponse.getSelectedButton() != ui.Button.OK)
+  if(nameResponse.getSelectedButton() !== ui.Button.OK)
     return false;
   
   var uidResponse = ui.prompt(
     "Adding new competitors...", "Enter " + String(nameResponse.getResponseText()) + "'s profile link", ui.ButtonSet.OK_CANCEL
   );
-  if(uidResponse.getSelectedButton() != ui.Button.OK)
+  if(uidResponse.getSelectedButton() !== ui.Button.OK)
     return false;
   
   var uid = uidResponse.getResponseText().slice(uidResponse.getResponseText().search("=") + 1).toString();
@@ -82,7 +81,7 @@ function getNewMembers_(toAdd)
     toAdd.push([String(nameResponse.getResponseText()).trim(), String(uidResponse.getResponseText()).trim(), uid]);
   
   // Check if more should be added.
-  return ui.Button.YES == ui.alert("Add another?", ui.ButtonSet.YES_NO);
+  return ui.Button.YES === ui.alert("Add another?", ui.ButtonSet.YES_NO);
 }
 
 
@@ -115,7 +114,7 @@ function importExistingDailyData(members, compStartDate)
 
 function getCompetitors_()
 {
-  var members = SpreadsheetApp.openById(ssid).getSheetByName("Competitors").getDataRange().getValues();
+  var members = SpreadsheetApp.getActive().getSheetByName("Competitors").getDataRange().getValues();
   if(members.length <= 1)
     return;
   
@@ -123,7 +122,7 @@ function getCompetitors_()
   members.splice(members[0], 1);
   
   // Generate the UID strings from the profile links.
-  for(var row = 0; row < members.length; ++row)
+  for(var row = 0, len = members.length; row < len; ++row)
     members[row][2] = members[row][1].slice(members[row][1].search("=") + 1).toString();
   
   return members;
@@ -138,7 +137,7 @@ function getRowidQueries_(members, dateStart, dateEnd)
 {
   if(!members || dateStart == dateEnd)
   {
-    console.warn({message:"Insufficient data for querying", data:{members:members, dateStart:dateStart, dateEnd:dateEnd}});
+    console.warn({message: "Insufficient data for querying", data: {members: members, dateStart: dateStart, dateEnd: dateEnd}});
     return [];
   }
   
@@ -174,7 +173,7 @@ function extractROWIDs_(queryData)
   // (i.e. the first record of a new LastSeen instance).
   var rowids = [];
   var seen = {};
-  for(var row = 0; row < queryData.length; ++row)
+  for(var row = 0, len = queryData.length; row < len; ++row)
   {
     try {
       // Check if the member and this LastSeen is known.
@@ -195,7 +194,7 @@ function extractROWIDs_(queryData)
     }
     catch(e)
     {
-      console.error({error:e, data:{row:row, data:queryData, seen:seen}});
+      console.error({error: e, data: {row: row, data: queryData, seen: seen}});
     }
   }
   return rowids;
@@ -213,8 +212,7 @@ function getRowQueries_(rowids)
   var queries = [];
   var SQL = "SELECT Member, UID, LastTouched, LastSeen, LastCrown, Gold, Silver, Bronze FROM " + ftid + " WHERE ROWID IN (";
   var sqlEnd = ") ORDER BY LastTouched ASC";
-  while(rowids.length)
-  {
+  do {
     queries.push(SQL);
     var sqlRowIDs = [];
     var q = queries[queries.length - 1];
@@ -223,7 +221,8 @@ function getRowQueries_(rowids)
     } while((q + sqlRowIDs.join(",") + sqlEnd).length < 8000 && rowids.length)
     
     queries[queries.length - 1] += sqlRowIDs.join(",") + sqlEnd;
-  }
+  } while(rowids.length);
+  
   return queries;
 }
 
@@ -236,8 +235,7 @@ function doSQLGET_(queries)
     return;
   
   var data = [];
-  while(queries.length)
-  {
+  do {
     var sql = queries.pop();
     if(!sql.length)
       console.error("No query to perform");
@@ -251,7 +249,7 @@ function doSQLGET_(queries)
       }
       catch(e)
       {
-        console.error({message:'SQL get error from FusionTables',params:{error:e, query:sql, remaining:queries}});
+        console.error({message: 'SQL get error from FusionTables', params:{error: e, query: sql, remaining: queries}});
         // Re-raise the error.
         throw e;
       }
@@ -259,8 +257,9 @@ function doSQLGET_(queries)
     // Obey API rate limits.
     if(queries.length)
       Utilities.sleep(500);
-  }
-  console.log({data:data, length:data.length});
+  } while (queries.length);
+  
+  console.log({data: data, length: data.length});
   return data;
 }
 
@@ -275,11 +274,11 @@ function formatRows_(rows, competitors)
   if(!competitors)
     competitors = getCompetitors_();
   var lookup = {};
-  for(var row = 0; row < competitors.length; ++row)
+  for(var row = 0, len = competitors.length; row < len; ++row)
     lookup[competitors[row][2]] = competitors[row][0];
   
   var output = [];
-  for(var row = 0; row < rows.length; ++row)
+  for(var row = 0, len = rows.length; row < len; ++row)
   {
     var data = rows[row];
     output.push(
@@ -307,7 +306,7 @@ function printLog_(newRows)
   if(!newRows || !newRows[0])
     return 0;
   // Access the "Daily Log" spreadsheet.
-  var log = SpreadsheetApp.openById(ssid).getSheetByName('Daily Log');
+  var log = SpreadsheetApp.getActive().getSheetByName('Daily Log');
   
   // Fill in the headers (i.e. this is the first time the sheet has been used).
   if(log.getDataRange().getValues().length == 0 || log.getDataRange().isBlank())
@@ -318,10 +317,10 @@ function printLog_(newRows)
   
   // Bounds check all the data.
   var numCol = log.getLastColumn()
-  for(var row = 0; row < newRows.length; ++row)
+  for(var row = 0, len = newRows.length; row < len; ++row)
     if(newRows[row].length != numCol)
     {
-      console.error({message:"Incorrect log width in row " + row, data:{data:newRows, badRow:newRows[row]}});
+      console.error({message: "Incorrect log width in row " + row, data: {data: newRows, badRow: newRows[row]}});
       return 0;
     }
   
@@ -337,7 +336,7 @@ function printLog_(newRows)
 function sortLog_(log)
 {
   if(!log)
-    log = SpreadsheetApp.openById(ssid).getSheetByName('Daily Log');
+    log = SpreadsheetApp.getActive().getSheetByName('Daily Log');
   
   log.getRange(2, 1, log.getLastRow(), log.getLastColumn())
       .sort([{column: 3, ascending: true}, {column: 1, ascending: true}]);
@@ -377,7 +376,7 @@ function runDaily()
       doScoreboardUpdate();
   }
   
-  console.info({message:'Ran daily crown race update', data:toPrint});
+  console.info({message: 'Ran daily crown race update', data: toPrint});
 }
 
 
@@ -388,11 +387,11 @@ function doScoreboardUpdate()
   var memberList = getCompetitors_();
   // Assemble a per-competitor object.
   var members = {};
-  for(var row = 0; row < memberList.length; ++row)
+  for(var row = 0, len = memberList.length; row < len; ++row)
     members[memberList[row][0]] = {
       uid: memberList[row][2],
       link: "https://www.mousehuntgame.com/profile.php?snuid=" + memberList[row][2],
-      historyLink: "https://script.google.com/macros/s/AKfycbwCT-oFMrVWR92BHqpbfPFs_RV_RJPQNV5pHnZSw6yO2CoYRI8/exec?uid=" + memberList[row][2],
+      historyLink: "https://script.google.com/macros/s/AKfycbxvvtBNQ66BBlB-md1jn_y-TlujQf1ytDkYG-7nEAG4SDaecMFF/exec?uid=" + memberList[row][2],
       startSilver: 0,
       startGold: 0,
       startRecordDate: new Date(2099, 0, 1),
@@ -406,7 +405,7 @@ function doScoreboardUpdate()
     };
   
   // Load the current datalog (which is sorted chronologically and by member).
-  var log = SpreadsheetApp.openById(ssid).getSheetByName('Daily Log');
+  var log = SpreadsheetApp.getActive().getSheetByName('Daily Log');
   sortLog_(log);
   var data = log.getDataRange().getValues();
   var headers = data.splice(0, 1)[0];
@@ -417,32 +416,34 @@ function doScoreboardUpdate()
   var bronzeIndex = headers.indexOf("Bronze");
   
   // First, loop through and collate each row with each member so that starting counts can be assessed.
-  for(var row = 0; row < data.length; ++row)
+  for(var row = 0, len = data.length; row < len; ++row)
     members[data[row][0]].data.push(data[row]);
   
   var competitionBegin = new Date(Date.UTC(2018, 0, 1));
   for(var name in members)
-    for(var row = 0; row < members[name].data.length; ++row)
+    for(var row = 0, len = members[name].data.length; row < len; ++row)
     {
-      var recordDate = new Date(members[name].data[row][2]);
+      var rowData = members[name].data[row];
+      var recordDate = new Date(rowData[2]);
       // Only records with a relevant LastSeen value have been collected (within 7 days of the comp start). The
       // first one that is non-zero is used as the starting count record (unless others records closer to the
       // beginning of the competition are available).
-      if(members[name].data[row][bronzeIndex] > 0 && (recordDate < members[name].startRecordDate
-         || (recordDate < competitionBegin && recordDate >= members[name].startRecordDate)))
+      if((rowData[bronzeIndex] - 0 + rowData[silverIndex] - 0 + rowData[goldIndex] - 0) > 0
+         && (recordDate < members[name].startRecordDate || (recordDate < competitionBegin
+           && recordDate >= members[name].startRecordDate)))
       {
-        members[name].startSilver = members[name].data[row][silverIndex];
-        members[name].startGold = members[name].data[row][goldIndex];
+        members[name].startSilver = rowData[silverIndex];
+        members[name].startGold = rowData[goldIndex];
         members[name].startRecordDate = recordDate;
       }
       // Update the member's object with this record.
       if(recordDate > members[name].currentRecordDate)
       {
-        members[name].gold = members[name].data[row][goldIndex];
-        members[name].silver = members[name].data[row][silverIndex];
-        members[name].bronze = members[name].data[row][bronzeIndex];
-        members[name].lastSeen = new Date(members[name].data[row][3]);
-        members[name].lastCrown = new Date(members[name].data[row][4]);
+        members[name].gold = rowData[goldIndex];
+        members[name].silver = rowData[silverIndex];
+        members[name].bronze = rowData[bronzeIndex];
+        members[name].lastSeen = new Date(rowData[3]);
+        members[name].lastCrown = new Date(rowData[4]);
         members[name].currentRecordDate = recordDate;
       }
     }
@@ -466,16 +467,13 @@ function doScoreboardUpdate()
     );
   
   // Sort the scoreboard data table by silvers earned.
-  output.sort(
-    function (a, b) { if(a[2]*1 < b[2]*1){ return 1; } else if(a[2]*1 > b[2]*1) { return -1; } return 0; }
-  );
+  output.sort(function (a, b) {return b[2] - a[2];});
   
   // Update the ranks in the sorted scoreboard.
   var rank = 0;
-  for(var row = 0; row < output.length; ++row)
+  for(var row = 0, len = output.length; row < len; ++row)
     output[row][0] = ++rank;
   
-  SpreadsheetApp.openById(ssid).getSheetByName("Scoreboard").getRange(2, 1, output.length, output[0].length)
+  SpreadsheetApp.getActive().getSheetByName("Scoreboard").getRange(2, 1, output.length, output[0].length)
       .setValues(output).getSheet().getRange("L1").setValue(new Date());
-  
 }
