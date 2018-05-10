@@ -53,8 +53,7 @@ var numCustomTitles = 16;
  */
 function onOpen()
 {
-  SpreadsheetApp.getActiveSpreadsheet().addMenu('Administration', [{name:"Add Members", functionName:"addFusionMember"},
-                                                                   {name:"Delete Members", functionName:"delFusionMember"},
+  SpreadsheetApp.getActiveSpreadsheet().addMenu('Administration', [{name:"Manage Members", functionName:"getSidebar"},
                                                                    {name:"Perform Crown Update", functionName:"UpdateDatabase"},
                                                                    {name:"Check Database Size", functionName:"getDbSize"}]);
 }
