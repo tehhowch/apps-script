@@ -1,6 +1,6 @@
 /**
 * Google FusionTables to serve as the backend
-* Structural changes: since updating/deleting rows is a 1-by-1 operation (yes, really >_> ), we
+* Structural changes: since updating rows is a 1-by-1 operation (yes, really >_> ), we
 * will have multiple entries for each person. To prevent excessive table growth, we will store only
 * 30 snapshots per user, removing any duplicates which occur when the script updates more often than
 * the person's data is refreshed.
@@ -20,8 +20,7 @@ var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff';
 function getUserBatch_(start, limit)
 {
   var sql = "SELECT Member, UID FROM " + utbl + " ORDER BY Member ASC OFFSET " + start + " LIMIT " + limit;
-  var miniTable = FusionTables.Query.sqlGet(sql);
-  return miniTable.rows;
+  return FusionTables.Query.sqlGet(sql).rows;
 }
 
 /**
@@ -94,7 +93,7 @@ function getLatestRows_()
 
   // Construct an associative map object for checking the uid from records against current members.
   var valids = {};
-  members.forEach(function (pair) { valids[pair[1]] = pair[0]});
+  members.forEach(function (pair) { valids[pair[1]] = pair[0]; });
   
   // The maximum SQL request length for the API is ~8100 characters (via POST), e.g. ~571 17-digit time values.
   var totalQueries = 1 + Math.ceil(members.length / 571);
@@ -109,7 +108,7 @@ function getLatestRows_()
       var member = mostRecentRecordTimes.rows.pop();
       if (valids[member[0]])
         lastTouched.push(member[1]);
-    } while (mostRecentRecordTimes.rows.length > 0 && (baseSQL + lastTouched.join(",") + tail).length < 8050);
+    } while (mostRecentRecordTimes.rows.length > 0 && (baseSQL + lastTouched.join(",") + tail).length < 8000);
     
     // Execute the query.
     try
@@ -178,10 +177,7 @@ function ftBatchWrite_(hdata)
 {
   // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel][RankTime]
   var crownCsv = array2CSV_(hdata);
-  try
-  {
-    var cUpload = Utilities.newBlob(crownCsv, 'application/octet-stream');
-  }
+  try { var cUpload = Utilities.newBlob(crownCsv, 'application/octet-stream'); }
   catch (e)
   {
     e.message = "Unable to convert array into CSV format: " + e.message;
@@ -189,11 +185,7 @@ function ftBatchWrite_(hdata)
     throw e;
   }
 
-  try
-  {
-    var numAdded = FusionTables.Table.importRows(ftid, cUpload);
-    return numAdded.numRowsReceived * 1;
-  }
+  try { return FusionTables.Table.importRows(ftid, cUpload).numRowsReceived * 1; }
   catch (e)
   {
     e.message = "Unable to upload rows: " + e.message;
@@ -209,7 +201,11 @@ function ftBatchWrite_(hdata)
           didPrint = true;
         }
       }
-    console.warn({message: badRows + ' rows with incorrect column count out of ' + hdata.length, example: example});
+    if (didPrint)
+      console.warn({
+        message: badRows + ' rows with incorrect column count out of ' + hdata.length,
+        example: example, input: hdata
+      });
     throw e;
   }
 }
@@ -232,8 +228,8 @@ function getByteCount_(str)
 function val4CSV_(value)
 {
   var str = (typeof(value) === 'string') ? value : value.toString();
-  if (str.indexOf(',') != -1 || str.indexOf("\n") != -1 || str.indexOf('"') != -1)
-    return '"'+str.replace(/"/g,'""')+'"';
+  if (str.indexOf(',') !== -1 || str.indexOf("\n") !== -1 || str.indexOf('"') !== -1)
+    return ('"' + str.replace(/"/g,'""') + '"');
   else
     return str;
 }
@@ -279,7 +275,7 @@ function getNewLastRanValue_(origUID, origLastRan, diffMembers)
     return origLastRan;
   
   // If the original UID is found in the shifted UIDs, then the offset is simple.
-  var newUIDs = newUserBatch.map(function (value) { return value[1] } );
+  var newUIDs = newUserBatch.map(function (value) { return value[1]; });
   var diffIndex = newUIDs.indexOf(origUID);
   if (diffIndex > -1)
     newLastRan = origLastRan + (diffIndex - differential);
@@ -287,7 +283,7 @@ function getNewLastRanValue_(origUID, origLastRan, diffMembers)
   {
     // LastRan was pointing at one of the deleted members.
     console.log("Exactly removed the lastRan member. Not changing lastRan, even if it causes issues (which it shouldn't).");
-    if (diffMembers.length == 1)
+    if (diffMembers.length === 1)
     {
       // Only removed 1 member, and that was the very next member in line for updating. Therefore, no change is needed.
       newLastRan = origLastRan
@@ -310,37 +306,44 @@ function getNewLastRanValue_(origUID, origLastRan, diffMembers)
  */
 function getDbSize()
 {
-  var sizeData = getDbSizeData_();
+  var sizeData = getDbSizeData_(getTotalRowCount_(ftid));
   var sizeStr = 'The crown database has ' + sizeData['nRows'] + ' entries, each consuming ~';
   sizeStr += sizeData['kbSize'] + ' kB of space, based on ';
   sizeStr += sizeData['samples'] + ' sampled rows.<br>The total database size is ~';
   sizeStr += sizeData['totalSize'] + ' mB.<br>The maximum size allowed is 250 MB.';
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(sizeStr), "Database Size");
 }
-function getDbSizeData_()
+function getDbSizeData_(nRows, db)
 {
-  var nRows = getTotalRowCount_(ftid);
-  var toGet = [], samples = 10;
+  var toGet = [], rowSizes = [], samples = 10;
   for (var n = 0; n < samples; ++n)
     toGet.push(Math.floor(nRows * Math.random()));
 
-  var rowSizes = [];
-  toGet.forEach(function (row) {
-    var resp = FusionTables.Query.sqlGet("SELECT * FROM " + ftid + " OFFSET " + row + " LIMIT 1");
-    if(!resp.rows || !resp.rows.length || !resp.rows[0].length)
+  // If not given a database, query the crown FusionTable.
+  if (!db || !db.length)
+  {
+    var base = "SELECT * FROM " + ftid + " OFFSET ";
+    toGet.forEach(function (row)
     {
-      rowSizes.push(0);
-      --samples;
-    }
-    else
-      rowSizes.push(getByteCount_(resp.rows[0].toString()));
-  });
-  if(!samples) return;
-  
+      var resp = FusionTables.Query.sqlGet(base + row + " LIMIT 1");
+      if (!resp.rows || !resp.rows.length || !resp.rows[0].length)
+      {
+        rowSizes.push(0);
+        if(--samples === 0) return;
+      }
+      else
+        rowSizes.push(getByteCount_(resp.rows[0].toString()));
+    });
+  }
+  else
+    toGet.forEach(function (row) { rowSizes.push(getByteCount_(db[row].toString())); });
+
   var kbSize = rowSizes.reduce(function (kb, bytes) { return (kb + Math.ceil(bytes * 1000 / 1024) / 1000); }, 0) / samples;
-  var totalSize = Math.ceil(kbSize * nRows * 1000 / 1024) / 1000;
-  kbSize = Math.round(kbSize * 1000) / 1000;
-  return {kbSize: kbSize, totalSize: totalSize, nRows: nRows, samples: samples};
+  return {
+    kbSize: Math.round(kbSize * 1000) / 1000,
+    totalSize: Math.ceil(kbSize * nRows * 1000 / 1024) / 1000,
+    nRows: nRows, samples: samples
+  };
 }
 /**
  * function doBackupTable_      Ensure that a copy of the database exists prior to performing some
@@ -390,7 +393,7 @@ function getMostRecentRecord_(memUID)
   var recentSql = "SELECT * FROM " + ftid + " WHERE UID = " + memUID + " ORDER BY LastTouched DESC LIMIT 1";
   var resp = FusionTables.Query.sqlGet(recentSql);
 
-  if (typeof resp.rows == 'undefined' || resp.rows.length == 0)
+  if (!resp || !resp.rows || !resp.rows.length)
     return [];
   else
     return resp.rows[0];
@@ -403,7 +406,7 @@ function getMostRecentRecord_(memUID)
  */
 function retrieveWholeRecords_(rowidArray, tblID)
 {
-  if (rowidArray.length === 0)
+  if (!rowidArray.length)
     return [];
   else if (typeof rowidArray[0] !== 'string')
     throw new TypeError('Expected ROWIDs of type String but received type ' + typeof rowidArray[0]);
@@ -419,7 +422,7 @@ function retrieveWholeRecords_(rowidArray, tblID)
     do {
       sqlRowIDs.push(rowidArray.pop())
       sql = "SELECT * FROM " + tblID + " WHERE ROWID IN (" + sqlRowIDs.join(",") + ")";
-    } while ((sql.length <= 8050) && (rowidArray.length > 0))
+    } while ((sql.length <= 8000) && (rowidArray.length > 0))
     
     try
     {
@@ -477,28 +480,18 @@ function doReplace_(tblID, records)
     throw new Error('Argument tbldID not a FusionTables id');
   if (records.constructor != Array)
     throw new TypeError('Argument records was not type Array');
-  else if (records.length == 0)
+  else if (!records.length)
     throw new Error('Argument records must not be length 0');
 
   records.sort();
   // Sample a few rows to estimate the size of the upload.
-  var uploadSize = 0;
-  var n = 0;
-  for ( ; n < 5; ++n)
-  {
-    var row = Math.floor(Math.random() * records.length);
-    uploadSize += getByteCount_(records[row].toString()) / (1024 * 1024);
-  }
-  uploadSize = Math.ceil((uploadSize / n) * records.length * 100) / 100;
+  var uploadSize = getDbSizeData_(records.length, records).totalSize;
   console.info("New data is " + uploadSize + " MB (rounded up)");
   if ( uploadSize >= 250 )
     throw new Error("Upload size (" + uploadSize + " MB) is too large");
     
   var cUpload = Utilities.newBlob(array2CSV_(records), 'application/octet-stream');
-  try
-  {
-    FusionTables.Table.replaceRows(tblID, cUpload);
-  }
+  try { FusionTables.Table.replaceRows(tblID, cUpload); }
   // Try again if FusionTables didn't respond to the request.
   catch (e)
   { 
