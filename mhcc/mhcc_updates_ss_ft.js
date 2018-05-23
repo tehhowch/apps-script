@@ -278,7 +278,7 @@ function UpdateDatabase()
             batchHunters[i][11] = db[dbRow][11];  
           }
         }
-        mem2Update = [].concat(mem2Update, batchHunters);       // Stage this batch's data for a single write call
+        Array.prototype.push.apply(mem2Update, batchHunters);       // Stage this batch's data for a single write call
         lastRan += batchSize-0;                      // Increment lastRan for next batch's usage
       }
       if (mem2Update.length > 0)

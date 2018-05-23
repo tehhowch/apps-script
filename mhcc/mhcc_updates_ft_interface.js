@@ -112,16 +112,13 @@ function getLatestRows_()
     } while (mostRecentRecordTimes.rows.length > 0 && (baseSQL + lastTouched.join(",") + tail).length < 8050);
     
     // Execute the query.
-    try
-    {
-      batchResult = FusionTables.Query.sqlGet(baseSQL + lastTouched.join(",") + tail);
-    }
+    try { batchResult = FusionTables.Query.sqlGet(baseSQL + lastTouched.join(",") + tail); }
     catch (e)
     {
       console.error({message: "Error while fetching whole rows", sql: baseSQL + lastTouched.join(",") + tail, error: e});
       return [];
     }
-    snapshots = [].concat(snapshots, batchResult.rows);
+    Array.prototype.push.apply(snapshots, batchResult.rows);
     
     // Sleep to avoid exceeding ratelimits (30 / min, 5 / sec).
     var elapsed = new Date() - batchStart;
@@ -152,14 +149,15 @@ function getLatestRows_()
 function getUserHistory_(UID, blGroup)
 {
   var sql = 'SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, ';
-  if (UID == '')
+  if (!UID)
     throw new Error('No UID provided');
+  UID = String(UID);
   if (blGroup == true)
-    sql += "MINIMUM(RankTime) FROM " + ftid + " WHERE UID IN (" + UID.toString() + ") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
+    sql += "MINIMUM(RankTime) FROM " + ftid + " WHERE UID IN (" + UID + ") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
   else
-    sql += "RankTime FROM " + ftid + " WHERE UID IN (" + UID.toString() + ") ORDER BY LastSeen ASC";
+    sql += "RankTime FROM " + ftid + " WHERE UID IN (" + UID + ") ORDER BY LastSeen ASC";
 
-  var resp = FusionTables.Query.sqlGet(sql, {quotaUser: String(UID)});
+  var resp = FusionTables.Query.sqlGet(sql, {quotaUser: UID});
   if (typeof resp.rows == 'undefined')
     throw new Error('No data for UID=' + UID);
 
@@ -178,10 +176,7 @@ function ftBatchWrite_(hdata)
 {
   // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel][RankTime]
   var crownCsv = array2CSV_(hdata);
-  try
-  {
-    var cUpload = Utilities.newBlob(crownCsv, 'application/octet-stream');
-  }
+  try { var cUpload = Utilities.newBlob(crownCsv, 'application/octet-stream'); }
   catch (e)
   {
     e.message = "Unable to convert array into CSV format: " + e.message;
@@ -390,10 +385,7 @@ function getMostRecentRecord_(memUID)
   var recentSql = "SELECT * FROM " + ftid + " WHERE UID = " + memUID + " ORDER BY LastTouched DESC LIMIT 1";
   var resp = FusionTables.Query.sqlGet(recentSql);
 
-  if (typeof resp.rows == 'undefined' || resp.rows.length == 0)
-    return [];
-  else
-    return resp.rows[0];
+  return (typeof resp.rows == 'undefined' || resp.rows.length === 0) ? [] : resp.rows[0];
 }
 /**
  * function retrieveWholeRecords_    Queries for the specified ROWIDs, at most once per 0.5 sec.
@@ -425,7 +417,7 @@ function retrieveWholeRecords_(rowidArray, tblID)
     {
       var batchResult = FusionTables.Query.sqlGet(sql);
       nReturned += batchResult.rows.length * 1;
-      records = [].concat(records, batchResult.rows);
+      Array.prototype.push.apply(records, batchResult.rows);
     }
     catch (e)
     {
@@ -438,10 +430,9 @@ function retrieveWholeRecords_(rowidArray, tblID)
       Utilities.sleep(502 - elapsedMillis);
   } while (rowidArray.length > 0)
   
-  if (nReturned === nRowIds)
-    return records;
-  else
+  if (nReturned !== nRowIds)
     throw new Error("Got different number of rows (" + nReturned + ") than desired (" + nRowIds + ")");
+  return records;
 }
 /**
  * function getTotalRowCount_  Gets the total number of rows in the supplied FusionTable.
@@ -495,10 +486,7 @@ function doReplace_(tblID, records)
     throw new Error("Upload size (" + uploadSize + " MB) is too large");
     
   var cUpload = Utilities.newBlob(array2CSV_(records), 'application/octet-stream');
-  try
-  {
-    FusionTables.Table.replaceRows(tblID, cUpload);
-  }
+  try { FusionTables.Table.replaceRows(tblID, cUpload); }
   // Try again if FusionTables didn't respond to the request.
   catch (e)
   { 
