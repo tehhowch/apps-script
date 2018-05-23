@@ -44,7 +44,7 @@ function getDbIndexMap_(db, numMembers, isRepeat)
   {
     console.warn({message: "UID failed to be unique when indexing SheetDb", dbIndex: output, firstTry: !isRepeat});
     if(!isRepeat)
-      return getDbIndexMap(refreshDbIndexMap_(), numMembers, true);
+      return getDbIndexMap_(refreshDbIndexMap_(), numMembers, true);
     else
       throw new Error('Unique ID failed to be unique. Rewriting SheetDb index before next call...');
   }
