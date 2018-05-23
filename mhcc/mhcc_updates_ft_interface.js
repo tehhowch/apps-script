@@ -24,45 +24,6 @@ function getUserBatch_(start, limit)
 }
 
 /**
- * function getDbIndexMap_  Assemble a dictionary for the db based on the user's UID (which is to be
-                            unique within any given Scoreboard update). For the MHCC SheetDb db, the
-                            UID is array index [1].
- * @param  {Array[]} db     A 2D array of the most recent Scoreboard update.
- * @return {Object}         A simple dictionary with the key-value pair of {UID: dbIndex}.
- */
-function getDbIndexMap_(db, numMembers, isRepeat)
-{
-  var output = {};
-  for (var i = 0; i < db.length; ++i)
-    output[String(db[i][1])] = i;
-  // If there are fewer unique rows on SheetDb than numMembers, some rows may be missing (i.e. a new
-  // member was added since the last scoreboard updates. If there are exactly as many total rows on
-  // SheetDb as numMembers, though, this generally means that a UID appeared twice. This is not a
-  // strict requirement, as combinations of member removal and member addition can reproduce it.
-  if ((Object.keys(output).length < numMembers * 1) && (db.length === numMembers * 1))
-  {
-    console.warn({message: "UID failed to be unique when indexing SheetDb", dbIndex: output, firstTry: !isRepeat});
-    if(!isRepeat)
-      return getDbIndexMap(refreshDbIndexMap_(), numMembers, true);
-    else
-      throw new Error('Unique ID failed to be unique. Rewriting SheetDb index before next call...');
-  }
-  return output;
-}
-
-/**
- * function refreshDbIndexMap_  Rewrite SheetDb with fresh data from the FusionTable. Called if there
- *                              is a uniqueness error.
- * @return {Array[]}            Returns the new db.
- */
-function refreshDbIndexMap_()
-{
-  var ss = SpreadsheetApp.getActive();
-  saveMyDb_(ss, getLatestRows_());
-  return getMyDb_(ss, 1);
-}
-
-/**
  * function getLatestRows_    Returns the record associated with the most recently touched snapshot
  *                            for each current member. Called by UpdateScoreboard. Returns a single
  *                            record per member so long as every record has a different LastTouched
