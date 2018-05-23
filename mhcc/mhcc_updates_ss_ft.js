@@ -43,7 +43,6 @@
  *  Click "Save" or press "Enter" to commit your change.
  */
 // @OnlyCurrentDoc
-var mhccSSkey = '1P8UDv4j2lPM0hAKw4EbBT_GtvlOgFYeARV16NzWA6pc';
 var crownDBnumColumns = 12;
 // Change this number when additional rows containing special titles (like "Super Secret Squirrel") get added.
 // This only needs to change when rows are added - if values of existing rows are changed, all is well. :)
@@ -83,22 +82,21 @@ function saveMyDb_(wb, db)
     return false;
   var lock = LockService.getScriptLock();
   lock.tryLock(30000);
-  if (lock.hasLock())
+  if (!lock.hasLock())
+    return false;
+
+  // Have a lock on the db, now save.
+  var SS = wb.getSheetByName('SheetDb');
+  // If the new db is smaller, the old db must be cleared first.
+  if (db.length < SS.getLastRow() - 1 || db[0].length < SS.getLastColumn())
   {
-    // Have a lock on the db, now save.
-    var SS = wb.getSheetByName('SheetDb');
-    // If the new db is smaller, the old db must be cleared first.
-    if (db.length < SS.getLastRow() - 1)
-    {
-      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).clearContent();
-      SpreadsheetApp.flush();
-    }
-    SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
+    SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).clearContent();
     SpreadsheetApp.flush();
-    lock.releaseLock();
-    return true
   }
-  return false
+  SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
+  SpreadsheetApp.flush();
+  lock.releaseLock();
+  return true
 }
 /**
  * function UpdateDatabase  This is the main function which governs the process of updating crowns
