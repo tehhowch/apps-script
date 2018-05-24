@@ -141,35 +141,6 @@ function getLatestRows_()
 }
 
 /**
- * function getUserHistory_   Queries the crown data snapshots for the given user and returns crown
- *                            counts and rank data as a function of HT MostMice's LastSeen property.
- * @param  {String} UID       The UIDs of specific members for which the crown data snapshots are
- *                            returned. If multiple members are queried, use comma separators.
- * @param  {Boolean} blGroup  Optional parameter controlling GROUP BY or "return all" behavior.
- * @return {Object}           An object containing "user" (member's name), "headers", and "dataset".
- */
-function getUserHistory_(UID, blGroup)
-{
-  var sql = 'SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, ';
-  if (!UID)
-    throw new Error('No UID provided');
-  UID = String(UID);
-  if (blGroup == true)
-    sql += "MINIMUM(RankTime) FROM " + ftid + " WHERE UID IN (" + UID + ") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
-  else
-    sql += "RankTime FROM " + ftid + " WHERE UID IN (" + UID + ") ORDER BY LastSeen ASC";
-
-  var resp = FusionTables.Query.sqlGet(sql, {quotaUser: UID});
-  if (typeof resp.rows == 'undefined')
-    throw new Error('No data for UID=' + UID);
-
-  if (resp.rows.length > 0)
-    return {"user": resp.rows[resp.rows.length - 1][0], "headers": resp.columns, "dataset": resp.rows};
-  else
-    return "";
-}
-
-/**
  * function ftBatchWrite_     Convert the data array into a CSV blob and upload to FusionTables.
  * @param  {Array[]} newData  The 2D array of data that will be written to the database.
  * @param  {String}  tableId  The table to which the batch data should be written.
