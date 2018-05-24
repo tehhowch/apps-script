@@ -10,6 +10,8 @@
 var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-';
 // Table of the user's crown data. Unique on LastTouched.'
 var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff';
+// Table of the user's rank data.
+var rankTableId = '1Mt7E_3qWRkpGGUZ-pbxkdFYCdhNbyj1oWnEx5haL';
 
 /**
  * function getUserBatch_       Return up to @limit members, beginning with the index @start.
@@ -169,42 +171,35 @@ function getUserHistory_(UID, blGroup)
 
 /**
  * function ftBatchWrite_     Convert the data array into a CSV blob and upload to FusionTables.
- * @param  {Array[]} hdata    The 2D array of data that will be written to the database.
+ * @param  {Array[]} newData  The 2D array of data that will be written to the database.
+ * @param  {String}  tableId  The table to which the batch data should be written.
  * @return {Integer}          Returns the number of rows that were added to the database.
  */
-function ftBatchWrite_(hdata)
+function ftBatchWrite_(newData, tableId)
 {
-  // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel][RankTime]
-  var crownCsv = array2CSV_(hdata);
-  try { var cUpload = Utilities.newBlob(crownCsv, 'application/octet-stream'); }
+  if (!tableId)
+    tableId = ftid;
+
+  var dataAsCSV = array2CSV_(newData);
+  try { var dataAsBlob = Utilities.newBlob(dataAsCSV, 'application/octet-stream'); }
   catch (e)
   {
     e.message = "Unable to convert array into CSV format: " + e.message;
-    console.error({message: e.message, input: hdata, csv: crownCsv, blob: cUpload});
+    console.error({message: e.message, input: newData, csv: dataAsCSV, blob: dataAsBlob});
     throw e;
   }
 
-  try
-  {
-    var numAdded = FusionTables.Table.importRows(ftid, cUpload);
-    return numAdded.numRowsReceived * 1;
-  }
+  try { return FusionTables.Table.importRows(tableId, dataAsBlob).numRowsReceived * 1; }
   catch (e)
   {
     e.message = "Unable to upload rows: " + e.message;
     console.error(e);
-    var didPrint = false, badRows = 0, example = [];
-    for (var row = 0, len = hdata.length; row < len; ++row)
-      if (hdata[row].length !== crownDBnumColumns)
-      {
-        ++badRows;
-        if(!didPrint)
-        {
-          example = hdata[row];
-          didPrint = true;
-        }
-      }
-    console.warn({message: badRows + ' rows with incorrect column count out of ' + hdata.length, example: example});
+    if (tableId == ftid )
+    {
+      var badRows = newData.filter(function (record) { return record.length !== crownDBnumColumns; });
+      if (badRows.length)
+        console.warn({ message: badRows.length + ' rows with incorrect column count out of ' + newData.length, badRows: badRows });
+    }
     throw e;
   }
 }
