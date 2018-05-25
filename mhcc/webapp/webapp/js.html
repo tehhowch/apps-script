@@ -170,24 +170,24 @@
      *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
      */
     function _plotOneUser(dataInput)
-	  {
+    {
       const uid = Object.keys(dataInput)[0];
       const userData = dataInput[uid];
       chartData[uid] = {};
 
       // Crown History (Bronze as Line, Silver & Gold as stacked area, Total as Line
-		  chartData[uid].crownHistory = [].concat(
-			  userData.crownHeader,
+      chartData[uid].crownHistory = [].concat(
+        userData.crownHeader,
         userData.crownData.map(function (row) {
           //       LastSeen       | Bronze | Silver | Gold | Total
-				  return [new Date(row[0]), row[1], row[2], row[3], row[4]];
-			  })
-		  );
-		  const crownDataTable = google.visualization.arrayToDataTable(chartData[uid].crownHistory, false);
-		  chWrapper = new google.visualization.ChartWrapper({
-			  "containerId": "crownHistory",
-			  "chartType": "ComboChart",
-			  "dataTable": crownDataTable,
+          return [new Date(row[0]), row[1], row[2], row[3], row[4]];
+        })
+      );
+      const crownDataTable = google.visualization.arrayToDataTable(chartData[uid].crownHistory, false);
+      chWrapper = new google.visualization.ChartWrapper({
+        "containerId": "crownHistory",
+        "chartType": "ComboChart",
+        "dataTable": crownDataTable,
         "options": {
           "title": String(userData.memberName + '\'s Crowns History'),
           "pointSize": 4,
@@ -200,23 +200,23 @@
           "colors": ["brown", "silver", "gold", "black"],
           "explorer": { axis: "horizontal" }
         }
-		  });
+      });
 
 
-		  // Rank History (Rank 1 at top)
-		  chartData[uid].rankHistory = _getRankDataSeries(userData);
-		  const rankDataTable = google.visualization.arrayToDataTable(chartData[uid].rankHistory, false);
-		  rankDataTable.setColumnProperty(2, 'role', 'tooltip');
-		  const rankDelta = Math.abs(chartData[uid].rankHistory.slice(-1)[0][1] - chartData[uid].rankHistory[1][1]);
-		  if (rankDelta >= 1000)
-		  {
-			  rhOptions.vAxis.logScale = true;
-			  rhOptions.vAxis.minValue = Math.round(chartData[uid].rankHistory.slice(-1)[0][1] / 10);
-		  }
-		  rhWrapper = new google.visualization.ChartWrapper({
-			  "containerId": "rankHistory",
-			  "chartType": "LineChart",
-			  "dataTable": rankDataTable,
+      // Rank History (Rank 1 at top)
+      chartData[uid].rankHistory = _getRankDataSeries(userData);
+      const rankDataTable = google.visualization.arrayToDataTable(chartData[uid].rankHistory, false);
+      rankDataTable.setColumnProperty(2, 'role', 'tooltip');
+      const rankDelta = Math.abs(chartData[uid].rankHistory.slice(-1)[0][1] - chartData[uid].rankHistory[1][1]);
+      if (rankDelta >= 1000)
+      {
+        rhOptions.vAxis.logScale = true;
+        rhOptions.vAxis.minValue = Math.round(chartData[uid].rankHistory.slice(-1)[0][1] / 10);
+      }
+      rhWrapper = new google.visualization.ChartWrapper({
+        "containerId": "rankHistory",
+        "chartType": "LineChart",
+        "dataTable": rankDataTable,
         "options": {
           "title": String(userData.memberName + '\'s MHCC Rank History'),
           "pointSize": 5,
@@ -224,10 +224,10 @@
           "vAxis": { title: "Rank", direction: -1, minValue: 1, logScale: false },
           "explorer": { axis: 'horizontal' }
         }
-		  });
-	  }
+      });
+    }
 
-	  /**
+    /**
      * Function which parses and displays the received users' data for comparison. Crown
      * history will be plotted as a comparison of users' MHCC Crowns.
      * 
@@ -237,7 +237,7 @@
      *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
      */
     function _plotTwoUsers(dataInput)
-	  {
+    {
       // Google Charts requires a single column has all X data - series without Y data use `null` at the intersection.
       const crownDataSets = [], rankDataSets = [], names = [];
       for (let uid in dataInput)
@@ -311,21 +311,21 @@
           "explorer": { axis: 'horizontal' }
         }
       });
-	  }
+    }
 
 
     if (!input || !input.length)
-	  {
-	    const m = "No data received from the Apps Script function";
-	    ['crownHistory', 'rankHistory'].forEach(function (id) { document.getElementById(id).innerHTML = m; });
+    {
+      const m = "No data received from the Apps Script function";
+      ['crownHistory', 'rankHistory'].forEach(function (id) { document.getElementById(id).innerHTML = m; });
       return;
     }
-	  if (input.length === 1)
-		  _plotOneUser(input);
-	  else if (input.length === 2)
-		  _plotTwoUsers(input);
-	  else
-		  return;
+    if (input.length === 1)
+      _plotOneUser(input);
+    else if (input.length === 2)
+      _plotTwoUsers(input);
+    else
+      return;
 
     drawAll();
   }
