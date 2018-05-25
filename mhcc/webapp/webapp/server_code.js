@@ -31,11 +31,11 @@ function loadUserData(uids)
    * Nested function which handles parsing the data for a given user into the properly-formatted webapp code.
    * 
    * @param {{String:{}}} outputToModify
-   * @param {{name:String, crown:{}, rank:{}}} userData
+   * @param {{user:String, crown:{}, rank:{}}} userData
    */
   function _addUserData_(outputToModify, userData)
   {
-    var user = userData.name;
+    var user = userData.user;
     if (!user) throw new Error("Missing username for whom to parse data.");
     // Create a property for this user in the parent's collection object
     outputToModify[String(user)] = {};
@@ -45,7 +45,7 @@ function loadUserData(uids)
     /**
      * Format the FusionTables data for consumption by the webapp.
      * userData: {
-     *   "name": The user's display name
+     *   "user": The user's display name
      *   "crown": {
      *      "headers": [Member, LastSeen, Bronze, Silver, Gold, MHCC]
      *      "dataset": [][] ordered by LastSeen ascending
@@ -56,7 +56,7 @@ function loadUserData(uids)
      *   }
      * }
      */
-    userOutput.memberName = userData.name;
+    userOutput.memberName = user;
 
     userOutput.crownHeader = [["Date Seen", "# Bronze", "# Silver", "# Gold", "Total"]];
     var crownData = userData.crown.dataset.map(function (value) {
@@ -81,8 +81,8 @@ function loadUserData(uids)
   if (!uids || uids === "" || uids === "undefined")
     throw new Error("No UID provided/loaded");
   
-  if (uids.split(",").length > 2)
-    throw new Error("UI for comparing more than 2 members at once is not available.");
+  if (uids.split(",").length > 5)
+    throw new Error("UI for comparing that many members at once is not available.");
 
   // Obtain data for the UID(s).
   var history = getUserHistory_(uids, true),
@@ -94,5 +94,6 @@ function loadUserData(uids)
   if (Object.keys(dataForWebapp).length !== uids.split(",").length)
     console.warn({ message: "At least 1 requested dataset is unavailable", uids: uids.split(","), data: dataForWebapp });
 
-  return dataForWebapp;
+  // Due to object complexity, send as a string instead of a raw object.
+  return JSON.stringify(dataForWebapp);
 }

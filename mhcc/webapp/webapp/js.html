@@ -52,16 +52,16 @@
         let xVals = {}, numSeries = dt[0].length - 1;
         for (let r = numHeaders, len = dt.length; r < len; ++r)
         {
-          let row = dt[r], xVal = row[0];
+          let row = dt[r], xVal = row[0].getTime();
           // Create this new xValue and give each Y-Column an array to push to.
           if (!xVals[xVal])
           {
             xVals[xVal] = {};
-            for (let c = 1; c < numSeries; ++c)
+            for (let c = 1; c <= numSeries; ++c)
               xVals[xVal][c] = [];
           }
           // Add this row's Y-Values to their respective arrays.
-          for (let c = 1; c < numSeries; ++c)
+          for (let c = 1; c <= numSeries; ++c)
             xVals[xVal][c].push(row[c]);
         }
         // Store this completed xValues map for this dataset at the same index level.
@@ -88,7 +88,7 @@
               if (Object.keys(xv[xVal]).length !== numColumns - 1)
                 throw new Error("Incorrect number of columns in datatable " + i + " for xVal " + xVal);
 
-              hasValues[i] = xv[xVal][0].length;
+              hasValues[i] = xv[xVal]['1'].length;
             }
             else
               hasValues[i] = 0;
@@ -99,7 +99,7 @@
           eachXV.forEach(function (xv, i) {
             unifiedX[xVal].values[i] = {};
             let numValues = hasValues[i];
-            for (let yCol = 1; yCol < numColumns - 1; ++yCol)
+            for (let yCol = 1; yCol < numColumns; ++yCol)
             {
               let inserted = 0;
               // Initialize the array for each data column.
@@ -122,7 +122,7 @@
         let dataSources = unifiedX[xVal].values;
         for (let r = 0; r < unifiedX[xVal].rows; ++r)
         {
-          let row = [xVal];
+          let row = [new Date(xVal * 1)];
           for (let dt in dataSources)
           {
             for (let yCol in dataSources[dt])
@@ -131,19 +131,20 @@
           newTable.push(row);
         }
       }
+      // Sort this new table chronologically ascending.
+      newTable.sort(function (a, b) { return a[0] - b[0]; });
 
       // Create the header row.
-      const headers = dataTables[0].slice(0, 1)[0],
-            headersToAdd = [];
+      const headers = dataTables[0].slice(0, 1)[0];
       for (let i = 1; i < dataTables.length; ++i)
-        Array.prototype.push.apply(headersToAdd, headers.slice(1));
+        Array.prototype.push.apply(headers, dataTables[i].slice(0, 1)[0].slice(1));
 
       if (newTable.length === 0)
         throw new Error("Failed to collate X data.");
-      if (newTable[0].length !== headersToAdd.length)
+      if (newTable[0].length !== headers.length)
         throw new Error("Header/Data column count mismatch");
 
-      newTable.unshift([headersToAdd]);
+      newTable.unshift(headers);
       return newTable;
     }
     /** All rank dataseries can be extracted to the same format, even if to be used for multi-member comparison.
@@ -152,7 +153,7 @@
     function _getRankDataSeries(userData)
     {
       return [].concat(
-        userData.rankHeader.slice(0, -1),
+        [userData.rankHeader[0].slice(0, -1)],
         userData.rankData.map(function (row) {
           //      RankTime          | Rank | Tooltip ( X crowns, rank: y, Seen: yyyy-mm-dd )
           return [new Date(row[0]), row[1], row[2] + " crowns:\nRank: " + row[1] + "\nSeen: " + new Date(row[3]).toLocaleDateString()];
@@ -236,7 +237,7 @@
      *        CrownHeader: [ LastSeen | Bronze | Silver | Gold | Total ]
      *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
      */
-    function _plotTwoUsers(dataInput)
+    function _plotMultipleUsers(dataInput)
     {
       // Google Charts requires a single column has all X data - series without Y data use `null` at the intersection.
       const crownDataSets = [], rankDataSets = [], names = [];
@@ -252,6 +253,8 @@
             })
         );
         let userRanks = _getRankDataSeries(userData);
+        // Overwrite the default series title ("Rank") with the member's name.
+        userRanks[0][1] = userData.memberName;
         // Store this detailed data for use in alternate plotting schema
         chartData[uid] = { crownHistory: userCrowns, rankHistory: userRanks };
         // Rank data keeps the same detail in both compare and normal plot modes.
@@ -284,6 +287,7 @@
           "title": titleStub + "Crowns",
           "pointSize": 4,
           "focusTarget": "category",
+          "interpolateNulls": true,
           "hAxis": { title: "Snapshot Date" },
           "vAxis": { title: "MHCC Crowns", minValue: 0 },
           "seriesType": "line",
@@ -306,8 +310,10 @@
         "options": {
           "title": titleStub + "Ranks",
           "pointSize": 5,
+          "focusTarget": "category",
+          "interpolateNulls": true,
           "hAxis": { title: "Ranking Date" },
-          "vAxis": { title: "Rank", direction: -1, minValue: 1, logScale: false },
+          "vAxis": { title: "MHCC Member Ranking", direction: -1, minValue: 1, logScale: false },
           "explorer": { axis: 'horizontal' }
         }
       });
@@ -320,10 +326,13 @@
       ['crownHistory', 'rankHistory'].forEach(function (id) { document.getElementById(id).innerHTML = m; });
       return;
     }
-    if (input.length === 1)
-      _plotOneUser(input);
-    else if (input.length === 2)
-      _plotTwoUsers(input);
+    // Data was sent as a JSONified string.
+    const data = JSON.parse(input);
+
+    if (Object.keys(data).length === 1)
+      _plotOneUser(data);
+    else if (Object.keys(data).length < 6)
+      _plotMultipleUsers(data);
     else
       return;
 
@@ -341,7 +350,7 @@
   });
   $(window).on('resizeEnd', drawAll);
   function drawAll() {
-    rhWrapper.draw();
-    chWrapper.draw();
+    if (rhWrapper) rhWrapper.draw();
+    if (chWrapper) chWrapper.draw();
   }
 </script>

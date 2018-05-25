@@ -393,7 +393,7 @@ function UpdateScoreboard()
   var rankUpload = allHunters.map(function (record) {
     // Name, UID, LastSeen, RankTime, Rank, MHCC Crowns
     // [0],  [1], [2],      [10],     [11], [8]
-    return [record[0], record[1], record[2], record[10], record[11], record[8]];
+    return [record[0], String(record[1]), record[2], record[10], record[11], record[8]];
   });
   if (rankUpload.length && rankUpload[0].length === 6)
     ftBatchWrite_(rankUpload, rankTableId);

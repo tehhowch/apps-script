@@ -17,12 +17,12 @@ function getUserHistory_(uids, blGroup)
   var labels = ["crown", "rank"];
   var selects = [
     "SELECT UID, Member, LastSeen, Bronze, Silver, Gold, MHCC FROM " + ftid,
-    "SELECT UID, Member, LastSeen, MHCC Crowns, Rank, RankTime FROM " + rankTableId
+    "SELECT UID, Member, LastSeen, 'MHCC Crowns', Rank, RankTime FROM " + rankTableId
   ];
   var where = "WHERE UID IN (" + uids + ")";
   var groups = [
     "GROUP BY UID, Member, LastSeen, Bronze, Silver, Gold, MHCC",
-    "GROUP BY UID, Member, LastSeen, MHCC Crowns, Rank, RankTime"
+    "GROUP BY UID, Member, LastSeen, 'MHCC Crowns', Rank, RankTime"
   ];
   var orders = ["ORDER BY UID ASC, LastSeen ASC", "ORDER BY UID ASC, RankTime ASC"];
   
@@ -48,10 +48,10 @@ function getUserHistory_(uids, blGroup)
   members.forEach(function (id) {
     var memberOutput = { "uid": id };
     labels.forEach(function (l) {
-      var memberData = queryData[l].dataset.filter(function (row) { return row[0] === id; });
+      var memberData = queryData[l].dataset.filter(function (row) { return String(row[0]) === id; });
       memberOutput[l] = {
-        "headers": queryData[l].headers,
         // Do not include the member's UID in the column data sent to the webapp.
+        "headers": queryData[l].headers.slice(1),
         "dataset": memberData.map(function (row) { return row.slice(1); })
       };
     });
