@@ -296,39 +296,40 @@ function UpdateDatabase()
  * function UpdateStale:          Writes to the secondary page that serves as a "Help Wanted" ad for
  *                                recruiting updates for oft-unvisited members.
  * @param {Object} wb             The MHCC SpreadsheetApp instance.
- * @param {Integer} lostTime      The number of milliseconds after which a member is considered
+ * @param {Number} lostTime       The number of milliseconds after which a member is considered
  *                                "in dire need of revisiting."
  */
 function UpdateStale_(wb, lostTime)
 {
   var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  if (lock.hasLock())
+  lock.tryLock(30000);
+  if (!lock.hasLock())
+    return;
+
+  // Retrieve the most recent crown snapshots in chronological order from oldest -> newest,
+  // based on the last time the member's profile was seen.
+  var db = getMyDb_(wb, 3);
+  var lostSheet = wb.getSheetByName('"Lost" Hunters'); if (!lostSheet) return;
+  // Remove pre-existing "Stale" reports.
+  lostSheet.getRange(3, 3, Math.max(lostSheet.getLastRow() - 2, 1), 4).setValue('');
+
+  var staleArray = [], startTime = new Date().getTime();
+  for (var i = 0, len = db.length; i < len; ++i)
   {
-    // Retrieve the most recent crown snapshots in chronological order from oldest -> newest,
-    // based on the last time the member's profile was seen.
-    var db = getMyDb_(wb,3);
-    var lostSheet = wb.getSheetByName('"Lost" Hunters');
-    var staleArray = [], len = db.length, startTime = new Date().getTime();
-    for (var i = 0; i < len; ++i)
-    {
-      if (startTime - db[i][2] > lostTime)
-        staleArray.push([db[i][0],
-                          Utilities.formatDate(new Date(db[i][2]), 'EST', 'yyyy-MM-dd'),
-                          "https://apps.facebook.com/mousehunt/profile.php?snuid=" + db[i][1],
-                          "https://www.mousehuntgame.com/profile.php?snuid=" + db[i][1]
-                        ]);
-      // Snapshots were ordered oldest -> newest, so quit once the first non-old record is found.
-      else
-        break;
-    }
-    // Remove pre-existing "Stale" reports.
-    lostSheet.getRange(3, 3, Math.max(lostSheet.getLastRow() - 2, 1), 4).setValue('');
-    // Add new Stale hunters (if possible).
-    if (staleArray.length > 0)
-      lostSheet.getRange(3, 3, staleArray.length, 4).setValues(staleArray);
-    lock.releaseLock();
+    // Snapshots are ordered oldest -> newest, so quit once the first non-old record is found.
+    if (startTime - db[i][2] <= lostTime)
+      break;
+    staleArray.push([
+      db[i][0],
+      Utilities.formatDate(new Date(db[i][2]), 'EST', 'yyyy-MM-dd'),
+      "https://apps.facebook.com/mousehunt/profile.php?snuid=" + db[i][1],
+      "https://www.mousehuntgame.com/profile.php?snuid=" + db[i][1]
+    ]);
   }
+  // Add new Stale hunters (if possible).
+  if (staleArray.length > 0)
+    lostSheet.getRange(3, 3, staleArray.length, 4).setValues(staleArray);
+  lock.releaseLock();
 }
 /**
  * function UpdateScoreboard:     Write the most recent snapshots of each member's crowns to the
@@ -337,64 +338,79 @@ function UpdateStale_(wb, lostTime)
  */
 function UpdateScoreboard()
 {
-  var startTime = new Date();
-  var wb = SpreadsheetApp.getActive();
+  var lock = LockService.getScriptLock();
+  lock.tryLock(30000);
+  if (!lock.hasLock())
+    return;
+
+  var startTime = new Date(), wb = SpreadsheetApp.getActive();
   var numMembers = FusionTables.Query.sqlGet("SELECT * FROM " + utbl).rows.length;
   PropertiesService.getScriptProperties().setProperty("numMembers", numMembers.toString());
   // To build the scoreboard....
   // 1) Request the most recent snapshots of all members
   var db = getLatestRows_();
   // 2) Store it on SheetDb
-  var didSave = saveMyDb_(wb, db);
-  if (didSave)
-  {
-    // If a member hasn't been seen in the last 20 days, then request a high-priority update
-    console.time('stale');
-    UpdateStale_(wb, 20 * 86400 * 1000);
-    console.timeEnd('stale');
-    
-    // 3) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
-    // particular crown total should rank above someone who (was seen) attaining it at a later time.
-    var allHunters = getMyDb_(wb, [{column:9, ascending:false}, {column:4, ascending:true}, {column:3, ascending:true}]);
-    var scoreboardArr = [], len = allHunters.length, rank = 1;
-    var plotLink = 'https://script.google.com/macros/s/AKfycbxvvtBNQ66BBlB-md1jn_y-TlujQf1ytDkYG-7nEAG4SDaecMFF/exec?uid=';
-    // 4) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
-    console.time('Build Scoreboard Array');
-    while (rank <= len)
-    {
-      scoreboardArr.push([rank,
-                          Utilities.formatDate(new Date(allHunters[rank - 1][2]), 'EST', 'yyyy-MM-dd'),                  // Last Seen
-                          Utilities.formatDate(new Date(allHunters[rank - 1][3]), 'EST', 'yyyy-MM-dd'),                  // Last Crown
-                          allHunters[rank - 1][10],                                                                      // Squirrel
-                          '=HYPERLINK("' + plotLink + allHunters[rank - 1][1] + '","' + allHunters[rank - 1][8] + '")',  // # MHCC Crowns
-                          allHunters[rank - 1][0],                                                                       // Name
-                          'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1],
-                          'https://www.mousehuntgame.com/profile.php?snuid=' + allHunters[rank - 1][1]
-                         ])
-      if (rank % 150 === 0)
-        scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link', 'MHG']);
+  if (!saveMyDb_(wb, db))
+    throw new Error('Unable to save snapshots retrieved from crown database');
+  
+  // 3) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
+  // particular crown total should rank above someone who (was seen) attaining it at a later time.
+  var allHunters = getMyDb_(wb, [{ column: 9, ascending: false }, { column: 4, ascending: true }, { column: 3, ascending: true }]),
+      len = allHunters.length, scoreboardArr = [], rank = 1;
+  var plotLink = 'https://script.google.com/macros/s/AKfycbxvvtBNQ66BBlB-md1jn_y-TlujQf1ytDkYG-7nEAG4SDaecMFF/exec?uid=';
+  if (!len)
+    return;
 
-      // Store the time this rank was generated.
-      allHunters[rank - 1][11] = startTime.getTime();
-      // Store the counter as the hunters' rank, then increment the counter.
-      allHunters[rank - 1][9] = rank++;
-    }
-    console.timeEnd('Build Scoreboard Array');
-    // 5) Write it to the spreadsheet
-    var sheet = wb.getSheetByName('Scoreboard');
-    sheet.getRange(2, 1, sheet.getLastRow(), scoreboardArr[0].length).setValue('');
-    sheet.getRange(2, 1, scoreboardArr.length, scoreboardArr[0].length).setValues(scoreboardArr);
-    // Provide estimate of the next new scoreboard posting and the time this one was posted.
-    wb.getSheetByName('Members').getRange('I23').setValue((startTime - wb.getSheetByName('Members').getRange('H23').getValue()) / (24 * 3600 * 1000));
-    wb.getSheetByName('Members').getRange('H23').setValue(startTime);
-    // Overwrite the latest db version with the version that has the proper ranks and ranktimes.
-    saveMyDb_(wb, allHunters);
+  // 4) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
+  console.time('Build Scoreboard Array');
+  do {
+    scoreboardArr.push([
+      rank,
+      Utilities.formatDate(new Date(allHunters[rank - 1][2]), 'EST', 'yyyy-MM-dd'),                  // Last Seen
+      Utilities.formatDate(new Date(allHunters[rank - 1][3]), 'EST', 'yyyy-MM-dd'),                  // Last Crown
+      allHunters[rank - 1][9],                                                                       // Squirrel
+      '=HYPERLINK("' + plotLink + allHunters[rank - 1][1] + '","' + allHunters[rank - 1][8] + '")',  // # MHCC Crowns
+      allHunters[rank - 1][0],                                                                       // Name
+      'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1],
+      'https://www.mousehuntgame.com/profile.php?snuid=' + allHunters[rank - 1][1]
+    ]);
+    if (rank % 150 === 0)
+      scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link', 'MHG']);
 
-  }
-  else
-      throw new Error('Unable to save snapshots retrieved from crown database');
-  SpreadsheetApp.flush();
+    // Store the time this rank was generated.
+    allHunters[rank - 1][10] = startTime.getTime();
+    // Store the counter as the hunters' rank, then increment the counter.
+    allHunters[rank - 1][11] = rank++;
+  } while (rank <= len)
+  console.timeEnd('Build Scoreboard Array');
+
+  // 5) Write it to the spreadsheet
+  var sheet = wb.getSheetByName('Scoreboard');
+  sheet.getRange(2, 1, sheet.getLastRow(), scoreboardArr[0].length).setValue('');
+  sheet.getRange(2, 1, scoreboardArr.length, scoreboardArr[0].length).setValues(scoreboardArr);
+
+  // 6) Upload it to the Rank History DB.
+  var rankUpload = allHunters.map(function (record) {
+    // Name, UID, LastSeen, RankTime, Rank, MHCC Crowns
+    // [0],  [1], [2],      [10],     [11], [8]
+    return [record[0], record[1], record[2], record[10], record[11], record[8]];
+  });
+  if (rankUpload.length && rankUpload[0].length === 6)
+    ftBatchWrite_(rankUpload, rankTableId);
+
+  // Provide estimate of the next new scoreboard posting and the time this one was posted.
+  wb.getSheetByName('Members').getRange('I23').setValue((startTime - wb.getSheetByName('Members').getRange('H23').getValue()) / (24 * 3600 * 1000));
+  wb.getSheetByName('Members').getRange('H23').setValue(startTime);
+  // Overwrite the latest db version with the version that has the proper ranks and ranktimes.
+  saveMyDb_(wb, allHunters);
+  
+  // If a member hasn't been seen in the last 20 days, then request a high-priority update
+  console.time('stale');
+  UpdateStale_(wb, 20 * 86400 * 1000);
+  console.timeEnd('stale');
+
   console.info((new Date() - startTime) / 1000 + ' sec for all scoreboard operations');
+  lock.releaseLock();
 }
 
 
