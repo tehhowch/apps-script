@@ -166,8 +166,7 @@ function ftBatchWrite_(newData, tableId, strict)
   catch (e)
   {
     e.message = "Unable to upload rows: " + e.message;
-    console.error(e);
-    if (tableId == ftid)
+    if (tableId == ftid && options.isStrict === true)
     {
       var badRows = newData.filter(function (record) { return record.length !== crownDBnumColumns; });
       if (badRows.length)

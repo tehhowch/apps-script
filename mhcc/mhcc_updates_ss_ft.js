@@ -43,7 +43,7 @@
  *  Click "Save" or press "Enter" to commit your change.
  */
 // @OnlyCurrentDoc
-var crownDBnumColumns = 12;
+var crownDBnumColumns = 10;
 // Change this number when additional rows containing special titles (like "Super Secret Squirrel") get added.
 // This only needs to change when rows are added - if values of existing rows are changed, all is well. :)
 var numCustomTitles = 16;
@@ -265,17 +265,14 @@ function UpdateDatabase()
             batchHunters[i][6] = nS                      // Silver
             batchHunters[i][7] = nG                      // Gold
             batchHunters[i][8] = nG-0 + nS-0;            // MHCC Crowns
-            batchHunters[i][9] = db[dbRow][9]            // The member's rank among all members
             // Determine the MHCC rank & Squirrel of this hunter.
             for (var k = 0; k < aRankTitle.length; ++k)
               if (batchHunters[i][8] >= aRankTitle[k][0])
               {
                 // Crown count meets/exceeds required crowns for this level.
-                batchHunters[i][10] = aRankTitle[k][2];
+                batchHunters[i][9] = aRankTitle[k][2];
                 break;
               }
-            // Store the time when this hunter's rank was determined.
-            batchHunters[i][11] = db[dbRow][11];  
           }
         }
         Array.prototype.push.apply(mem2Update, batchHunters);       // Stage this batch's data for a single write call
