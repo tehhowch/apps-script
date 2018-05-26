@@ -10,6 +10,8 @@
 var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-';
 // Table of the user's crown data. Unique on LastTouched.'
 var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff';
+// Table of the user's rank data.
+var rankTableId = '1Mt7E_3qWRkpGGUZ-pbxkdFYCdhNbyj1oWnEx5haL';
 
 /**
  * function getUserBatch_       Return up to @limit members, beginning with the index @start.
@@ -139,72 +141,37 @@ function getLatestRows_()
 }
 
 /**
- * function getUserHistory_   Queries the crown data snapshots for the given user and returns crown
- *                            counts and rank data as a function of HT MostMice's LastSeen property.
- * @param  {String} UID       The UIDs of specific members for which the crown data snapshots are
- *                            returned. If multiple members are queried, use comma separators.
- * @param  {Boolean} blGroup  Optional parameter controlling GROUP BY or "return all" behavior.
- * @return {Object}           An object containing "user" (member's name), "headers", and "dataset".
- */
-function getUserHistory_(UID, blGroup)
-{
-  var sql = 'SELECT Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank, ';
-  if (!UID)
-    throw new Error('No UID provided');
-  UID = String(UID);
-  if (blGroup == true)
-    sql += "MINIMUM(RankTime) FROM " + ftid + " WHERE UID IN (" + UID + ") GROUP BY Member, LastSeen, Bronze, Silver, Gold, MHCC, Rank ORDER BY LastSeen ASC";
-  else
-    sql += "RankTime FROM " + ftid + " WHERE UID IN (" + UID + ") ORDER BY LastSeen ASC";
-
-  var resp = FusionTables.Query.sqlGet(sql, {quotaUser: UID});
-  if (typeof resp.rows == 'undefined')
-    throw new Error('No data for UID=' + UID);
-
-  if (resp.rows.length > 0)
-    return {"user": resp.rows[resp.rows.length - 1][0], "headers": resp.columns, "dataset": resp.rows};
-  else
-    return "";
-}
-
-/**
  * function ftBatchWrite_     Convert the data array into a CSV blob and upload to FusionTables.
- * @param  {Array[]} hdata    The 2D array of data that will be written to the database.
+ * @param  {Array[]} newData  The 2D array of data that will be written to the database.
+ * @param  {String}  tableId  The table to which the batch data should be written.
+ * @param  {Boolean} strict   If the number of columns must match the table schema (default true).
  * @return {Integer}          Returns the number of rows that were added to the database.
  */
-function ftBatchWrite_(hdata)
+function ftBatchWrite_(newData, tableId, strict)
 {
-  // hdata[][] [Member][UID][Seen][Crown][Touch][br][si][go][si+go][squirrel][RankTime]
-  var crownCsv = array2CSV_(hdata);
-  try { var cUpload = Utilities.newBlob(crownCsv, 'application/octet-stream'); }
+  const options = { isStrict: (strict !== false) };
+  if (!tableId)
+    tableId = ftid;
+
+  var dataAsCSV = array2CSV_(newData);
+  try { var dataAsBlob = Utilities.newBlob(dataAsCSV, 'application/octet-stream'); }
   catch (e)
   {
     e.message = "Unable to convert array into CSV format: " + e.message;
-    console.error({message: e.message, input: hdata, csv: crownCsv, blob: cUpload});
+    console.error({message: e.message, input: newData, csv: dataAsCSV, blob: dataAsBlob});
     throw e;
   }
 
-  try
-  {
-    var numAdded = FusionTables.Table.importRows(ftid, cUpload);
-    return numAdded.numRowsReceived * 1;
-  }
+  try { return FusionTables.Table.importRows(tableId, dataAsBlob, options).numRowsReceived * 1; }
   catch (e)
   {
     e.message = "Unable to upload rows: " + e.message;
-    console.error(e);
-    var didPrint = false, badRows = 0, example = [];
-    for (var row = 0, len = hdata.length; row < len; ++row)
-      if (hdata[row].length !== crownDBnumColumns)
-      {
-        ++badRows;
-        if(!didPrint)
-        {
-          example = hdata[row];
-          didPrint = true;
-        }
-      }
-    console.warn({message: badRows + ' rows with incorrect column count out of ' + hdata.length, example: example});
+    if (tableId == ftid && options.isStrict === true)
+    {
+      var badRows = newData.filter(function (record) { return record.length !== crownDBnumColumns; });
+      if (badRows.length)
+        console.warn({ message: badRows.length + ' rows with incorrect column count out of ' + newData.length, badRows: badRows });
+    }
     throw e;
   }
 }
@@ -302,6 +269,7 @@ function getNewLastRanValue_(origUID, origLastRan, diffMembers)
  *                              of a random row, and reports the result via spreadsheet "toast".
  *                              Maximum number of selected rows for this db is ~53900
  *                              53900 rows at 0.5r kb per row is about 7.8 MB of data
+ * @return {void}
  */
 function getDbSize()
 {
@@ -312,9 +280,14 @@ function getDbSize()
   sizeStr += sizeData['totalSize'] + ' mB.<br>The maximum size allowed is 250 MB.';
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(sizeStr), "Database Size");
 }
+/**
+ * Return an object detailing the average size of a row (in KB), the total size (in MB), and the number of rows.
+ * 
+ * @return {{kbSize:Number, totalSize:Number, nRows:Number, samples: Number}}
+ */
 function getDbSizeData_()
 {
-  var nRows = getTotalRowCount_(ftid);
+  var nRows = getTotalRowCount_(ftid) * 1;
   var toGet = [], samples = 10;
   for (var n = 0; n < samples; ++n)
     toGet.push(Math.floor(nRows * Math.random()));
@@ -340,41 +313,92 @@ function getDbSizeData_()
 /**
  * function doBackupTable_      Ensure that a copy of the database exists prior to performing some
  *                              major update, such as attempting to remove all non-unique rows.
+ *                              Returns the table id of the copy, if one was made.
+ * @param {String} tableId      The FusionTable to operate on (default: MHCC Crowns).
+ * @param {Boolean} deleteEarliest  If true (default), the previous backup will be deleted after a successful backup.
+ * @return {String}
  */
-function doBackupTable_(){
-  // TODO: save 30 days worth of tables (or at least more than 1).
-  var userBackup = 'MHCC_MostRecentCrownBackupID', scriptBackup = 'backupTableID';
-  var oldUsersBackupID = PropertiesService.getUserProperties().getProperty(userBackup) || '';
-  var oldGlobalBackupID = PropertiesService.getScriptProperties().getProperty(scriptBackup) || '';
+function doBackupTable_(tableId, deleteEarliest)
+{
+  /**
+   * Access or initialize a backup object for the given user. The backup objects store the tableIds of copies for
+   * a given input table, keyed to the time at which they were created.
+   * 
+   * @param {any} store  A PropertiesService object (UserProperties or ScriptProperties)
+   * @param {String} key The key which is used to access the object in the store.
+   * @return {{tableId: {String: String}}}
+   */
+  function _getBackupObject_(store, key)
+  {
+    var value = store.getProperty(key);
+    if (value)
+      return JSON.parse(value);
+    var newObject = {};
+    newObject[tableId] = {};
+    return newObject;
+  }
+
+  if (!tableId) tableId = ftid;
+  if (deleteEarliest !== false) deleteEarliest = true;
+
+  const uStore = PropertiesService.getUserProperties(),
+    store = PropertiesService.getScriptProperties(),
+    userKey = "MHCC_MostCrownBackupIDs",
+    scriptKey = "backupTableIDs";
+
+  // Get the user and script backup objects, which will have at least the input tableId as a property.
+  var userBackup = _getBackupObject_(uStore, userKey);
+  var scriptBackup = _getBackupObject_(store, scriptKey);
+
+  const copyOptions = { "copyPresentation": true, "fields": "tableId,name,description" };
+  // We store the time a backup was made (ms epoch) as the key, and the tableId as the value.
+  const now = new Date();
+  const newSuffix = "_AsOf_" + [now.getUTCFullYear(), 1 + now.getUTCMonth(), now.getUTCDate(),
+  now.getUTCHours(), now.getUTCMinutes()].join("-");
+
+  // Get the minimal resource of the copied table.
+  try { var backup = FusionTables.Table.copy(tableId, copyOptions); }
+  catch (e) { console.error(e); return; }
+
+  // Rename it and set the new description.
+  backup.name = backup.name.slice(backup.name.indexOf("Copy of ") + "Copy of ".length).split(" ").join("_") + newSuffix;
+  backup.description = "Automatic backup of table with id= '" + tableId + "'.";
+  try { backup = FusionTables.Table.patch(backup, backup.tableId); }
+  catch (e) { console.warn(e); }
+
+  // Remove the oldest backup, if desired (and possible).
   try
   {
-    var newBackupTable = FusionTables.Table.copy(ftid);
-    var now = new Date();
-    var backupName = 'MHCC_CrownHistory_AsOf_' + [now.getUTCFullYear(), 1-0 + now.getUTCMonth(), now.getUTCDate(),
-                                                  now.getUTCHours(), now.getUTCMinutes() ].join('-');
-    newBackupTable.name = backupName;
-    FusionTables.Table.update(newBackupTable, newBackupTable.tableId);
-    // Store the most recent backup.
-    PropertiesService.getScriptProperties().setProperty(scriptBackup, newBackupTable.tableId);
-    PropertiesService.getUserProperties().setProperty(userBackup, newBackupTable.tableId);
-    // Delete this user's old backup, if it exists.
-    if ( oldUsersBackupID.length > 0 )
-      FusionTables.Table.remove(oldUsersBackupID);
-    
-    return true;
+    if (deleteEarliest && Object.keys(userBackup[tableId]).length > 1)
+    {
+      var earliest = Object.keys(userBackup[tableId]).reduce(function (dt, next) { return Math.min(dt * 1, next * 1); });
+      const key = String(earliest);
+      const idToDelete = userBackup[tableId][key];
+      if (idToDelete != tableId)
+      {
+        FusionTables.Table.remove(idToDelete);
+        delete userBackup[tableId][key];
+        if (scriptBackup[tableId][key])
+          delete scriptBackup[tableId][key];
+      }
+    }
   }
-  catch (e)
-  {
-    console.error(e);
-    return false;
-  }
-  return false;
+  catch (e) { console.warn(e); }
+
+  // Store the data about the backup.
+  const newBackupKey = String(now.getTime());
+  userBackup[tableId][newBackupKey] = backup.tableId;
+  scriptBackup[tableId][newBackupKey] = backup.tableId;
+  uStore.setProperty(userKey, JSON.stringify(userBackup));
+  store.setProperty(scriptKey, JSON.stringify(scriptBackup));
+  return backup.tableId;
 }
+
 /**
  * function getMostRecentRecord_  Called if UpdateDatabase has no stored information about a member,
  *                                returning their most recent crown database record.
  * @param {String} memUID         The UID of the member who needs a record.
- * @return {Array}                The most recent update for the specified member, or [].
+ * @return {Array[]}                The most recent update for the specified member, or [].
  */
 function getMostRecentRecord_(memUID)
 {
@@ -391,7 +415,7 @@ function getMostRecentRecord_(memUID)
  * function retrieveWholeRecords_    Queries for the specified ROWIDs, at most once per 0.5 sec.
  * @param {String[]} rowidArray      A 1D array of String rowids to retrieve (can be very large).
  * @param {String} tblID             The FusionTable which holds the desired records.
- * @return {Array}                   A 2D array of the specified records, or [].
+ * @return {Array[]}                   A 2D array of the specified records, or [].
  */
 function retrieveWholeRecords_(rowidArray, tblID)
 {
@@ -445,7 +469,7 @@ function getTotalRowCount_(tblID)
   try
   {
     var response = FusionTables.Query.sqlGet(sqlTotal);
-    return response.rows[0][0];
+    return response.rows[0][0] * 1;
   }
   catch (e)
   {
