@@ -303,26 +303,33 @@ function formatRows_(rows, competitors)
 // Write to the end of the log sheet, and return the number of rows added.
 function printLog_(newRows)
 {
-  if(!newRows || !newRows[0])
+  if(!newRows || !newRows.length || !newRows[0].length)
     return 0;
   // Access the "Daily Log" spreadsheet.
   var log = SpreadsheetApp.getActive().getSheetByName('Daily Log');
   
   // Fill in the headers (i.e. this is the first time the sheet has been used).
-  if(log.getDataRange().getValues().length == 0 || log.getDataRange().isBlank())
+  if(log.getDataRange().getValues().length === 0 || log.getDataRange().isBlank())
   {
     printHeaders_(log);
     SpreadsheetApp.flush();
   }
   
   // Bounds check all the data.
-  var numCol = log.getLastColumn()
-  for(var row = 0, len = newRows.length; row < len; ++row)
-    if(newRows[row].length != numCol)
-    {
-      console.error({message: "Incorrect log width in row " + row, data: {data: newRows, badRow: newRows[row]}});
-      return 0;
-    }
+  var numCol = log.getLastColumn();
+  var badRows = newRows.filter(function (row) { return row.length !== numCol });
+  if(badRows.length > 0)
+  {
+    console.error({message: "Incorrect log width in some rows.", badRows: badRows});
+    return 0;
+  }
+  
+  // Add new rows to the end if the sheet is nearly full.
+  // (This shouldn't particularly be required, but is proactive in case Apps Script
+  // decides to have issues with getRange reaching beyond the existing sheet and
+  // requiring new rows be inserted for setData to work.)
+  if (log.getLastRow() + 2 * newRows.length > log.getMaxRows())
+    log.insertRowsAfter(log.getMaxRows() - 1, newRows.length);
   
   // Append new logs to the end of the log sheet.
   log.getRange(1 + log.getLastRow(), 1, newRows.length, newRows[0].length).setValues(newRows);
@@ -338,7 +345,7 @@ function sortLog_(log)
   if(!log)
     log = SpreadsheetApp.getActive().getSheetByName('Daily Log');
   
-  log.getRange(2, 1, log.getLastRow(), log.getLastColumn())
+  log.getRange(2, 1, log.getLastRow() - 1, log.getLastColumn())
       .sort([{column: 3, ascending: true}, {column: 1, ascending: true}]);
 }
 
