@@ -11,6 +11,35 @@ function onOpen()
 // Collect several names & UIDs to add to the sheet. Performs a duplicate check based on UIDs.
 function addCompetitor()
 {
+  function _getNewMembers_(beingAdded)
+  {
+    var ui = SpreadsheetApp.getUi();
+    var nameResponse = ui.prompt(
+      "Adding new competitors...", "Enter the new competitor's name", ui.ButtonSet.OK_CANCEL
+    );
+    if (nameResponse.getSelectedButton() !== ui.Button.OK)
+      return false;
+
+    var uidResponse = ui.prompt(
+      "Adding new competitors...", "Enter " + String(nameResponse.getResponseText()) + "'s profile link", ui.ButtonSet.OK_CANCEL
+    );
+    if (uidResponse.getSelectedButton() !== ui.Button.OK)
+      return false;
+
+    var uid = uidResponse.getResponseText().slice(uidResponse.getResponseText().search("=") + 1).toString();
+    var confirmation = ui.alert(
+      "Adding new competitors...",
+      "Is this correct?\nName: " + nameResponse.getResponseText() + "\nProfile: https://www.mousehuntgame.com/profile.php?snuid=" + uid,
+      ui.ButtonSet.YES_NO
+    );
+    if (confirmation == ui.Button.YES)
+      beingAdded.push([String(nameResponse.getResponseText()).trim(), String(uidResponse.getResponseText()).trim(), uid]);
+
+    // Check if more should be added.
+    return ui.Button.YES === ui.alert("Add another?", ui.ButtonSet.YES_NO);
+  }
+
+
   var startTime = new Date().getTime();
   var existing = getCompetitors_().map(function (value) {return value[2];} );
   
@@ -19,7 +48,7 @@ function addCompetitor()
   // Assume all the rowid data can be obtained in a single query. We need 1 second per 2 days since
   // the beginning of the year, and some extra time to run the scoreboard function.
   var numberQueries = 1 + Math.floor((startTime - (new Date(Date.UTC(2018, 0, 1))).getTime()) / 86400000);
-  while(getNewMembers_(newMembers) && ((new Date().getTime() - startTime)/1000) < (225 - numberQueries))
+  while(_getNewMembers_(newMembers) && ((new Date().getTime() - startTime)/1000) < (225 - numberQueries))
   {
   }
   
@@ -45,43 +74,13 @@ function addCompetitor()
   var message = '';
   if(n > 0)
     message += 'Added ' + n + ' rows of data for ' + toAdd.length + ' unique competitors.\n';
-  if(n == 0 && toAdd.length)
+  if(n === 0 && toAdd.length)
     message += 'Added competitor(s) that had no data rows as of the last MHCC database update. Be sure to click their profile(s)!\n';
   if(skipped.length)
     message += 'Skipped ' + skipped.length + ' competitor(s) since they were already added.';
   if(message != '')
     wb.toast(message);
   console.info({message: 'Ran adder function', data: {toAdd: toAdd, skipped: skipped, rowsAdded: n}});
-}
-
-
-
-function getNewMembers_(toAdd)
-{
-  var ui = SpreadsheetApp.getUi();
-  var nameResponse = ui.prompt(
-    "Adding new competitors...", "Enter the new competitor's name", ui.ButtonSet.OK_CANCEL
-  );
-  if(nameResponse.getSelectedButton() !== ui.Button.OK)
-    return false;
-  
-  var uidResponse = ui.prompt(
-    "Adding new competitors...", "Enter " + String(nameResponse.getResponseText()) + "'s profile link", ui.ButtonSet.OK_CANCEL
-  );
-  if(uidResponse.getSelectedButton() !== ui.Button.OK)
-    return false;
-  
-  var uid = uidResponse.getResponseText().slice(uidResponse.getResponseText().search("=") + 1).toString();
-  var confirmation = ui.alert(
-    "Adding new competitors...",
-    "Is this correct?\nName: " + nameResponse.getResponseText() + "\nProfile: https://www.mousehuntgame.com/profile.php?snuid=" + uid,
-    ui.ButtonSet.YES_NO
-  );
-  if(confirmation == ui.Button.YES)
-    toAdd.push([String(nameResponse.getResponseText()).trim(), String(uidResponse.getResponseText()).trim(), uid]);
-  
-  // Check if more should be added.
-  return ui.Button.YES === ui.alert("Add another?", ui.ButtonSet.YES_NO);
 }
 
 
@@ -111,7 +110,10 @@ function importExistingDailyData(members, compStartDate)
 }
 
 
-
+/**
+ * Returns a 2D array of the Competitor, competitor link, and competitor UID in MHCC
+ * @return {String[][]} 
+ */
 function getCompetitors_()
 {
   var members = SpreadsheetApp.getActive().getSheetByName("Competitors").getDataRange().getValues();
@@ -130,22 +132,28 @@ function getCompetitors_()
 
 
 
-// Construct the desired queries to get the rowids for records with LastSeen values that fall
-// within the given datespan. If the query would exceed the allowed POST length (~8000 char)
-// then multiple queries will be returned.
+/**
+ * Construct the desired queries to get the rowids for records with LastSeen values that fall
+ * within the given datespan. If the query would exceed the allowed POST length (~8000 char)
+ * then multiple queries will be returned.
+ * 
+ * @param {String[][]} members 2D array of Name | Link | UID for which to obtain Crown data
+ * @param {Date} dateStart     Beginning Date object for when the member needed to have been seen.
+ * @param {Date} dateEnd       Ending Date object for when the member needed to have been seen before.
+ */
 function getRowidQueries_(members, dateStart, dateEnd)
 {
-  if(!members || dateStart == dateEnd)
+  if(!members || !members.length || dateStart.getTime() === dateEnd.getTime())
   {
     console.warn({message: "Insufficient data for querying", data: {members: members, dateStart: dateStart, dateEnd: dateEnd}});
     return [];
   }
   
   var queries = [];
-  var memUIDs = members.map( function (value, index) { return value[2] } );
+  var memUIDs = members.map(function (value) { return value[2] });
   var SQL = "SELECT ROWID, UID, LastSeen, LastTouched FROM " + ftid + " WHERE LastSeen < " + dateEnd.getTime();
   SQL += " AND LastSeen >= " + dateStart.getTime() + " AND UID IN (";
-  var sqlEnd = ") ORDER BY UID ASC, LastSeen ASC, LastTouched ASC";
+  const sqlEnd = ") ORDER BY UID ASC, LastSeen ASC, LastTouched ASC";
   while(memUIDs.length)
   {
     queries.push(SQL);
@@ -162,13 +170,17 @@ function getRowidQueries_(members, dateStart, dateEnd)
 
 
 
-// Extract the desired rowids from the day's data.
+/**
+ * Extract the desired rowids from the day's data.
+ * 
+ * @param {any[][]} queryData [[ROWID | Member ID (ascending) | LastSeen (ascending) | LastTouched (ascending)]]
+ * @return {String[]}
+ */
 function extractROWIDs_(queryData)
 {
   if(!queryData || !queryData.length || queryData[0].length != 4)
     return [];
   
-  // ROWID | Member ID (ascending) | LastSeen (ascending) | LastTouched (ascending).
   // Iterate rows and keep the first value for each new member for each LS
   // (i.e. the first record of a new LastSeen instance).
   var rowids = [];
@@ -192,26 +204,25 @@ function extractROWIDs_(queryData)
         seen[uid][ls] = true;
       }
     }
-    catch(e)
-    {
-      console.error({error: e, data: {row: row, data: queryData, seen: seen}});
-    }
+    catch(e) { console.error({error: e, data: {row: row, data: queryData, seen: seen}}); }
   }
   return rowids;
 }
   
 
-
-// Convert the input array of rowids into queries for the desired data.
-// [['Member', 'Link', 'Date', 'Last Seen', 'Last Crown', 'Gold', 'Silver', 'Bronze']];
+/**
+ * Convert the input array of rowids into queries for the desired data.
+ * [['Member', 'Link', 'Date', 'Last Seen', 'Last Crown', 'Gold', 'Silver', 'Bronze']];
+ * @param {String[]} rowids
+ */
 function getRowQueries_(rowids)
 {
   if(!rowids || !rowids.length || !rowids[0].length)
     return [];
   
   var queries = [];
-  var SQL = "SELECT Member, UID, LastTouched, LastSeen, LastCrown, Gold, Silver, Bronze FROM " + ftid + " WHERE ROWID IN (";
-  var sqlEnd = ") ORDER BY LastTouched ASC";
+  const SQL = "SELECT Member, UID, LastTouched, LastSeen, LastCrown, Gold, Silver, Bronze FROM " + ftid + " WHERE ROWID IN (";
+  const sqlEnd = ") ORDER BY LastTouched ASC";
   do {
     queries.push(SQL);
     var sqlRowIDs = [];
@@ -228,13 +239,17 @@ function getRowQueries_(rowids)
 
 
 
-// Execute the given queries, and return the aggregated row response.
+/**
+ * Execute the given queries, and return the aggregated row response.
+ * @param {String[]} queries
+ * @return {any[][]}
+ */
 function doSQLGET_(queries)
 {
   if(!queries || !queries.length || !queries[0].length)
     return;
   
-  var data = [];
+  const data = [];
   do {
     var sql = queries.pop();
     if(!sql.length)
@@ -245,7 +260,7 @@ function doSQLGET_(queries)
       {
         var response = FusionTables.Query.sqlGet(sql);
         if(response.rows)
-          data = [].concat(data, response.rows);
+          Array.prototype.push.apply(data, response.rows);
       }
       catch(e)
       {
@@ -265,7 +280,11 @@ function doSQLGET_(queries)
 
 
 
-// Convert the given rows into printable, append-ready data
+/**
+ * Convert the given rows into printable, append-ready data
+ * @param {any[][]} rows
+ * @param {String[][]} competitors
+ */
 function formatRows_(rows, competitors)
 {
   if(!rows || !rows.length || !rows[0].length)
@@ -300,7 +319,11 @@ function formatRows_(rows, competitors)
 
 
 
-// Write to the end of the log sheet, and return the number of rows added.
+/**
+ * Write to the end of the log sheet, and return the number of rows added.
+ * @param {any[][]} newRows
+ * @return {Number}
+ */
 function printLog_(newRows)
 {
   if(!newRows || !newRows.length || !newRows[0].length)
