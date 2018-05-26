@@ -339,7 +339,7 @@ function doBackupTable_(tableId, deleteEarliest)
   }
 
   if (!tableId) tableId = ftid;
-  if (!deleteEarliest) deleteEarliest = true;
+  if (deleteEarliest !== false) deleteEarliest = true;
 
   const uStore = PropertiesService.getUserProperties(),
     store = PropertiesService.getScriptProperties(),
@@ -367,16 +367,15 @@ function doBackupTable_(tableId, deleteEarliest)
   catch (e) { console.warn(e); }
 
   // Remove the oldest backup, if desired (and possible).
-  const newBackupKey = now.getTime();
   try
   {
     if (deleteEarliest && Object.keys(userBackup[tableId]).length > 1)
     {
       var earliest = Object.keys(userBackup[tableId]).reduce(function (dt, next) { return Math.min(dt * 1, next * 1); });
-      if (earliest != newBackupKey)
+      const key = String(earliest);
+      const idToDelete = userBackup[tableId][key];
+      if (idToDelete != tableId)
       {
-        const key = String(earliest);
-        const idToDelete = userBackup[tableId][key];
         FusionTables.Table.remove(idToDelete);
         delete userBackup[tableId][key];
         if (scriptBackup[tableId][key])
@@ -387,8 +386,9 @@ function doBackupTable_(tableId, deleteEarliest)
   catch (e) { console.warn(e); }
 
   // Store the data about the backup.
-  userBackup[tableId][String(newBackupKey)] = backup.tableId;
-  scriptBackup[tableId][String(newBackupKey)] = backup.tableId;
+  const newBackupKey = String(now.getTime());
+  userBackup[tableId][newBackupKey] = backup.tableId;
+  scriptBackup[tableId][newBackupKey] = backup.tableId;
   uStore.setProperty(userKey, JSON.stringify(userBackup));
   store.setProperty(scriptKey, JSON.stringify(scriptBackup));
   return backup.tableId;
