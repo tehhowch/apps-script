@@ -551,68 +551,6 @@ function populateRankFusionTable_()
     return (resp.rows.map(function (row) { return String(row[0]); }));
   }
   /**
-   * Query the Crown FusionTable to determine how many rows each member has, and return a UID-indexed object.
-   * 
-   * @return {{uid:Number}}
-   */
-  function _getCrownTableRowCounts_()
-  {
-    var sql = "SELECT UID, Count(LastTouched) FROM " + ftid + " GROUP BY UID";
-    var resp = FusionTables.Query.sqlGet(sql, { quotaUser: "maintenance" });
-    var output = {};
-    resp.rows.forEach(function (row) { output[String(row[0])] = row[1] * 1; });
-    return output;
-  }
-  /**
-   * Return an array of the next set of UIDs to query for migratable records. Makes sure that both the query string length
-   * and number of rows queried will be below the supplied arguments.
-   * Mutates the input "remaining" array.
-   * 
-   * @param {String[][]} remaining MUTABLE 2D array of [Name, UID] of members that have yet to be migrated.
-   * @param {{uid:Number}} rowKey  Lookup object which stores the number of rows a given UID adds to the overall query.
-   * @param {Number} maxRows       The maximum number of rows that should return from a query (i.e. to not generate a "Response > 10 MB" 503 error).
-   * @param {Number} maxUIDStrLength The maximum joined length of the queried UIDs (total query string length must be < ~8050 characters).
-   * @return {String[]}
-   */
-  function _getNextUserSet_(remaining, rowKey, maxRows, maxUIDStrLength)
-  {
-    if (!remaining || !remaining.length)
-      return [];
-    if (!maxUIDStrLength) maxUIDStrLength = 7900;
-    const unknown = remaining.filter(function (memUID) { return (!rowKey[memUID[1]] && rowKey[memUID[1]] !== 0); });
-    if (unknown.length)
-    {
-      console.warn({ "no-row members": unknown });
-      throw new Error("Some members not present in the row key");
-    }
-
-    // Require the "remaining" set is sorted descending by number of rows.
-    remaining.sort(function (a, b) { return rowKey[b[1]] - rowKey[a[1]]; });
-
-    const nextSet = [];
-    var nextRows = 0, queryLength = 0;
-    // Fill from the front (the largest number of rows) first.
-    for (var m = 0; m < remaining.length; /* mutating */)
-    {
-      var memberRows = rowKey[remaining[m][1]];
-      if (memberRows && (nextRows + memberRows < maxRows) && (queryLength + remaining[m][1].length < maxUIDStrLength))
-      {
-        var uid = String(remaining.splice(m, 1)[0][1]);
-        nextSet.push(uid);
-        nextRows += memberRows;
-        queryLength = nextSet.join(",").length;
-      }
-      else if (memberRows === 0)
-        remaining.splice(m, 1);
-      else
-        ++m;
-      // Stop searching if we can't add another member.
-      if (maxUIDStrLength - queryLength < 16)
-        break;
-    }
-    return nextSet;
-  }
-  /**
    * Mutate the input records by determining the appropriate LastSeen and MHCC Crown values for each
    * member's unique RankTime values. If a RankTime is duplicated, only the first instance is kept.
    * 
@@ -666,7 +604,7 @@ function populateRankFusionTable_()
 
   // Filter the member list by those who have yet to be processed.
   const toDo = members.filter(function (row) { return done.indexOf(String(row[1])) === -1; }),
-    rowKey = _getCrownTableRowCounts_(),
+    rowKey = getCrownTableRowCounts_(),
     logs = [];
 
   // We only need the Member Name, UID, LastSeen, LastTouched, MHCC Crowns, Rank, and RankTime.
@@ -674,7 +612,7 @@ function populateRankFusionTable_()
     ORDER = ") ORDER BY UID ASC, RankTime ASC, LastTouched ASC";
 
   do {
-    var uids = _getNextUserSet_(toDo, rowKey, 60000, 8000 - SELECT.length - ORDER.length - 15);
+    var uids = getNextUserSet_(toDo, rowKey, 60000, 8000 - SELECT.length - ORDER.length - 15);
     if (!uids || !uids.length) break;
 
     console.time("Batch execution: " + uids.length + " members.");
@@ -761,4 +699,209 @@ function columnDropper_(tableId, columnsToDrop)
   const allCompleted = (target.columns.length - columnsToDrop.columns.length === alteredTable.columns.length);
   console.log({ "message": "Column drop " + (allCompleted ? " successful." : " unsuccessful."), "original": target, "altered": alteredTable });
   return allCompleted;
+}
+/**
+   * Query the Crown FusionTable to determine how many rows each member has, and return a UID-indexed object.
+   * 
+   * @return {{uid:Number}}
+   */
+function getCrownTableRowCounts_()
+{
+  var sql = "SELECT UID, Count(LastTouched) FROM " + ftid + " GROUP BY UID";
+  var resp = FusionTables.Query.sqlGet(sql, { quotaUser: "maintenance" });
+  var output = {};
+  resp.rows.forEach(function (row) { output[String(row[0])] = row[1] * 1; });
+  return output;
+}
+/**
+ * Return an array of the next set of UIDs to query for migratable records. Makes sure that both the query string length
+ * and number of rows queried will be below the supplied arguments.
+ * Mutates the input "remaining" array.
+ * 
+ * @param {String[][]} remaining MUTABLE 2D array of [Name, UID] of members that have yet to be migrated.
+ * @param {{uid:Number}} rowKey  Lookup object which stores the number of rows a given UID adds to the overall query.
+ * @param {Number} maxRows       The maximum number of rows that should return from a query (i.e. to not generate a "Response > 10 MB" 503 error).
+ * @param {Number} maxUIDStrLength The maximum joined length of the queried UIDs (total query string length must be < ~8050 characters).
+ * @return {String[]}
+ */
+function getNextUserSet_(remaining, rowKey, maxRows, maxUIDStrLength)
+{
+  if (!remaining || !remaining.length)
+    return [];
+  if (!maxUIDStrLength) maxUIDStrLength = 7900;
+  const unknown = remaining.filter(function (memUID) { return (!rowKey[memUID[1]] && rowKey[memUID[1]] !== 0); });
+  if (unknown.length)
+  {
+    console.warn({ "no-row members": unknown });
+    throw new Error("Some members not present in the row key");
+  }
+
+  // Require the "remaining" set is sorted descending by number of rows.
+  remaining.sort(function (a, b) { return rowKey[b[1]] - rowKey[a[1]]; });
+
+  const nextSet = [];
+  var nextRows = 0, queryLength = 0;
+  // Fill from the front (the largest number of rows) first.
+  for (var m = 0; m < remaining.length; /* mutating */)
+  {
+    var memberRows = rowKey[remaining[m][1]];
+    if (memberRows && (nextRows + memberRows < maxRows) && (queryLength + remaining[m][1].length < maxUIDStrLength))
+    {
+      var uid = String(remaining.splice(m, 1)[0][1]);
+      nextSet.push(uid);
+      nextRows += memberRows;
+      queryLength = nextSet.join(",").length;
+    }
+    else if (memberRows === 0)
+      remaining.splice(m, 1);
+    else
+      ++m;
+    // Stop searching if we can't add another member.
+    if (maxUIDStrLength - queryLength < 16)
+      break;
+  }
+  return nextSet;
+}
+/**
+ * HT MostMice's "lst" parameter is a tz-naive string using the local HT time (PST / PDT)
+ * Script timezone is America/New_York, and thus Date.parse(lst) returned the incorrect values
+ * by 2-4 hours
+ * Apps Script has no support for arguments in Date#toLocaleString, so a more complex
+ * resolution method must be used.
+ * FusionTables does not support multi-record update, so instead we delete and then import fixed rows via ftBatchWrite_().
+*/
+function correctTimestamps_()
+{
+  const offsetTable = [
+    [new Date("2016/03/13 01:59:59 EST").getTime(), new Date("2016/03/13 01:59:59 PST").getTime(), 4 * 3600 * 1000], // 2016 spring
+    [new Date("2016/11/06 01:59:59 EDT").getTime(), new Date("2016/11/06 01:59:59 PDT").getTime(), 2 * 3600 * 1000], // 2016 fall
+    [new Date("2017/03/12 01:59:59 EST").getTime(), new Date("2017/03/12 01:59:59 PST").getTime(), 4 * 3600 * 1000], // 2017 spring
+    [new Date("2017/11/05 01:59:59 EDT").getTime(), new Date("2017/11/05 01:59:59 PDT").getTime(), 2 * 3600 * 1000], // 2017 fall
+    [new Date("2018/03/11 01:59:59 EST").getTime(), new Date("2018/03/11 01:59:59 PST").getTime(), 4 * 3600 * 1000], // 2018 spring
+    [new Date("2018/11/04 01:59:59 EDT").getTime(), new Date("2018/11/04 01:59:59 PDT").getTime(), 2 * 3600 * 1000] // 2018 fall
+  ];
+  /**
+   * Determine the offset needed to correct the record's LastSeen and LastCrown timestamps
+   * by checking if the record was generated within the DST "activation windows".
+   * Returns the number of milliseconds that need to be added to the LastSeen and LastCrown timestamps.
+   * 
+   * @param {Number} lastTouched
+   * @return {Number}
+   */
+  function _getTzOffset_(lastTouched)
+  {
+    const offset = 3 * 3600 * 1000;
+    for (var y = 0; y < offsetTable.length; ++y)
+    {
+      if (lastTouched < offsetTable[y][0])
+        break;
+      else if (lastTouched < offsetTable[y][1])
+        return offsetTable[y][2];
+    }
+    return offset;
+  }
+  /**
+   * Deletes user rows prior to the upload of their new, fixed rows.
+   * Returns the number of rows that were modified.
+   * 
+   * @param {String[]} uidsToDelete The users for whom records are being fixed.
+   * @param {String} tableId The table to operate on (Rank DB or Crown DB id)
+   * @return {Number} 
+   */
+  function _deleteUserRows_(uidsToDelete, tableId)
+  {
+    var sql = "DELETE FROM " + tableId + " WHERE UID IN (" + uidsToDelete.join(",") + ")";
+    var resp = FusionTables.Query.sql(sql, { quotaUser: "maintenance" });
+    return resp.rows[0][0] * 1;
+  }
+  function _getLogSheet()
+  {
+    var sheet = SpreadsheetApp.getActive().getSheetByName("tzshifted");
+    return sheet ? sheet : SpreadsheetApp.getActive().insertSheet("tzshifted");
+  }
+  /**
+   * Acquire all rows from the given table for the given users
+   * 
+   * @param {String[]} usersToGet
+   * @param {String} tableId
+   * @return {Array[]}
+   */
+  function _getRows_(usersToGet, tableId)
+  {
+    var sqlGet = "SELECT * FROM " + tableId + " WHERE UID IN (" + usersToGet.join(",") + ") ORDER BY UID ASC";
+    var resp = FusionTables.Query.sqlGet(sqlGet, { quotaUser: "maintenance" });
+    return resp.rows;
+  }
+
+  const start = new Date();
+  // tz info was added to HT querying by checking the localedatestring for "dt" and then adding "-700" or "-800"
+  // as appropriate on 2018-05-27 12:39:00 CDT
+  const beforeAutofix = new Date("2018-05-27T12:39-0500").getTime();
+
+  const members = getUserBatch_(0, 10000),
+    rowKey = getCrownTableRowCounts_(),
+    logSheet = _getLogSheet(),
+    done = logSheet.getDataRange().getValues().map(function (r) { return String(r[0]); }),
+    toDo = members.filter(function (member) { return done.indexOf(String(member[1])) === -1; });
+
+  const prefix = "SELECT * FROM ",
+    where = " WHERE UID IN (",
+    suffix = ") ORDER BY UID ASC",
+    allowedUIDLength = 8050 - (prefix + suffix + where + ftid).length,
+    createdOnIndex = { "crown": 4, "rank": 3 },
+    seenIndex = { "crown": 2, "rank": 2 },
+    ccIndex = 3;
+
+  do {
+    // For each set of users
+    var uids = getNextUserSet_(toDo, rowKey, 40000, allowedUIDLength);
+    if (!uids || !uids.length) break;
+
+    //   1) Query records (some which need fixing and some which do not).
+    //   2) Compute the needed offset for records in which LastTouched < beforeAutofix
+    //   3) Apply the needed offset to LastSeen & LastCrown for these records
+    var fixedCrownRows = _getRows_(uids, ftid).map(function (record) {
+      var lastTouched = record[createdOnIndex.crown];
+      if (lastTouched < beforeAutofix)
+      {
+        var offset = _getTzOffset_(lastTouched);
+        record[seenIndex.crown] += offset;
+        record[ccIndex] += offset;
+      }
+      return record;
+    });
+    var fixedRankRows = _getRows_(uids, rankTableId).map(function (record) {
+      if (record[seenIndex.rank] !== "NaN")
+      {
+        var lastTouched = record[createdOnIndex.rank];
+        if (lastTouched < beforeAutofix)
+          record[seenIndex.rank] += _getTzOffset_(lastTouched);
+      }
+      // Rather than upload "NaN", keep an empty value where an empty value was.
+      for (var c = 0; c < record.length; ++c)
+        if (record[c] === "NaN")
+          delete record[c];
+      return record;
+    });
+
+    //   4) Delete their existing rows
+    var removed = [
+      _deleteUserRows_(uids, ftid),
+      _deleteUserRows_(uids, rankTableId)
+    ];
+    console.log({
+      "message": ("Modified rank and crown databases for " + uids.length + " members, " + toDo.length + " remaining."),
+      "crownChange": { "table": ftid, "removed": removed[0], "added": fixedCrownRows.length },
+      "rankChange": { "table": rankTableId, "removed": removed[1], "added": fixedRankRows.length }
+    });
+    //   5) Upload the fixed rows
+    ftBatchWrite_(fixedCrownRows, ftid);
+    ftBatchWrite_(fixedRankRows, rankTableId, false);
+
+    //   6) Add the UIDs of these members to the spreadsheet.
+    logSheet.getRange(logSheet.getLastRow() + 1, 1, uids.length, 1).setValues(uids.map(function (u) { return [u]; }));
+  } while (toDo.length && (new Date() - start < 300 * 1000));
+  if (toDo.length)
+    ScriptApp.newTrigger("correctTimestamps").timeBased().at(new Date(new Date().getTime() + 60 * 1000)).create();
+  else console.log("All LastSeen and LastCrown records have been corrected.");
 }
