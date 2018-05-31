@@ -1,333 +1,412 @@
 <!DOCTYPE html>
 <div class="column page">
-<h3 id="actionTitle">Pick an Action</h3>
-<div id="taskPicker" class="row">
-  <button id="addButton" onclick="setupAdd()">Add Member</button>
-  <button id="removeButton" onclick="setupRemove()">Remove Member</button>
-</div>
-<div id="taskEntry" class="column hidden">
-  <form id="memberInfo">
-    <div id="namediv" class="row item">
-      <label for="memberName">Name:</label>
-      <input id="memberName" name="memberName" placeholder="Anony Mouse"
-             type="text" class="data" onchange="requireValidation(this)" required
-             title="Enter the member's desired display name">
-    </div>
-    <div id="linkdiv" class="row item">
-      <label for="memberLink">Profile:</label>
-      <input id="memberLink" name="memberLink" placeholder="https://www.mousehuntgame.com/profile.php?snuid=123"
-             type="url" class="data" onchange="requireValidation(this)" pattern=".*\/(hunter)?profile\.php\?snuid=\d+" required
-             title="Enter a link to the person's profile">
-    </div>
-  </form>
-  <div id="actionPicker">
-    <form id="openLinkForm" target="_blank">
-      <button id="openLinkButton" class="item" onclick="openProfileLink(this)" type="button">Check Link</button>
-      <input id="snuid" name="snuid" class="hidden">
+  <h3 id="actionTitle">Pick an Action</h3>
+  <div id="taskPicker" class="row">
+    <button id="addButton" onclick="setupAdd()">Add Member</button>
+    <button id="removeButton" onclick="setupRemove()">Remove Member</button>
+  </div>
+  <div id="taskEntry" class="column hidden">
+    <form id="memberInfo">
+      <div id="namediv" class="row item">
+        <label for="memberName">Name:</label>
+        <input id="memberName" name="memberName" placeholder="Anony Mouse"
+               type="text" class="data" onchange="requireValidation(this)" required
+               title="Enter the member's desired display name">
+      </div>
+      <div id="linkdiv" class="row item">
+        <label for="memberLink">Profile:</label>
+        <input id="memberLink" name="memberLink" placeholder="https://www.mousehuntgame.com/profile.php?snuid=123"
+               type="url" class="data" onchange="requireValidation(this)" pattern=".*\/(hunter)?profile\.php\?snuid=\d+" required
+               title="Enter a link to the person's profile">
+      </div>
     </form>
-    <button id="validateButton" class="item" onclick="validateInput(this)">Validate Info</button>
-    <button id="taskButton" class="item" disabled></button>
+    <div id="actionPicker">
+      <form id="openLinkForm" target="_blank">
+        <button id="openLinkButton" class="item" onclick="openProfileLink(this)" type="button">Check Link</button>
+        <input id="snuid" name="snuid" class="hidden">
+      </form>
+      <button id="validateButton" class="item" onclick="validateInput(this)">Validate Info</button>
+      <button id="taskButton" class="item" disabled></button>
+      <br>
+      <div><button id="clearAll" class="item" onclick="resetForms()">Reset</button></div>
+    </div>
     <br>
-    <div><button id="clearAll" class="item" onclick="resetForms()">Reset</button></div>
+    <div><button id="cancelButton" onclick="hasTask()">Go Back</button></div>
   </div>
   <br>
-  <div><button id="cancelButton" onclick="hasTask()">Go Back</button></div>
-</div>
-<br>
-<div id="taskLog" class="footer">
-  <textarea id="log" disabled class="item"></textarea>
-  Task Log:
-  <textarea id="report" disabled class="item"></textarea>
-</div>
+  <div id="taskLog" class="footer">
+    <textarea id="log" disabled class="item"></textarea>
+    Task Log:
+    <textarea id="report" disabled class="item"></textarea>
+  </div>
 </div>
 
 <style>
-* {
-  font-family: Segoe UI;
-  line-height: 20px;
-  text-align: left;
-  margin-top: 5px;
-}
-.page {
-  height: 96vh;
-}
-.footer {
-  align-self: flex-end;
-  flex-shrink: 0;
-  margin-top: auto;
-  width: 100%;
-}
-.column {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-}
-.row {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-}
-.item {
-  width: 100%;
-  align-content: space-between;
-  margin: auto;
-}
-input {
-  width: 100%;
-  margin-left: 5px;
-}
-textarea {
-  height: 20vh;
-  resize: none;
-  white-space: pre;
-  overflow: auto;
-  box-sizing: border-box;
-}
-.hidden {
-  display: none;
-}
-input:invalid {
-  background-color: pink;
-}
+  * {
+    font-family: Segoe UI;
+    line-height: 20px;
+    text-align: left;
+    margin-top: 5px;
+  }
+
+  .page {
+    height: 96vh;
+  }
+
+  .footer {
+    align-self: flex-end;
+    flex-shrink: 0;
+    margin-top: auto;
+    width: 100%;
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .item {
+    width: 100%;
+    align-content: space-between;
+    margin: auto;
+  }
+
+  input {
+    width: 100%;
+    margin-left: 5px;
+  }
+
+  textarea {
+    height: 20vh;
+    resize: none;
+    white-space: pre;
+    overflow: auto;
+    box-sizing: border-box;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  input:invalid {
+    background-color: pink;
+  }
 </style>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
 <script>
-var STATUS = {
-  isAdd: false, isRemove: false, logs: []
-};
-/*   TODO:
- * - Add additional "admin" functionality.
- */
-
-// Called by the onchange event for the name and link input elements.
-function requireValidation(input) {
-  switch (input.id) {
-    // If the link changes, require revisiting it before submitting. 
-    case "memberLink":
-      document.getElementById("openLinkButton").removeAttribute("disabled");
-    case "memberName":
-      const TASK_BUTTON = document.getElementById("taskButton");
-      TASK_BUTTON.setAttribute("disabled", "");
-      TASK_BUTTON.textContent = (STATUS.isAdd === true ? "Add Member" :
-                                (STATUS.isRemove === true ? "Delete Member" :
-                                 "Unknown (Please reload sidebar)"));
-      break;
-    default:
-      console.log("default case: " + String(input.id));
-      return;
-  }
-  // Re-allow validation.
-  const vBtn = document.getElementById("validateButton");
-  if (vBtn.hasAttribute("disabled")) {
-    writeLog("Revalidation required.");
-    vBtn.removeAttribute("disabled");
-  }
-}
-
-// Validate the current inputs and then call Apps Script to check for that member's existence.
-function validateInput(btn) {
-  const FORM = document.forms["memberInfo"]
-  const FORM_DATA = new FormData(FORM);
-  const NAME = FORM_DATA.get("memberName");
-  if(!NAME || !NAME.length) {
-    writeLog("Invalid name: provide a display name.");
-    return;
-  }
-  
-  const UID = getIdFromLink(FORM_DATA.get("memberLink"));
-  if (!UID) {
-    writeLog("Link for '" + NAME + "' yields invalid UID.");
-    return;
-  }
-  
-  if (!FORM.reportValidity()) {
-    writeLog("Invalid form data.");
-    return;
-  }
-  
-  // Query the FusionTable re: existing information.
-  const TASK = google.script.run.withSuccessHandler(verifyOperation)
-      .withFailureHandler(failedOperation)
-      .withUserObject(document.getElementById("taskButton"));
-    
-  if (STATUS.isAdd === true) {
-    TASK.canAdd(FORM);
-  }
-  else if (STATUS.isRemove === true) {
-    TASK.canDelete(FORM);
-  }
-  
-  // No need to continue validating until the input fields are changed.
-  btn.setAttribute("disabled", "");
-}
-
-function openProfileLink(btn) {
-  const UID = getIdFromLink(document.forms["memberInfo"].elements["memberLink"].value);
-  if(!UID || !document.forms["memberInfo"].elements["memberName"].value)
-    return;
-  
-  document.getElementById("snuid").value = UID;
-  writeLog("Extracted UID as '" + btn.form.snuid.value + "'. Opening link to verify...");
-  
-  // Allow submitting the member information after a short delay.
-  setTimeout(function () { 
-    btn.form.action = "https://www.mousehuntgame.com/profile.php";
-    btn.form.submit();
-  }, 500);
-  
-  // No need to reclick this button until it changes.
-  btn.setAttribute("disabled", "");
-}
-
-// Configures the page for member removal.
-function setupRemove() {
-  const TEXT_VALUES = {
-    "taskButton":"Delete Member",
-    "actionTitle": "Deleting Members",
+  var STATUS = {
+    isAdd: false, isRemove: false, logs: []
   };
-  hasTask(true, TEXT_VALUES);
-  STATUS.isRemove = true;
-  writeLog("Configuring for member deletion...");
-}
+  /*   TODO:
+   * - Add additional "admin" functionality.
+   */
 
-// Configures the page for member addition.
-function setupAdd() {
-  const TEXT_VALUES = {
-    "taskButton":"Add Member",
-    "actionTitle": "Adding Members",
-  };
-  hasTask(true, TEXT_VALUES);
-  STATUS.isAdd = true;
-  writeLog("Configuring for member addition...");
-}
-
-// Configure common dom elements, defaulting to reset the page.
-function hasTask(onTask, strings) {
-  onTask = !(!onTask); // force a boolean value.
-  
-  // Clear any previously-set tasks.
-  if (!onTask) {
-    STATUS.isAdd = false;
-    STATUS.isRemove = false;
-    document.getElementById("taskPicker").classList.remove("hidden");
-    document.getElementById("taskEntry").classList.add("hidden");
-  }
-  else {
-    // Show task-based UI elements.
-    document.getElementById("taskPicker").classList.add("hidden");
-    document.getElementById("taskEntry").classList.remove("hidden");
-    // Set the cursor focus to the name entry.
-    document.getElementById("memberName").focus();
-  }
-  
-  // Set element text values.
-  if (strings) for (var elem in strings) {
-    document.getElementById(elem).textContent = strings[elem];
-  }
-  else { /* Returning to "main menu" */
-    document.getElementById("actionTitle").textContent = "Pick an Action";
-    Array.from(document.getElementsByTagName("form")).forEach(function (form) {form.reset()});
-  }
-}
-// Success Handler for the validation queries.
-// Successful responses are an object {log: str, canDo: bool, isNameChange: bool}
-function verifyOperation(event, btn) {
-  if(!event || !btn) return;
-  
-  // If a member was found and this is an addition query, `isNameChange` will be set.
-  // Otherwise, if the operation can be done, enable the task button (which is the user object).
-  if(event.isNameChange === true) {
-    btn.textContent = "Update Member's Name";
-  }
-  
-  if(event.canDo === true) {
-    btn.removeAttribute("disabled");
-    btn.onclick = function () {
-      const OP = google.script.run
-        .withSuccessHandler(completedOperation)
-        .withFailureHandler(failedOperation)
-        .withUserObject(btn);
-      if (STATUS.isAdd === true && event.isNameChange === true)
-        OP.changeMemberName(document.forms["memberInfo"]);
-      else if (STATUS.isAdd === true)
-        OP.addMemberToFusion(document.forms["memberInfo"]);
-      else if (STATUS.isRemove === true)
-        OP.delMemberFromFusion(document.forms["memberInfo"]);
-      else
-        console.log("Unknown status");
+  /**
+   * Called by the onchange event for the name and link input elements.
+   * 
+   * @param {HTMLInputElement} input The element needing validation.
+   */
+  function requireValidation(input) {
+    switch (input.id) {
+      // If the link changes, require revisiting it before submitting.
+      case "memberLink":
+        document.getElementById("openLinkButton").removeAttribute("disabled");
+      case "memberName":
+        const TASK_BUTTON = document.getElementById("taskButton");
+        TASK_BUTTON.setAttribute("disabled", "");
+        TASK_BUTTON.textContent = (STATUS.isAdd === true ? "Add Member" :
+          (STATUS.isRemove === true ? "Delete Member" :
+            "Unknown (Please reload sidebar)"));
+        break;
+      default:
+        console.log("default case: " + String(input.id));
+        return;
+    }
+    // Re-allow validation.
+    const vBtn = document.getElementById("validateButton");
+    if (vBtn.hasAttribute("disabled")) {
+      writeLog("Revalidation required.");
+      vBtn.removeAttribute("disabled");
     }
   }
-  else {
+
+  /**
+   * Validate the current inputs and then call Apps Script to check for that member's existence.
+   * 
+   * @param {HTMLButtonElement} btn The button which called this validation routine.
+   */
+  function validateInput(btn) {
+    const FORM = document.forms["memberInfo"]
+    const FORM_DATA = new FormData(FORM);
+    const NAME = FORM_DATA.get("memberName");
+    if (!NAME || !NAME.length) {
+      writeLog("Invalid name: provide a display name.");
+      return;
+    }
+
+    const UID = getIdFromLink(FORM_DATA.get("memberLink"));
+    if (!UID) {
+      writeLog("Link for '" + NAME + "' yields invalid UID.");
+      return;
+    }
+
+    if (!FORM.reportValidity()) {
+      writeLog("Invalid form data.");
+      return;
+    }
+
+    // Query the FusionTable re: existing information.
+    const TASK = google.script.run.withSuccessHandler(verifyOperation)
+      .withFailureHandler(failedOperation)
+      .withUserObject(document.getElementById("taskButton"));
+    if (STATUS.isAdd === true) {
+      TASK.canAdd(FORM);
+    }
+    else if (STATUS.isRemove === true) {
+      TASK.canDelete(FORM);
+    }
+
+    // No need to continue validating until the input fields are changed.
     btn.setAttribute("disabled", "");
-    btn.onclick = function () {};
   }
-  
-  // Write any messages that were included.
-  handlerLogging(event);
-}
 
-// Success Handler for the task queries.
-// Successful responses are an object: {report: str, log: str, reset: bool}
-function completedOperation(event) {
-  if(!event) return;
-  
-  // Reset the submission form, if desired (i.e. the operation succeeded).
-  if(event.reset === true) {
-    // Restore placeholder values.
-    resetForms();
+  /**
+   * Onclick action which parses the memberLink form input, constructs the profile link, and opens it (for the administrator to doubly-validate).
+   * 
+   * @param {HTMLButtonElement} btn The button which was clicked to call this routine.
+   */
+  function openProfileLink(btn) {
+    const UID = getIdFromLink(document.forms["memberInfo"].elements["memberLink"].value);
+    if (!UID || !document.forms["memberInfo"].elements["memberName"].value)
+      return;
 
-    // Disable the validation and link buttons now that they have no working values.
-    ["validateButton", "openLinkButton"].forEach(function (id) {
-      document.getElementById(id).removeAttribute("disabled");
-    });
+    document.getElementById("snuid").value = UID;
+    writeLog("Extracted UID as '" + btn.form.snuid.value + "'. Opening link to verify...");
 
-    // Restore the disabled status and default text of the task button.
-    document.getElementById("taskButton").setAttribute("disabled", "");
+    // Allow submitting the member information after a short delay.
+    setTimeout(function () {
+      btn.form.action = "https://www.mousehuntgame.com/profile.php";
+      btn.form.submit();
+    }, 500);
+
+    // No need to reclick this button until it changes.
+    btn.setAttribute("disabled", "");
   }
-  
-  // Write any messages that were included.
-  handlerLogging(event);
-}
 
-// Failure Handler for generic failures. Only used if an exception was thrown and not handled.
-function failedOperation(err, btn) {
-  writeLog((STATUS.isAdd === true ? "Add" : (STATUS.isRemove === true ? "Delete" : "Unknown"))
-           + " operation failed with message:\n " + err.message);
-  console.log(err);
-  if (btn && btn.id === "taskButton") btn.setAttribute("disabled", "");
-  else console.log(btn);
-}
+  /**
+   * Configures the page for member removal.
+   */
+  function setupRemove() {
+    const TEXT_VALUES = {
+      "taskButton": "Delete Member",
+      "actionTitle": "Deleting Members",
+    };
+    hasTask(true, TEXT_VALUES);
+    STATUS.isRemove = true;
+    writeLog("Configuring for member deletion...");
+  }
 
-function handlerLogging(event) {
-  if(!event) return;
-  
-  // Log a log.
-  if(event.log && event.log.length) writeLog(event.log);
-  
-  // Log the task operation.
-  if(event.report && event.report.length) document.getElementById("report").textContent += "\n" + event.report;
-}
-function resetForms() {
-  Array.from(document.getElementsByTagName("form")).forEach(function (form) {form.reset();});
-  document.getElementById("memberName").focus();
-}
-// Logs are stored as an array, so they can be easily manipulated.
-// The most recent entry is shown with an extra separation from the older logs.
-function writeLog(text) {
-  // Splice out the element at index [1], which is filler text.
-  try { STATUS.logs.splice(1, 1); } catch(e) {};
-  STATUS.logs.unshift(text, "___________");
-  
-  if (STATUS.logs.length > 100) { STATUS.logs.pop(); }
-  document.getElementById("log").textContent = STATUS.logs.join("\n");
-}
-function getIdFromLink(link) {
-  const linkPattern = /(?:snuid=)(\d+)/;
-  const match = linkPattern.exec(link);
-  if(!match || match.length !== 2 || match[1].length < 5)
-    return null;
-    
-  return match[1];
-}
+  /**
+   * Configures the page for member addition / name change.
+   */
+  function setupAdd() {
+    const TEXT_VALUES = {
+      "taskButton": "Add Member",
+      "actionTitle": "Adding Members",
+    };
+    hasTask(true, TEXT_VALUES);
+    STATUS.isAdd = true;
+    writeLog("Configuring for member addition...");
+  }
+
+  /**
+   * Configure common DOM elements, defaulting to reset the page.
+   * 
+   * @param {boolean} [onTask] Control switch that indicates how the page should behave (e.g. load a particular menu based on STATUS).
+   * @param {Object <string, string>} [strings] An object mapping between an element and the text it should display.
+   */
+  function hasTask(onTask, strings) {
+    onTask = !(!onTask); // force a boolean value.
+
+    // Clear any previously-set tasks.
+    if (!onTask) {
+      STATUS.isAdd = false;
+      STATUS.isRemove = false;
+      document.getElementById("taskPicker").classList.remove("hidden");
+      document.getElementById("taskEntry").classList.add("hidden");
+    }
+    else {
+      // Show task-based UI elements.
+      document.getElementById("taskPicker").classList.add("hidden");
+      document.getElementById("taskEntry").classList.remove("hidden");
+      // Set the cursor focus to the name entry.
+      document.getElementById("memberName").focus();
+    }
+
+    // Set element text values.
+    if (strings) for (var elem in strings) {
+      document.getElementById(elem).textContent = strings[elem];
+    }
+    else { /* Returning to "main menu" */
+      document.getElementById("actionTitle").textContent = "Pick an Action";
+      Array.from(document.getElementsByTagName("form")).forEach(function (form) { form.reset() });
+    }
+  }
+  /**
+   * @typedef {Object} OperationFeasibility
+   * @property {boolean} canDo Whether or not this operation is possible.
+   * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
+   * @property {ValidatedInput} request The validated form input sent to the operation checker.
+   * @property {string} log The log text to be displayed to the administrator (feedback).
+   * @property {string} report The report text to be displayed to the administrator (feedback).
+   * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
+   * @property {string} [uid] The validated MHCC identifier for the individual.
+   * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
+   * @property {string} [rowid] The table rowid for the MHCC member with the given MHCC identifier.
+   * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB FusionTables.
+   */
+
+  /**
+   * @typedef {Object} OperationReport
+   * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
+   * @property {OperationFeasibility} request Analysis of whether the requested operation is possible.
+   * @property {string} log The log text to be displayed to the administrator (feedback).
+   * @property {string} report The report text to be displayed to the administrator (feedback).
+   */
+
+  /**
+   * Success Handler for the validation queries.
+   * 
+   * @param {OperationFeasibility} event The server's ruling on the request regarding a possible operation.
+   * @param {HTMLButtonElement} btn The button or div that should be altered based on the operation feasibility.
+   */
+  function verifyOperation(event, btn) {
+    if (!event || !btn) return;
+
+    // If a member was found and this is an addition query, `isNameChange` will be set.
+    // Otherwise, if the operation can be done, enable the task button (which is the user object).
+    if (event.isNameChange === true) {
+      btn.textContent = "Update Member's Name";
+    }
+
+    if (event.canDo === true) {
+      btn.removeAttribute("disabled");
+      btn.onclick = function () {
+        const OP = google.script.run
+          .withSuccessHandler(completedOperation)
+          .withFailureHandler(failedOperation)
+          .withUserObject(btn);
+        if (STATUS.isAdd === true && event.isNameChange === true)
+          OP.changeMemberName(document.forms["memberInfo"]);
+        else if (STATUS.isAdd === true)
+          OP.addMemberToFusion(document.forms["memberInfo"]);
+        else if (STATUS.isRemove === true)
+          OP.delMemberFromFusion(document.forms["memberInfo"]);
+        else
+          console.log("Unknown status");
+      }
+    }
+    else {
+      btn.setAttribute("disabled", "");
+      btn.onclick = function () { };
+    }
+
+    // Write any messages that were included.
+    handlerLogging(event);
+  }
+
+  /**
+   * Success Handler for the task queries. If the FusionTable request went well, then there is typically
+   * no expected actions other than logging the output and clearing the form inputs.
+   * 
+   * @param {OperationReport} event The server's feedback about the request to perform an operation.
+   */
+  function completedOperation(event) {
+    if (!event) return;
+
+    // Reset the submission form, if desired (i.e. the operation succeeded).
+    if (event.reset === true) {
+      // Restore placeholder values.
+      resetForms();
+
+      // Disable the validation and link buttons now that they have no working values.
+      ["validateButton", "openLinkButton"].forEach(function (id) {
+        document.getElementById(id).removeAttribute("disabled");
+      });
+
+      // Restore the disabled status and default text of the task button.
+      document.getElementById("taskButton").setAttribute("disabled", "");
+    }
+
+    // Write any messages that were included.
+    handlerLogging(event);
+  }
+
+  /**
+   * Failure Handler for generic failures. Only used if an exception was thrown and not handled.
+   * 
+   * @param {Error} err An unhandled exception thrown by the Apps Script server code.
+   * @param {HTMLButtonElement} btn The user object associated with the requested operation.
+   */
+  function failedOperation(err, btn) {
+    writeLog((STATUS.isAdd === true ? "Add" : (STATUS.isRemove === true ? "Delete" : "Unknown"))
+      + " operation failed with message:\n " + err.message);
+    console.log(err);
+    if (btn && btn.id === "taskButton") btn.setAttribute("disabled", "");
+    else console.log(btn);
+  }
+
+  /**
+   * Write the given object's log and/or report strings to the respective page elements.
+   * 
+   * @param {{log?: string, report?: string}} event An object that has a "log" key or a "report" key, with an associated string to write.
+   */
+  function handlerLogging(event) {
+    if (!event) return;
+
+    // Log a log.
+    if (event.log && event.log.length) writeLog(event.log);
+
+    // Log the task operation.
+    if (event.report && event.report.length) document.getElementById("report").textContent += "\n" + event.report;
+  }
+  /** Call reset on all form elements, and switch focus to the "memberName" element. */
+  function resetForms() {
+    Array.from(document.getElementsByTagName("form")).forEach(function (form) { form.reset(); });
+    document.getElementById("memberName").focus();
+  }
+  /**
+   * Logs are stored as an array, so they can be easily manipulated.
+   * The most recent entry is shown with an extra separation from the older logs.
+   * @param {string} text The text to write to the "log" textarea.
+   */
+  function writeLog(text) {
+    // Splice out the element at index [1], which is filler text.
+    try { STATUS.logs.splice(1, 1); } catch (e) { };
+    STATUS.logs.unshift(text, "___________");
+
+    if (STATUS.logs.length > 100) { STATUS.logs.pop(); }
+    document.getElementById("log").textContent = STATUS.logs.join("\n");
+  }
+  /**
+   * Attempt to extract the MHCC identifier from the given link.
+   * @param {string} link A profile link to be parsed for a member identifier.
+   * @returns {string} The parsed identifier from the link (or null if no valid identifier).
+   */
+  function getIdFromLink(link) {
+    const linkPattern = /(?:snuid=)(\d+)/;
+    const match = linkPattern.exec(link);
+    if (!match || match.length !== 2 || match[1].length < 5)
+      return null;
+
+    return match[1];
+  }
 </script>

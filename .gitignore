@@ -1,10 +1,9 @@
 # MHCC specific ignores
-fusion.txt
 credentials.dat
-backupTable.txt
 staging.csv
 auth.txt
 tables.txt
+mhcc/.vs*
 
 # Python ignores
 __pycache__/*

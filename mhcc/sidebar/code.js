@@ -9,7 +9,56 @@ function doSideBar_() {
   return sb;
 }
 
-// Repeat the data validation performed on the sidebar.
+/**
+ * @typedef {Object} SidebarForm
+ * @property {string} memberName The string entered in the "memberName" input div.
+ * @property {string} memberLink The string entered in the "memberLink" input div.
+ */
+
+/**
+ * @typedef {Object} ValidatedInput
+ * @property {SidebarForm} form The form input that generated this object.
+ * @property {boolean} isValid Whether or not the particular input was valid.
+ * @property {string} name The validated name of the individual (whom may or may not be in MHCC).
+ * @property {string} uid An identifier appropriate for use in the MHCC Members table to refer to this individual.
+ * @property {Error} [error] Any error which occurred during the validation process.
+ */
+
+/**
+ * @typedef {Object} MemberQueryResult
+ * @property {string} name The member's name, as found in the MHCC Members FusionTable.
+ * @property {string} rowid The rowid in the MHCC Member's FusionTable that holds this member's record.
+ * @property {string} uid The member's MHCC identifier.
+ * @property {Error} [error] Any error that occurred during a search of the Members table for this member.
+ */
+
+/**
+ * @typedef {Object} OperationFeasibility
+ * @property {boolean} canDo Whether or not this operation is possible.
+ * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
+ * @property {ValidatedInput} request The validated form input sent to the operation checker.
+ * @property {string} log The log text to be displayed to the administrator (feedback).
+ * @property {string} report The report text to be displayed to the administrator (feedback).
+ * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
+ * @property {string} [uid] The validated MHCC identifier for the individual.
+ * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
+ * @property {string} [rowid] The table rowid for the MHCC member with the given MHCC identifier.
+ * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB FusionTables.
+ */
+
+/**
+ * @typedef {Object} OperationReport
+ * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
+ * @property {OperationFeasibility} request Analysis of whether the requested operation is possible.
+ * @property {string} log The log text to be displayed to the administrator (feedback).
+ * @property {string} report The report text to be displayed to the administrator (feedback).
+ */
+
+/**
+ * Repeat the data validation performed on the sidebar.
+ * @param {SidebarForm} form The sidebar form data.
+ * @returns {ValidatedInput} Validated form input, or an error.
+ */
 function validateSidebarInput_(form)
 {
   var validity = false, name = "", uid = "", error;
@@ -17,54 +66,68 @@ function validateSidebarInput_(form)
   {
     name = form.memberName.trim();
     uid = form.memberLink.slice(form.memberLink.search("=") + 1).toString();
-    validity = (name.length > 0 && uid.length > 0);
+    validity = name.length > 0 && uid.length > 0;
   }
   catch (e) { error = e;}
-  return {form:form, isValid: validity, name: name, uid: uid, error: error};
+  return { "form": form, "isValid": validity, "name": name, "uid": uid, "error": error};
 }
 
+/**
+ * Query the MHCC Members FusionTable to acquire this member's information.
+ * 
+ * @param {string} uid The MHCC identifier for this particular individual.
+ * @returns {MemberQueryResult} If found, the individual's known name and table row. Otherwise, an error.
+ */
 function getMemberInfo(uid)
 {
-  var q = "SELECT Member, UID, ROWID FROM " + utbl + " WHERE UID = '" + uid + "'";
+  const query = "SELECT Member, UID, ROWID FROM " + utbl + " WHERE UID = '" + uid + "'";
   // Get the member information from the user table.
-  var resp = FusionTables.Query.sqlGet(q);
-  if (resp.kind !== "fusiontables#sqlresponse" || !resp.columns.length)
+  /** @type {{kind: string, rows: [string, string, string][], columns: string[]}} */
+  const resp = FusionTables.Query.sqlGet(query);
+  if (resp.kind !== "fusiontables#sqlresponse" || !resp.columns || !resp.columns.length)
   {
-    var e = TypeError("Invalid response received");
-    e.inputData = {sql: q, response: resp};
+    const e = TypeError("Invalid response received");
+    e.inputData = { "sql": query, "response": resp };
     throw e;
   }
-  console.log({message: "GetMemberInfo", ftResponse: resp, ftQuery: q});
+  console.log({ "message": "GetMemberInfo(" + uid + ")", "ftResponse": resp, "ftQuery": query });
   // Received a well-formed response.
   if (resp.rows && resp.rows.length > 0)
   {
-    var member = resp.rows;
-    var index = member.map(function (v) { return v[1]; }).indexOf(uid);
+    const member = resp.rows;
+    // Find this specific member's row within all the rows that were returned.
+    const index = member.map(function (v) { return v[1]; }).indexOf(uid);
     if (index > -1)
-      return {name: member[index][0], uid: uid, rowid: member[index][2]};
+      return { "name": member[index][0], "uid": uid, "rowid": member[index][2] };
   }
   // No members found in the response.
   else
     return {
-      name: "", uid: uid, rowid: "",
-      error: Error("No member found with uid='" + uid + "'")
+      "name": "", "uid": uid, "rowid": "",
+      "error": Error("No member found with uid='" + uid + "'")
     };
 }
 
-// Query FT to determine if this member can be added.
+/**
+ * Query the MHCC Members table to determine if this member can be added.
+ * 
+ * @param {SidebarForm} form The current sidebar form data.
+ * @returns {OperationFeasibility} An object instructing the sidebar how to react.
+ */
 function canAdd(form)
 {
-  var input = validateSidebarInput_(form);
-  var output = {
-    reset: false,
-    request: input,
-    canDo: false,
-    log: "",
-    report: "",
+  const input = validateSidebarInput_(form);
+  /** @type {OperationFeasibility} */
+  const output = {
+    "reset": false,
+    "request": input,
+    "canDo": false,
+    "log": "",
+    "report": ""
   };
   if(input.isValid)
   {
-    var member = getMemberInfo(input.uid);
+    const member = getMemberInfo(input.uid);
     // If an error occurred (i.e. there is no member info), we can add this member.
     if (member.error)
     {
@@ -75,7 +138,7 @@ function canAdd(form)
     {
       // We found a member with this uid. If the name is different,
       // we can perform a name change operation. Otherwise, no operation is possible.
-      output.isNameChange = (input.name !== member.name);
+      output.isNameChange = input.name !== member.name;
       output.rowid = member.rowid;
       output.currentName = member.name;
       output.uid = member.uid;
@@ -94,20 +157,25 @@ function canAdd(form)
   return output;
 }
 
-// Query FT to determine if this member can be deleted.
+/**
+ * Query FT to determine if this member can be deleted.
+ * @param {SidebarForm} form The current sidebar form data.
+ * @returns {OperationFeasibility} An object instructing the sidebar how to react.
+ */
 function canDelete(form)
 {
-  var input = validateSidebarInput_(form);
-  var output = {
-    reset: false,
-    request: input,
-    canDo: false,
-    log: "",
-    report: "",
+  const input = validateSidebarInput_(form);
+  /** @type {OperationFeasibility} */
+  const output = {
+    "reset": false,
+    "request": input,
+    "canDo": false,
+    "log": "",
+    "report": ""
   };
   if(input.isValid)
   {
-    var member = getMemberInfo(input.uid);
+    const member = getMemberInfo(input.uid);
     if (member.error)
     {
       // No member was found with this uid.
@@ -117,44 +185,54 @@ function canDelete(form)
     else
     {
       // Deletes require that the name is matched exactly.
-      output.canDo = (input.name === member.name);
+      output.canDo = input.name === member.name;
       if (!output.canDo)
         output.log = "Member exists with name '" + member.name + "'. Names must match.";
       else
       {
         output.rowid = member.rowid;
-        // Get the count of rows in the crowns table.
-        var q = "SELECT COUNT(UID) FROM " + ftid + " WHERE UID = '" + input.uid + "'";
-        var resp = FusionTables.Query.sqlGet(q);
-        if (resp.rows && resp.rows.length)
-        {
-          output.dataRows = resp.rows[0][0] + " ";
-        }
-        output.log = "Deleting '" + member.name + "' will also delete their " + output.dataRows + "crown records.";
+        // Get the count of rows in the Crown and Rank tables.
+        /** @type {{kind: string, rows: string[][]}[]} */
+        const resp = [];
+        [
+          "SELECT COUNT(UID) FROM " + ftid + " WHERE UID = '" + input.uid + "'",
+          "SELECT COUNT(UID) FROM " + rankTableId + " WHERE UID = '" + input.uid + "'"
+        ].forEach(function (query) { resp.push(FusionTables.Query.sqlGet(query)); });
+        try { output.dataRows = resp.reduce(function (acc, val) { return acc + (val.rows && val.rows.length) ? val.rows[0][0] * 1 : 0; }, 0); }
+        catch (e) { console.warn(e); output.dataRows = ""; }
+        
+        output.log = "Deleting '" + member.name + "' will also delete their " + (output.dataRows ? output.dataRows + " " : "") + "crown records.";
       }
     }
   }
-  else if(input.error)
+  else if (input.error)
     output.log = input.error.message;
   
   return output;
 }
 
+/**
+ * Method called by the sidebar after an "Add Member" operation validates as a name change, and the administrator OKs it.
+ * 
+ * @param {SidebarForm} form The sidebar form data.
+ * @returns {OperationReport} An object instructing the sidebar how to react.
+ */
 function changeMemberName(form)
 {
   // Revalidate input, in case of trickery.
-  var input = canAdd(form);
-  var output = {
-    reset: input.reset,
-    request: input,
-    log: "",
-    report: ""
+  const input = canAdd(form);
+  /** @type {OperationReport} */
+  const output = {
+    "reset": input.reset,
+    "request": input,
+    "log": "",
+    "report": ""
   };
-  console.log({message: "Name Change", isNameChange: input.isNameChange, can_do: input.canDo, row: input.rowid, misc: input});
-  if(input.canDo === true && input.isNameChange === true && input.rowid !== undefined && input.rowid !== null)
+  console.log({ "message": "Name Change", "isNameChange": input.isNameChange, "can_do": input.canDo, "row": input.rowid, "misc": input });
+  if (input.canDo === true && input.isNameChange === true && input.rowid)
   {
-    var sql = "UPDATE " + utbl + " SET Member = '" + input.request.name + "' WHERE ROWID = '" + input.rowid + "'";
-    try {FusionTables.Query.sql(sql);}
+    const sql = "UPDATE " + utbl + " SET Member = '" + input.request.name + "' WHERE ROWID = '" + input.rowid + "'";
+    try { FusionTables.Query.sql(sql); }
     catch (e) {throw e;}
     output.report = "Name for uid='" + input.request.uid + "' is now '" + input.request.name + "'";
     output.reset = true;
@@ -164,31 +242,29 @@ function changeMemberName(form)
   
   return output;
 }
-  
+
+/**
+ * Add the given individual to the MHCC Members FusionTable.
+ * 
+ * @param {SidebarForm} form The current sidebar form data.
+ * @returns {OperationReport} An object instructing the sidebar how to react.
+ */
 function addMemberToFusion(form)
 {
   // Revalidate input, in case of trickery.
-  var input = canAdd(form);
-  var output = {
-    reset: input.reset,
-    request: input,
-    log: "",
-    report: ""
+  const input = canAdd(form);
+  /** @type {OperationReport} */
+  const output = {
+    "reset": input.reset,
+    "request": input,
+    "log": "",
+    "report": ""
   };
-  if(input.canDo === true && !input.isNameChange)
+  if (input.canDo === true && !input.isNameChange)
   {
-    var now = new Date().getTime(), resp = [], dbSheet = SpreadsheetApp.getActive().getSheetByName("SheetDb");
-    var newRank = dbSheet.getLastRow();
-    
-    var memCsv = [[input.request.name, input.request.uid]];
-    var uUpload = Utilities.newBlob(array2CSV_(memCsv), "application/octet-stream");
-    
-    var crownCsv = [[input.request.name, input.request.uid, now - 5000000000, now, new Date().getTime(), 0, 0, 0, 0, newRank, "Weasel", now]];
-    var cUpload = Utilities.newBlob(array2CSV_(crownCsv), "application/octet-stream");
-    while (crownCsv.length) { dbSheet.appendRow(crownCsv.pop()); }
-    
-    resp[0] = FusionTables.Table.importRows(utbl, uUpload).numRowsReceived;
-    resp[1] = FusionTables.Table.importRows(ftid, cUpload).numRowsReceived;
+    const memCsv = [[input.request.name, input.request.uid]];
+    const uUpload = Utilities.newBlob(array2CSV_(memCsv), "application/octet-stream");
+    const resp = FusionTables.Table.importRows(utbl, uUpload).numRowsReceived;
     
     output.report = "Added '" + input.request.name + "' to the database.";
     output.reset = true;
@@ -196,34 +272,42 @@ function addMemberToFusion(form)
   else
     output.log = (input.canDo === false) ? "Cannot perform request." : "Invalid request. Revalidation is required.";
   
-  console.log({message: "Adding member", output: output, can_Add: input, fn_Arg: form});
+  console.log({ "message": "Adding member", "output": output, "can_Add": input, "fn_Arg": form });
   return output;
 }
 
-
+/**
+ * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB FusionTables.
+ * 
+ * @param {SidebarForm} form The current sidebar form data.
+ * @returns {OperationReport} An object instructing the sidebar how to react.
+ */
 function delMemberFromFusion(form)
 {
   // Revalidate input, in case of trickery.
-  var input = canDelete(form);
-  var output = {
-    reset: input.reset,
-    request: input,
-    log: "",
-    report: ""
+  const input = canDelete(form);
+  /** @type {OperationReport} */
+  const output = {
+    "reset": input.reset,
+    "request": input,
+    "log": "",
+    "report": ""
   };
-  if (input.canDo === true && input.rowid !== undefined && input.rowid !== null)
+  if (input.canDo === true && input.rowid)
   {
-    var resp = [];
-    try{
-      ["DELETE FROM " + utbl + " WHERE ROWID = '" + input.rowid + "'",
-       "DELETE FROM " + ftid + " WHERE UID = '" + input.request.uid + "'"].forEach(function (query, i) {
-         resp[i] = FusionTables.Query.sql(query);
-       });
+    const resp = [];
+    try
+    {
+      [
+        "DELETE FROM " + utbl + " WHERE ROWID = '" + input.rowid + "'",
+        "DELETE FROM " + ftid + " WHERE UID = '" + input.request.uid + "'",
+        "DELETE FROM " + rankTableId + " WHERE UID = '" + input.request.uid + "'"
+      ].forEach(function (query) { resp.push(FusionTables.Query.sql(query)); });
       output.reset = true;
     }
-    catch (e) {console.log({message: "Error while deleting member.", error: e, input: input}); throw e;};
+    catch (e) { console.warn({ "message": "Error while deleting member.", "error": e, "input": input }); throw e; }
     
-    var r = {message:"Deleted user '" + input.request.name + "' from Member and Crown tables.", input: input, responses: resp};
+    const r = { "message": "Deleted user '" + input.request.name + "' from the Member, Rank DB, and Crown DB FusionTables.", "input": input, "responses": resp };
     console.log(r);
     output.report = r.message;
   }
