@@ -2,11 +2,23 @@ var ftid = "";
 var rankTableId = "";
 
 /**
- * Query the crown data snapshots for the given users to return crown counts and rank data.
+ * @typedef {Object} PlotData
+ * @property {string[]} headers Headers for the column data.
+ * @property {(string|number)[][]} dataset Column data to plot.
+ */
+/**
+ * @typedef {Object} UserData
+ * @property {string} uid MHCC identifier that refers to this user.
+ * @property {string} user Display name used for this user.
+ * @property {PlotData} crown History of the user's crown counts.
+ * @property {PlotData} rank History of the user's rank within MHCC.
+ */
+/**
+ * Server-side function which queries the various FusionTables to acquire the input users' crown and rank history.
  * 
- * @param  {String} uids                         The (comma-separated) UID string with specific members for whom the data snapshots are returned.
- * @param  {Boolean} blGroup                     Optional parameter controlling GROUP BY or "return all" behavior. Generally true.
- * @return {[{user:String, crown:{}, rank:{}}]}  An array of user data objects, each containing at minimum "user", "crown", and "rank".
+ * @param  {string} uids The (comma-separated) UID string with specific members for whom the data snapshots are returned.
+ * @param  {boolean} [blGroup] Optional parameter controlling GROUP BY or "return all" behavior. Generally true.
+ * @return {UserData[]}  An array of user data objects, each containing at minimum "user", "crown", and "rank".
  */
 function getUserHistory_(uids, blGroup)
 {
@@ -14,19 +26,22 @@ function getUserHistory_(uids, blGroup)
     throw new Error('No UID provided');
   uids = String(uids);
 
-  var labels = ["crown", "rank"];
-  var selects = [
+  const labels = ["crown", "rank"];
+  const selects = [
     "SELECT UID, Member, LastSeen, Bronze, Silver, Gold, MHCC FROM " + ftid,
     "SELECT UID, Member, LastSeen, 'MHCC Crowns', Rank, RankTime FROM " + rankTableId
   ];
-  var where = "WHERE UID IN (" + uids + ")";
-  var groups = [
+  const where = "WHERE UID IN (" + uids + ")";
+  const groups = [
     "GROUP BY UID, Member, LastSeen, Bronze, Silver, Gold, MHCC",
     "GROUP BY UID, Member, LastSeen, 'MHCC Crowns', Rank, RankTime"
   ];
-  var orders = ["ORDER BY UID ASC, LastSeen ASC", "ORDER BY UID ASC, RankTime ASC"];
+  const orders = [
+    "ORDER BY UID ASC, LastSeen ASC",
+    "ORDER BY UID ASC, RankTime ASC"
+  ];
   
-  var sqls = [];
+  const sqls = [];
   if (blGroup && selects.length === groups.length && groups.length === orders.length)
   {
     for (var i = 0, numClauses = selects.length; i < numClauses; ++i)
@@ -35,7 +50,8 @@ function getUserHistory_(uids, blGroup)
   else
     selects.forEach(function (selectClause, i) { sqls.push([selectClause, where, orders[i]].join(" ")); });
 
-  var queryData = {};
+  /** @type {Object <string, PlotData>} */
+  const queryData = {};
   sqls.forEach(function (sql, index) {
     var resp = FusionTables.Query.sqlGet(sql, { quotaUser: uids });
     if (!resp || !resp.rows || !resp.rows.length || !resp.columns)
@@ -43,9 +59,11 @@ function getUserHistory_(uids, blGroup)
 
     queryData[labels[index]] = { "headers": resp.columns, "dataset": resp.rows };
   });
+
   // Organize the query data by its associated member.
   var members = uids.split(","), output = [];
   members.forEach(function (id) {
+    /** @type {UserData} */
     var memberOutput = { "uid": id };
     labels.forEach(function (l) {
       var memberData = queryData[l].dataset.filter(function (row) { return String(row[0]) === id; });

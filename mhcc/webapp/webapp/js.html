@@ -7,6 +7,21 @@
    *   If the data loaded successfully, we run the client function "dataLoadedOK"
    *   If Apps Script throws an error (i.e. no UID given), run the client function "dataNotLoadedOK"
    */
+
+  /**
+   * @typedef {Object} UserHistory
+   * @property {string} memberName The display name associated with this history data.
+   * @property {string[][]} crownHeader Array of column titles for the crown history data.
+   * @property {number[][]} crownData The crown history data to be plotted.
+   * @property {string[][]} rankHeader Array of column titles for the rank history data.
+   * @property {number[][]} rankData The rank history data to be plotted.
+   */
+
+  /**
+   * Async loading function called after all libraries load.
+   * @callback
+   * @param {string} uid The user id(s) with MHCC Crown/Rank histories to query for and plot.
+   */
   function loadData(uid)
   {
     google.script.run
@@ -15,18 +30,27 @@
       .loadUserData(uid);
   };
   /**
-   * Some error occurred while loading the user's crown and rank data. Based on the passed parameter
-   * 'e', we could determine which had the error and attempt to reload it
+   * Called by {@link loadData} with an unhandled exception thrown by the Apps Script server function.
+   * TODO: Actually be useful when the server throws an error.
+   * @callback
+   * @param {Error} e The error thrown by the Apps Script server function.
    */
   function dataNotLoadedOK(e)
   {
     document.getElementById('crownHistory').innerHTML = e.message;
     document.getElementById('rankHistory').innerHTML = "";
   }
-  var rhWrapper, chWrapper, chartData = {};
+  /** ChartWrapper classes that are bound to the Google Charts if loading is successful. */
+  var rhWrapper, chWrapper;
+  /** Data queried from the Apps Script server.
+   * TODO: Use this with other page controls to allow switching between compare and single-user viewing modes
+   * @type {Object <string, {crownHistory: any[][], rankHistory: any[][], crownCompare: any[][]}>}
+   */
+  const chartData = {};
   /**
-   * No error occurred while loading the crown and rank data. Use the passed data to plot
-   * @param {{uid:{memberName: String, crownHeader:String[][], crownData: any[][], rankHeader:String[][], rankData: any[][]}}} input  a uid-indexed object
+   * Called by {@link loadData} with the return value of the Apps Script server function.
+   * @callback
+   * @param {string} input Stringified UserHistory object, indexed by member identifier.
    */
   function dataLoadedOK(input)
   {
@@ -34,10 +58,10 @@
      * Function which condenses the given 2D arrays into a single 2D array that can be plotted with Google Charts.
      * I.e., any 2D array without an X value found in any of the other 2D arrays gets values of null in its y-data
      * columns for those X-values, and common X-values have values from all 2D arrays.
-     * Returns an Mx(N-1)*K array for K input MxN arrays: [ X | 1.2 | ... | 1.N | 2.2 | ... | 2.N ... ] 
-     * 
+     * Returns an Mx(N-1)*K array for K input MxN arrays: [ X | 1.2 | ... | 1.N | 2.2 | ... | 2.N ... ]
+     *
      * @param {any[][][]} dataTables  An array containing several 2D arrays with the same number of columns and headers.
-     * @param {Number} numHeaders     The number of header rows in each of the given dataTables.
+     * @param {number} numHeaders     The number of header rows in each of the given dataTables.
      */
     function _collateX_(dataTables, numHeaders)
     {
@@ -148,6 +172,7 @@
       return newTable;
     }
     /** All rank dataseries can be extracted to the same format, even if to be used for multi-member comparison.
+     * @param {UserHistory} userData A single member's user history.
      * @return {any[][]}
      */
     function _getRankDataSeries(userData)
@@ -164,8 +189,8 @@
     /**
      * Function which parses and displays the received user data for detailed inspection. Crown
      * history will be plotted as several series.
-     * 
-     * @param {{uid:{memberName: String, crownHeader: String[][], crownData: any[][], rankHeader: String[][], rankData: any[][]}}} dataInput
+     *
+     * @param {Object <string, UserHistory>} dataInput
      *        Received data from the Apps Script server, containing plottable data for each given user id.
      *        CrownHeader: [ LastSeen | Bronze | Silver | Gold | Total ]
      *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
@@ -209,11 +234,6 @@
       const rankDataTable = google.visualization.arrayToDataTable(chartData[uid].rankHistory, false);
       rankDataTable.setColumnProperty(2, 'role', 'tooltip');
       const rankDelta = Math.abs(chartData[uid].rankHistory.slice(-1)[0][1] - chartData[uid].rankHistory[1][1]);
-      if (rankDelta >= 1000)
-      {
-        rhOptions.vAxis.logScale = true;
-        rhOptions.vAxis.minValue = Math.round(chartData[uid].rankHistory.slice(-1)[0][1] / 10);
-      }
       rhWrapper = new google.visualization.ChartWrapper({
         "containerId": "rankHistory",
         "chartType": "LineChart",
@@ -226,13 +246,18 @@
           "explorer": { axis: 'horizontal' }
         }
       });
+      if (rankDelta >= 1000)
+      {
+        rhWrapper.setOption("vAxis.logScale", true);
+        rhWrapper.setOption("vAxis.minValue", Math.round(chartData[uid].rankHistory.slice(-1)[0][1] / 10));
+      }
     }
 
     /**
      * Function which parses and displays the received users' data for comparison. Crown
      * history will be plotted as a comparison of users' MHCC Crowns.
-     * 
-     * @param {{uid:{memberName: String, crownHeader: String[][], crownData: any[][], rankHeader: String[][], rankData: any[][]}}} dataInput
+     *
+     * @param {Object <string, UserHistory>} dataInput
      *        Received data from the Apps Script server, containing plottable data for each given user id.
      *        CrownHeader: [ LastSeen | Bronze | Silver | Gold | Total ]
      *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
@@ -253,23 +278,23 @@
             })
         );
         let userRanks = _getRankDataSeries(userData);
-        // Overwrite the default series title ("Rank") with the member's name.
+        // Override the default series title of "Rank" with the member name.
         userRanks[0][1] = userData.memberName;
         // Store this detailed data for use in alternate plotting schema
         chartData[uid] = { crownHistory: userCrowns, rankHistory: userRanks };
         // Rank data keeps the same detail in both compare and normal plot modes.
         rankDataSets.push(userRanks);
-        // Create a stripped detail version of the crown data for compare plot mode.
+        // Create a stripped-detail version of the crown data for compare plot mode.
         let userCrownCompare = userCrowns.map(function (row, index) {
           return (index === 0 ? ["Last Seen", userData.memberName, "Tooltip"] :
-            [row[0], row[2] + row[3], "# Silver: " + row[2] + "\n# Gold: " + row[3]]);
+            [row[0], row[2] + row[3], "#S: " + row[2] + ", #G: " + row[3]]);
         });
         chartData[uid].crownCompare = userCrownCompare;
         crownDataSets.push(userCrownCompare);
       }
       // Union the input datasets
-      crownData = _collateX_(crownDataSets, 1);
-      rankData = _collateX_(rankDataSets, 1);
+      const crownData = _collateX_(crownDataSets, 1);
+      const rankData = _collateX_(rankDataSets, 1);
       let titleStub = names.join(" vs. ") + ": ";
 
       // Plot crown comparison.
@@ -289,7 +314,7 @@
           "focusTarget": "category",
           "interpolateNulls": true,
           "hAxis": { title: "Snapshot Date" },
-          "vAxis": { title: "MHCC Crowns", minValue: 0 },
+          "vAxis": { title: "MHCC Crowns"},
           "seriesType": "line",
           "explorer": { axis: "horizontal" }
         }
@@ -327,6 +352,7 @@
       return;
     }
     // Data was sent as a JSONified string.
+    /** @type {Object <string, UserHistory>} */
     const data = JSON.parse(input);
 
     if (Object.keys(data).length === 1)
@@ -339,7 +365,7 @@
     drawAll();
   }
 
-  
+
   google.charts.load('current', {packages: ['corechart']});
   google.charts.setOnLoadCallback(loadData(document.getElementById('member').innerHTML));
   // Redraw the charts a half-second after the page stops resizing.
