@@ -247,6 +247,109 @@ function identifyDiffSeenAndRankRecords_(memUIDs)
     return [];
 }
 /**
+ * function doReplace_      Replaces the contents of the specified FusionTable with the input array
+ *                          after sorting on its first element (i.e. alphabetical by Member name).
+ *                          If the new records are too large (~10 MB), this call will fail.
+ * @param {string} tblID    The table whose contents will be replaced.
+ * @param {Array[]} records The new contents of the specified table.
+ */
+function doReplace_(tblID, records)
+{
+  if (typeof tblID !== 'string')
+    throw new TypeError('Argument tblID was not type String');
+  else if (tblID.length !== 41)
+    throw new Error('Argument tbldID not a FusionTables id');
+  if (records.constructor !== Array)
+    throw new TypeError('Argument records was not type Array');
+  else if (!records.length)
+    throw new Error('Argument records must not be length 0');
+
+  records.sort();
+  // Sample a few rows to estimate the size of the upload.
+  var uploadSize = getDbSizeData_(records.length, records).totalSize;
+  console.info("New data is " + uploadSize + " MB (rounded up)");
+  if (uploadSize >= 250)
+    throw new Error("Upload size (" + uploadSize + " MB) is too large");
+
+  var cUpload = Utilities.newBlob(array2CSV_(records), 'application/octet-stream');
+  try { FusionTables.Table.replaceRows(tblID, cUpload); }
+  // Try again if FusionTables didn't respond to the request.
+  catch (e)
+  {
+    if (e.message.toLowerCase() === "empty response")
+      FusionTables.Table.replaceRows(tblID, cUpload);
+    else
+      throw e;
+  }
+}
+/**
+ * function retrieveWholeRecords_    Queries for the specified ROWIDs, at most once per 0.5 sec.
+ * @param {string[]} rowidArray      A 1D array of string rowids to retrieve (can be very large).
+ * @param {string} tblID             The FusionTable which holds the desired records.
+ * @returns {Array[]}                A 2D array of the specified records, or [].
+ */
+function retrieveWholeRecords_(rowidArray, tblID)
+{
+  if (!rowidArray.length)
+    return [];
+  else if (typeof rowidArray[0] !== 'string')
+    throw new TypeError('Expected ROWIDs of type String but received type ' + typeof rowidArray[0]);
+
+  if (typeof tblID !== 'string')
+    throw new TypeError('Expected table id of type String but received type ' + typeof tblID);
+
+  var nReturned = 0, nRowIds = rowidArray.length, records = [];
+  do
+  {
+    var sql = '';
+    var sqlRowIDs = [], batchStartTime = new Date();
+    // Construct ROWID query sql from the list of unique ROWIDs.
+    do
+    {
+      sqlRowIDs.push(rowidArray.pop());
+      sql = "SELECT * FROM " + tblID + " WHERE ROWID IN (" + sqlRowIDs.join(",") + ")";
+    } while (sql.length <= 8000 && rowidArray.length > 0);
+
+    try
+    {
+      var batchResult = FusionTables.Query.sqlGet(sql);
+      nReturned += batchResult.rows.length * 1;
+      Array.prototype.push.apply(records, batchResult.rows);
+    }
+    catch (e)
+    {
+      e.message = "Error while retrieving records by ROWID: " + e.message;
+      console.error({ "message": e.message, "response": batchResult, "numGathered": records.length });
+      throw e;
+    }
+    var elapsedMillis = new Date() - batchStartTime;
+    if (elapsedMillis < 500)
+      Utilities.sleep(502 - elapsedMillis);
+  } while (rowidArray.length > 0);
+
+  if (nReturned !== nRowIds)
+    throw new Error("Got different number of rows (" + nReturned + ") than desired (" + nRowIds + ")");
+  return records;
+}
+/**
+ * Called if UpdateDatabase has no stored information about a member, to obtain their most recent record.
+ * The record is used for crown change calculation.
+ * @param {string} memUID         The UID of the member who needs a record.
+ * @returns {Array[]}             The most recent update for the specified member, or [].
+ */
+function getMostRecentCrownRecord_(memUID)
+{
+  if (!memUID.length || memUID.split(",").length > 1)
+    throw new Error("Invalid UID input '" + memUID + "'.");
+
+  const recentSql = "SELECT * FROM " + ftid + " WHERE UID = " + memUID + " ORDER BY LastTouched DESC LIMIT 1";
+  const resp = FusionTables.Query.sqlGet(recentSql);
+  if (!resp || !resp.rows || !resp.rows.length)
+    return [];
+  else
+    return resp.rows[0];
+}
+/**
  * function doBookending    This maintenance method will drastically reduce the database size if a
  *                          significant portion of the members are infrequently seen, while a much
  *                          smaller group is considerably more active (as is expected). Only records
