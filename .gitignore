@@ -47,3 +47,4 @@ _ReSharper*/
 .svn
 ~$*
 /.vs
+/mhcc/maintenance/mhcc_maintainer/.mypy_cache/3.6
