@@ -14,9 +14,7 @@ from googleapiclient.http import HttpRequest
 from googleapiclient.http import HttpError
 from googleapiclient.http import MediaFileUpload
 from httplib2 import HttpLib2Error
-from oauth2client import tools
-from oauth2client.file import Storage
-from oauth2client.client import OAuth2WebServerFlow
+from google_auth_oauthlib.flow import InstalledAppFlow
 
 LOCAL_KEYS = {}
 TABLE_LIST = {}
@@ -28,7 +26,7 @@ Drive = None
 
 def initialize():
     '''
-    Read in the FusionTable IDs and the data for OAuth
+    Read in the FusionTable IDs and any saved OAuth data/tokens
     '''
     global LOCAL_KEYS, TABLE_LIST
     strip_chars = ' "\n\r'
@@ -50,25 +48,55 @@ def authorize():
     '''
     Authenticate the requested Google API scopes for a single user.
     '''
-    flow = OAuth2WebServerFlow(LOCAL_KEYS['client_id'], LOCAL_KEYS['client_secret'], SCOPES)
-    storage = Storage('credentials.dat')
-    credentials = storage.get()
-    if credentials is None or credentials.invalid:
-        print('Reauthorization required... Launching auth flow')
-        credentials = tools.run_flow(flow, storage, tools.argparser.parse_args())
+    def verify_drive_service():
+        """
+        Called after authentication, to verify we have at least read access. Requests the About() resource.
+        """
+        about = Drive.about().get(fields="user,storageQuota").execute()
+        for key, value in about.items():
+            print(key, value)
+
+    def verify_ft_service():
+        """
+        Called after authentication, to verify we have at least read access. Requests a list of the users FusionTables.
+        """
+        all_tables = []
+        request = FusionTables.table().list(fields="items(name,tableId,columns/name)")
+        while request is not None:
+            response = request.execute()
+            if 'items' in response.keys():
+                all_tables.extend(response['items'])
+            request = FusionTables.table().list_next(request, response)
+        print("Found {} FusionTables".format(len(all_tables)))
+        for table in all_tables:
+            table['Columns'] = ', '.join(t['name'] for t in table['columns'])
+            print('id: "{tableId}"\tName: "{name}"\nColumns: [{Columns}]\n'.format(**table))
+
+    print('Checking authorization status...', end='')
+    iapp_flow = InstalledAppFlow.from_client_secrets_file("client_secret_MHCC.json", SCOPES)
+    credentials = iapp_flow.run_local_server(authorization_prompt='Opening browser...')
+    if not credentials.valid:
+        print('Failed. Reauth required.')
+        # Seems to always get called, but the services that get built work anyway.
     else:
-        print('Valid Credentials.')
+        print('Valid.\nBuilding services...')
     global FusionTables
-    print('Authorizing...', end='')
     FusionTables = build('fusiontables', 'v2', credentials=credentials)
     if FusionTables is None:
         raise EnvironmentError('FusionTables not authenticated or built as a service.')
+    else:
+        # Test FusionTables authentication by listing known tables.
+        print('Verifying FusionTables access by requesting owned tables.')
+        verify_ft_service()
     global Drive
     Drive = build('drive', 'v3', credentials=credentials)
     if Drive is None:
         raise EnvironmentError('Drive not authenticated or built as a service.')
-    print('Authorized.')
-
+    else:
+        # Test Drive Authentication by requesting global service metadata.
+        print('Verifying Drive access by requesting storage quota and user object.')
+        verify_drive_service()
+    print('Authorization & service verification completed successfully.')
 
 
 def verify_known_tables():
@@ -127,6 +155,7 @@ def verify_known_tables():
             for table_name, table_id in validated_tables.items():
                 tables_to_write.append([table_name, table_id])
             csv.writer(f, quoting=csv.QUOTE_ALL).writerows(tables_to_write)
+            print('Remaining valid tables\n', tables_to_write)
 
 
 
