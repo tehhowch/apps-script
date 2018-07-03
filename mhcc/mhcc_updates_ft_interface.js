@@ -97,7 +97,7 @@ function getLatestRows_()
   {
     for (var rc = 0, len = snapshots.length; rc < len; ++rc)
       delete valids[snapshots[rc][1]];
-    console.debug({ "message": "Some members lack scoreboard records", "data": valids });
+    console.log({ "message": "Some members lack scoreboard records", "data": valids });
   }
   return snapshots;
 }
@@ -295,8 +295,15 @@ function doBackupTable_(tableId, deleteEarliest)
   function _getBackupObject_(store, key)
   {
     var value = store.getProperty(key);
-    if (value)
-      return JSON.parse(value);
+    // If the value was there, it may or may not be stringified JSON.
+    if (value && value[0] === "{" && value[1] === "\"")
+    {
+      var existing = JSON.parse(value);
+      // Ensure the backup object has the requested table as a property.
+      if (!existing[tableId])
+        existing[tableId] = {};
+      return existing;
+    }
     var newObject = {};
     newObject[tableId] = {};
     return newObject;
@@ -347,7 +354,7 @@ function doBackupTable_(tableId, deleteEarliest)
       }
     }
   }
-  catch (e) { console.warn(e); }
+  catch (e) { console.warn({ "message": e.message, "error": e, "tableId": tableId, "user": userBackup, "script": scriptBackup, "earliest": earliest, "idToDelete": idToDelete }); }
 
   // Store the data about the backup.
   const newBackupKey = String(now.getTime());

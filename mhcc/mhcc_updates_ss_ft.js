@@ -50,9 +50,9 @@ var numCustomTitles = 16;
 /**
  * function onOpen()      Sets up the admin's menu from the spreadsheet interface.
  */
-function onOpen()
+function onOpen(e)
 {
-  SpreadsheetApp.getActiveSpreadsheet().addMenu('Administration', [
+  e.source.addMenu('Administration', [
     { name: "Manage Members", functionName: "getSidebar" },
     { name: "Perform Crown Update", functionName: "UpdateDatabase" },
     { name: "Check Database Size", functionName: "getDbSize" }]);
@@ -184,7 +184,7 @@ function UpdateDatabase()
     if (updateLastRan)
       store.setProperty('lastRan', lastRan.toString());
 
-    console.info("Through %d members, %s sec. elapsed. Uploaded %d new crown records.", lastRan, (new Date() - startTime) / 1000, newRecords.length);
+    console.log("Through %d members, %s sec. elapsed. Uploaded %d new crown records.", lastRan, (new Date() - startTime) / 1000, newRecords.length);
     lock.releaseLock();
   }
 
@@ -720,7 +720,7 @@ function UpdateScoreboard()
   // Provide estimate of the next new scoreboard posting and the time this one was posted.
   wb.getSheetByName('Members').getRange('I23').setValue((startTime - wb.getSheetByName('Members').getRange('H23').getValue()) / (24 * 3600 * 1000));
   wb.getSheetByName('Members').getRange('H23').setValue(startTime);
-  // Overwrite the latest db version with the version that has the proper ranks and ranktimes.
+  // Overwrite the latest db version with the version that has the proper ranks, Squirrel and ranktimes.
   saveMyDb_(wb, allHunters);
 
   // If a member hasn't been seen in the last 20 days, then request a high-priority update
