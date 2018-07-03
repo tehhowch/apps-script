@@ -634,7 +634,29 @@ function UpdateStale_(wb, lostTime)
  */
 function UpdateScoreboard()
 {
+  /**
+   * Compute the "Squirrel" rating from the given silver & gold crown counts,
+   * and the current tier minimums. (The ratings may have changed even if the
+   * member's crowns did not).
+   * @param {(number|string)[]} record
+   * @param {[number, string, string][]} squirrelTiers an array of crown count minimums and the corresponding Squirrel tier
+   * @param {number} mhccIndex The array index corresponding to the squirrel data.
+   * @param {number} squirrelIndex The array index corresponding to the Squirrel data.
+   * @returns {string} The Squirrel rating for the given record.
+   */
+  function _setCurrentSquirrel(record, squirrelTiers, mhccIndex, squirrelIndex)
+  {
+    for (var k = 0; k < squirrelTiers.length; ++k)
+      if (record[mhccIndex] >= squirrelTiers[k][0]) {
+        // Crown count meets/exceeds required crowns for this level.
+        record[squirrelIndex] = squirrelTiers[k][2];
+        return;
+      }
+  }
+
   const startTime = new Date(), wb = SpreadsheetApp.getActive();
+  try { const aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
+  catch (e) { throw new Error("'Members' sheet was renamed or deleted - cannot locate crown-title relationship data."); }
 
   // Update script metadata.
   PropertiesService.getScriptProperties().setProperty("numMembers", String(getTotalRowCount_(utbl)));
@@ -660,23 +682,25 @@ function UpdateScoreboard()
 
   // 3) Build the array with this format:   Rank UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
   do {
+    var ah_i = rank - 1;
+    _setCurrentSquirrel(allHunters[ah_i], aRankTitle, 8, 9);
     scoreboardArr.push([
       rank,
-      Utilities.formatDate(new Date(allHunters[rank - 1][2]), 'EST', 'yyyy-MM-dd'),                  // Last Seen
-      Utilities.formatDate(new Date(allHunters[rank - 1][3]), 'EST', 'yyyy-MM-dd'),                  // Last Crown
-      allHunters[rank - 1][9],                                                                       // Squirrel
-      '=HYPERLINK("' + plotLink + allHunters[rank - 1][1] + '","' + allHunters[rank - 1][8] + '")',  // # MHCC Crowns
-      allHunters[rank - 1][0],                                                                       // Name
-      'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[rank - 1][1],
-      'https://www.mousehuntgame.com/profile.php?snuid=' + allHunters[rank - 1][1]
+      Utilities.formatDate(new Date(allHunters[ah_i][2]), 'EST', 'yyyy-MM-dd'),              // Last Seen
+      Utilities.formatDate(new Date(allHunters[ah_i][3]), 'EST', 'yyyy-MM-dd'),              // Last Crown
+      allHunters[ah_i][9],                                                                   // Squirrel
+      '=HYPERLINK("' + plotLink + allHunters[ah_i][1] + '","' + allHunters[ah_i][8] + '")',  // # MHCC Crowns
+      allHunters[ah_i][0],                                                                   // Name
+      'https://apps.facebook.com/mousehunt/profile.php?snuid=' + allHunters[ah_i][1],
+      'https://www.mousehuntgame.com/profile.php?snuid=' + allHunters[ah_i][1]
     ]);
     if (rank % 150 === 0)
       scoreboardArr.push(['Rank', 'Last Seen', 'Last Crown', 'Squirrel Rank', 'G+S Crowns', 'Hunter', 'Profile Link', 'MHG']);
 
     // Store the time this rank was generated.
-    allHunters[rank - 1][10] = startTime.getTime();
+    allHunters[ah_i][10] = startTime.getTime();
     // Store the counter as the hunters' rank, then increment the counter.
-    allHunters[rank - 1][11] = rank++;
+    allHunters[ah_i][11] = rank++;
   } while (rank <= len);
 
   // 4) Write it to the spreadsheet
