@@ -4,6 +4,7 @@ staging.csv
 auth.txt
 tables.txt
 mhcc/.vs*
+env/
 
 # Python ignores
 __pycache__/*
