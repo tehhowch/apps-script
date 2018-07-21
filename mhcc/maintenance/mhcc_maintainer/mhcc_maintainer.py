@@ -7,6 +7,7 @@ import random
 import time
 
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
 from services import DriveHandler
 from services import FusionTableHandler
 from services import print_progress_bar as ppb
@@ -21,14 +22,14 @@ SCOPES = ['https://www.googleapis.com/auth/fusiontables',
 def initialize(keys: dict, tables: dict):
     '''Read in the FusionTable IDs and any saved OAuth data/tokens
     '''
-    strip_chars = ' "\n\r'
-    with open('auth.txt') as f:
-        for line in f:
-            (key, val) = line.split('=')
-            keys[key.strip(strip_chars)] = val.strip(strip_chars)
+    with open('auth.txt', 'r', newline='') as f:
+        for line in csv.reader(f, quoting=csv.QUOTE_ALL):
+            if line:
+                keys[line[0]] = line[1]
     with open('tables.txt', 'r', newline='') as f:
         for line in csv.reader(f, quoting=csv.QUOTE_ALL):
-            tables[line[0]] = line[1]
+            if line:
+                tables[line[0]] = line[1]
 
     print('Initialized. Found tables: ')
     for key in tables:
@@ -39,15 +40,42 @@ def initialize(keys: dict, tables: dict):
 def authorize(local_keys: dict) -> 'Dict[str, GoogleService]':
     '''Authenticate the requested Google API scopes for a single user.
     '''
+    def save_credentials(credentials, keys):
+        '''Save the given access and refresh tokens to the local disk.
+        '''
+        keys['access_token'] = credentials.token
+        keys['refresh_token'] = credentials.refresh_token
+        with open('auth.txt', 'w', newline='') as f:
+            writer = csv.writer(f, quoting=csv.QUOTE_ALL)
+            for key, value in keys.items():
+                writer.writerow([key, value])
+
     print('Checking authorization status...', end='')
-    iapp_flow = InstalledAppFlow.from_client_secrets_file("client_secret_MHCC.json", SCOPES)
-    credentials = iapp_flow.run_local_server(authorization_prompt='Opening browser...')
-    drive = DriveHandler(credentials)
-    print('Verifying Drive access by requesting storage quota and user object.')
+    creds = None
+    try:
+        creds = Credentials(
+            local_keys['access_token'],
+            refresh_token=local_keys['refresh_token'],
+            token_uri="https://accounts.google.com/o/oauth2/token",
+            client_id=local_keys['client_id'],
+            client_secret=local_keys['client_secret'],
+            scopes=SCOPES)
+    except KeyError:
+        pass
+    iapp_flow: InstalledAppFlow = InstalledAppFlow.from_client_secrets_file("client_secret_MHCC.json", SCOPES)
+    if not creds or creds.expired or not creds.valid:
+        iapp_flow.run_local_server(authorization_prompt_message='opening browser for OAuth flow.')
+        creds = iapp_flow.credentials
+        save_credentials(creds, local_keys)
+    else:
+        print('... Credentials OK!')
+
+    drive = DriveHandler(creds)
+    print('\nVerifying Drive access by requesting storage quota and user object.')
     drive.verify_drive_service()
 
-    fusiontables = FusionTableHandler(credentials)
-    print('Verifying FusionTables access by requesting tables you\'ve accessed.')
+    fusiontables = FusionTableHandler(creds)
+    print('\nVerifying FusionTables access by requesting tables you\'ve accessed.')
     fusiontables.verify_ft_service()
  
     print('Authorization & service verification completed successfully.')

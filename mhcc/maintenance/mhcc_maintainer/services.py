@@ -215,8 +215,7 @@ https://developers.google.com/resources/api-libraries/documentation/drive/v3/pyt
     Requests the About() resource.
         """
         about = self.get_service().about().get(fields="user,storageQuota").execute()
-        for key, value in about.items():
-            print(key, value)
+        pprint(about)
 
 
 
@@ -330,7 +329,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                 all_tables.extend(response['items'])
             request = self.table.list_next(request, response)
 
-        print('Found {} FusionTables'.format(len(all_tables)))
+        print(f'Found {len(all_tables)} FusionTables')
         for table in all_tables:
             table['Columns'] = ', '.join(t['name'] for t in table['columns'])
             print('id: "{tableId}"\tName: "{name}"\nColumns: [{Columns}]\n'.format_map(table))
