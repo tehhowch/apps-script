@@ -84,8 +84,7 @@ def authorize(local_keys: dict) -> 'Dict[str, GoogleService]':
 
 
 def prune_ranks(tableId: str, ft: FusionTableHandler):
-    """
-    Routine which prunes out boring Rank DB data.
+    """Routine which prunes out boring Rank DB data.
     # [Member, UID, LastSeen, RankTime, Rank, MHCC]
     Multiple approaches are possible:
         1) Keep the first and last Ranks for a given LastSeen
@@ -179,7 +178,7 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
         # Get metadata from the target table.
         remote_columns = ft.get_all_columns(tableId)
         remote_row_counts = ft.get_query_result(
-            "SELECT UID, COUNT() FROM {} GROUP BY UID".format(tableId), 0.05)['rows']
+            f'SELECT UID, COUNT() FROM {tableId} GROUP BY UID', 0.05)['rows']
         if len(records) < len(remote_row_counts):
             return False
 
@@ -210,10 +209,10 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
                 local_row_counts[str(row[1])] = 1
             
         if rows_with_errors:
-            print('{} rows had incorrect column lengths:'.format(len(rows_with_errors)))
+            print(f'{len(rows_with_errors)} rows had incorrect column lengths:')
             print(rows_with_errors)
         if coerced:
-            print('{} UIDs were repartitioned to remove decimals.'.format(len(coerced)))
+            print(f'{len(coerced)} UIDs were repartitioned to remove decimals.')
             print(coerced)
 
         # Inspect the remote table data and ensure each remaining member is represented.
@@ -222,15 +221,15 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
             if row[0] not in mhcc_members:
                 continue
             elif row[0] not in local_row_counts:
-                print('Unable to find member with UID=\'{}\' in data to upload'.format(row[0]))
+                print(f'Unable to find member with UID=\'{row[0]}\' in data to upload')
                 has_valid_dataset = False
             elif int(row[1]) < local_row_counts[row[0]]:
-                print('More rows in upload data than source data for member UID=\'{}\''.format(row[0]))
+                print(f'More rows in upload data than source data for member UID=\'{row[0]}\'')
                 has_valid_dataset = False
         revalidation = select_interesting_rank_records(records, rowids=[], tracker={}, indices= {
             'uid': 1, 'ls': 2, 'rt': 3, 'rank':4, 'rowid': 0})
         if len(revalidation) != len(records):
-            print('Reanalysis of upload data yielded {} non-interesting rows.'.format(len(records) - len(revalidation)))
+            print(f'Reanalysis of upload data yielded {len(records) - len(revalidation)} non-interesting rows.')
             has_valid_dataset = False
         return has_valid_dataset
 

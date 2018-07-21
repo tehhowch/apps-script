@@ -145,7 +145,7 @@ class GoogleService():
         return self.__scopes
 
     def get_api_summary(self):
-        return '{}{}'.format(self.__API_NAME, self.__API_VERSION)
+        return f'{self.__API_NAME}{self.__API_VERSION}'
 
     def new_batch_http_request(self, **kwargs) -> BatchHttpRequest:
         return self.__service.new_batch_http_request(**kwargs)
@@ -195,7 +195,7 @@ https://developers.google.com/resources/api-libraries/documentation/drive/v3/pyt
             file_datetime = datetime.datetime.strptime(
                 fusiontable_file_resource['modifiedTime'][:-1] + '+0000', '%Y-%m-%dT%H:%M:%S.%f%z')
         except HttpError as err:
-            print('Acquisition of modification info for file id=\'%s\' failed.' % file_id)
+            print(f'Acquisition of modification info for file id=\'{file_id}\' failed.')
             print(err)
         except ValueError as err:
             print('Unable to parse modifiedTime string \'%s\' to tz-aware datetime'
@@ -314,7 +314,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
     @staticmethod
     def get_filename_for_table(tableId: str) -> str:
         """Returns the name that would be used to save that table data locally"""
-        return 'table_{}.csv'.format(tableId)
+        return f'table_{tableId}.csv'
 
     # Generic data fetch methods
     def verify_ft_service(self):
@@ -351,7 +351,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         if row_count_result and 'rows' in row_count_result:
             return int(row_count_result['rows'][0][0])
 
-        print('Row count query failed for table %s' % tableId)
+        print(f'Row count query failed for table \'{tableId}\'')
         return int(0)
 
 
@@ -410,7 +410,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
 
     @return: list, [Member, UID]
         '''
-        sql = 'SELECT Member, UID FROM ' + self._user_table + ' ORDER BY Member ASC'
+        sql = f'SELECT Member, UID FROM {self._user_table} ORDER BY Member ASC'
         member_info = self.get_query_result(sql, .03, start, limit)
         if member_info and 'rows' in member_info:
             return member_info['rows']
@@ -480,7 +480,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                 except KeyError:
                     pass
             else:
-                print('Incorrect column count in response for requestId {}'.format(rq_id))
+                print(f'Incorrect column count in response for requestId {rq_id}')
                 print(response)
             print_progress_bar(len(data['rows']), **progress_parameters)
 
@@ -510,7 +510,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
 
         # Retry failed requests ad nauseum.
         while data['to_retry']:
-            print('\n\tRetrying {} failed requests'.format(len(data['to_retry'])))
+            print(f'\n\tRetrying {len(data["to_retry"])} failed requests')
             row_repeats = self.new_batch_http_request(callback=collect_rows)
             for rq_id in data['to_retry']:
                 row_repeats.add(self.query.sqlGet(sql=request_map[rq_id]), request_id=rq_id)
@@ -548,7 +548,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         if not isinstance(query, str):
             raise TypeError('Complex sql recombination should be done by callee.')
         if not self.validate_query_is_get(query):
-            print('Query is incompatible with sqlGet method:\n{}'.format(query))
+            print(f'Query is incompatible with sqlGet method:\n{query}')
             return {}
 
         # Multi-query parameters.
@@ -636,7 +636,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         # Log this new table to disk.
         with open('tables.txt', 'a', newline='') as f:
             csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[backup['name'], backup['tableId']]])
-        print('Backup of table \'%s\' completed; new table logged to disk.' % tableId)
+        print(f'Backup of table \'{tableId}\' completed; new table logged to disk.')
         return backup
 
 
@@ -659,10 +659,10 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                     coerced.add(row[indices['uid']])
                     row[indices['uid']] = row[indices['uid']].partition('.')[0]
             if coerced:
-                print('Updated {} member names to remove \'.0\''.format(len(coerced)))
+                print(f'Updated {len(coerced)} member names to remove \'.0\'')
 
         # Upload
-        print('Beginning row replacement of target \'{}\' from \'{}\''.format(destination, backupId))
+        print(f'Beginning row replacement of target \'{destination}\' from \'{backupId}\'')
         return self.replace_rows(destination, data['rows'])
 
     def verify_known_tables(self, known_tables: dict, drive_service):
@@ -835,8 +835,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         # Obtain the last modified time for the local file.
         local_mod_time = datetime.datetime.fromtimestamp(
             os.path.getmtime(filename), datetime.timezone.utc)
-        print('FusionTable last modified:\t{}\nlocal data last modified:\t{}'
-              .format(info['modifiedDatetime'], local_mod_time))
+        print(f'FusionTable last modified:\t{info["modifiedDatetime"]}\nlocal data last modified:\t{local_mod_time}')
         if local_mod_time > info['modifiedDatetime']:
             print('Local saved data modified more recently than remote FusionTable.',
                   'Attempting to use saved data.')
@@ -864,7 +863,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                 data_reader = csv.reader(datafile, strict=True, delimiter=delimiter, quoting=csv.QUOTE_NONNUMERIC)
                 values_from_disk = [row for row in data_reader]
         except (FileNotFoundError, PermissionError) as err:
-            print(err)
+            print("\n", err)
 
         return values_from_disk
 
