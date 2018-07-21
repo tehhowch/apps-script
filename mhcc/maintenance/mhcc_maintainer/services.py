@@ -325,8 +325,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         request = self.table.list(fields="items(name,tableId,columns/name)")
         while request is not None:
             response = request.execute()
-            if 'items' in response.keys():
-                all_tables.extend(response['items'])
+            all_tables.extend(response.get('items', []))
             request = self.table.list_next(request, response)
 
         print(f'Found {len(all_tables)} FusionTables')
@@ -369,8 +368,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         request = self.task.list(tableId=tableId)
         while request is not None:
             response = request.execute()
-            if 'items' in response.keys():
-                table_tasks.extend(response['items'])
+            table_tasks.extend(response.get('items', []))
             request = self.task.list_next(request, response)
 
         return table_tasks
@@ -390,8 +388,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
             response = request.execute(num_retries=1)
             if 'totalItems' in response:
                 columns['total'] = response['totalItems']
-            if 'items' in response:
-                columns['columns'].extend(response['items'])
+            columns['columns'].extend(response.get('items', []))
             request = self.column.list_next(request, response)
         assert len(columns['columns']) == columns['total']
         columns['ids'] = {x['columnId']: x for x in columns['columns']}
