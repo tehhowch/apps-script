@@ -49,6 +49,7 @@ var crownDBnumColumns = 10;
 var numCustomTitles = 16;
 /**
  * function onOpen()      Sets up the admin's menu from the spreadsheet interface.
+ * @param {Object <string, any>} e The "spreadsheet open" event object, provided by Google.
  */
 function onOpen(e)
 {
@@ -142,7 +143,7 @@ function UpdateDatabase()
   }
   else
   {
-    // Guard against concurrent execution of code which modifies LastRan (and thus, user data).
+    // Guard against concurrent execution of code which modifies LastRan (and thus, member data).
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(30000))
       return;
@@ -350,21 +351,21 @@ function UpdateDatabase()
     for (var r = 0; r < fullRecords.length; ++r)
       fullRecords[r][indices.lasttouched] = ++now;
   }
-  /** 
+  /**
    * Nested function which handles requesting crown info for a given set of members from the various data
    * sources available:
    *    1. HornTracker MostMice
    *    2. Jack's MH Crowns FusionTable
-   *  
+   *
    *  Each unique instance of data is imported, provided
    *    A) It has a different "Last Seen" than the member's existing "Last Seen" data.
    *      or
    *    B) It has been a week since the last time the member had a new record entered.
-   *    
+   *
    *  Returns null only if memberSet has no IDs, or all of the IDs have no associated record data in the MHCC Crowns DB FusionTable.
    *  otherwise, returns a uid-indexed Object with the database's maximum values for seen, touched, and crown data, and at least 1
    *  crown snapshot for which a full record needs to be constructed.
-   * 
+   *
    * @param {string[][]} memberSet  The subset of the global member list for which data should be queried.
    * @returns {{partials: Object <string, MemberUpload>, completed:boolean}} null, or an object with feedback about the query result and the minimal set of new crown data to be uploaded.
    */
@@ -638,11 +639,10 @@ function UpdateScoreboard()
    * Compute the "Squirrel" rating from the given silver & gold crown counts,
    * and the current tier minimums. (The ratings may have changed even if the
    * member's crowns did not).
-   * @param {(number|string)[]} record
+   * @param {(number|string)[]} record A member's new database record (modified in-place).
    * @param {[number, string, string][]} squirrelTiers an array of crown count minimums and the corresponding Squirrel tier
    * @param {number} mhccIndex The array index corresponding to the squirrel data.
    * @param {number} squirrelIndex The array index corresponding to the Squirrel data.
-   * @returns {string} The Squirrel rating for the given record.
    */
   function _setCurrentSquirrel(record, squirrelTiers, mhccIndex, squirrelIndex)
   {
@@ -720,13 +720,13 @@ function UpdateScoreboard()
   // Provide estimate of the next new scoreboard posting and the time this one was posted.
   wb.getSheetByName('Members').getRange('I23').setValue((startTime - wb.getSheetByName('Members').getRange('H23').getValue()) / (24 * 3600 * 1000));
   wb.getSheetByName('Members').getRange('H23').setValue(startTime);
-  // Overwrite the latest db version with the version that has the proper ranks, Squirrel and ranktimes.
+  // Overwrite the latest db version with the version that has the proper ranks, Squirrel, and ranktimes.
   saveMyDb_(wb, allHunters);
 
   // If a member hasn't been seen in the last 20 days, then request a high-priority update
   UpdateStale_(wb, 20 * 86400 * 1000);
 
-  console.info("%s sec. for all scoreboard operations", (new Date() - startTime) / 1000);
+  console.log("%s sec. for all scoreboard operations", (new Date() - startTime) / 1000);
   lock.releaseLock();
 }
 
