@@ -498,7 +498,7 @@ function UpdateDatabase()
     {
       // If the query to HT failed in an unknown way, throw the new error.
       var msg = e.message.toLowerCase();
-      var knownErrors = ["unexpected error: h", "timeout: h"];
+      var knownErrors = ["unexpected error: h", "timeout: h", "502 Bad Gateway"];
       knownErrors.forEach(function (fragment) { if (msg.indexOf(fragment) > -1) resp = null; });
       if (resp !== null)
       {
