@@ -467,7 +467,7 @@ function doScoreboardUpdate()
       // Only records with a relevant LastSeen value have been collected (within 7 days of the comp start). The
       // first one that is non-zero is used as the starting count record (unless others records closer to the
       // beginning of the competition are available).
-      if (rowData[bronzeIndex] + rowData[silverIndex] + rowData[goldIndex] > 0
+      if (rowData[bronzeIndex]-0 + rowData[silverIndex]-0 + rowData[goldIndex]-0 > 0
         && (recordDate < m.startRecordDate || (recordDate < competitionBegin && recordDate >= m.startRecordDate)))
       {
         m.startSilver = rowData[silverIndex];
@@ -495,7 +495,7 @@ function doScoreboardUpdate()
       m.gold,
       m.silver,
       m.bronze,
-      "=hyperlink(\"" + m.historyLink + "\", \"" + m.gold * 1 + m.silver * 1 + m.bronze * 1 + "\")",
+      "=hyperlink(\"" + m.historyLink + "\", \"" + (m.gold + m.silver + m.bronze) + "\")",
       m.lastSeen,
       m.lastCrown
     ]);
