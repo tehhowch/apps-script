@@ -61,9 +61,9 @@ function onOpen(e)
 /**
  * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling
  *                            code as a rectangular array. Does not supply header information.
- * @param  {Workbook} wb      The workbook containing the worksheet named SheetDb
+ * @param  {GoogleAppsScript.Spreadsheet.Spreadsheet} wb      The workbook containing the worksheet named SheetDb
  * @param  {number|Array <{column: number, ascending: boolean}>} [sortObj]   An integer column number or an Object[][] of sort objects
- * @returns {Array[]}          An M by N rectangular array which can be used with Range.setValues() methods
+ * @return {Array[]}          An M by N rectangular array which can be used with Range.setValues() methods
  */
 function getMyDb_(wb, sortObj)
 {
@@ -80,9 +80,9 @@ function getMyDb_(wb, sortObj)
 /**
  * function saveMyDb_         Uses the Range.setValues() method to write a rectangular array to the worksheet
  *
- * @param  {Workbook} wb      The workbook containing the worksheet named SheetDb
+ * @param  {GoogleAppsScript.Spreadsheet.Spreadsheet} wb      The workbook containing the worksheet named SheetDb
  * @param  {Array[]} db         The rectangular array of data to write to SheetDb
- * @returns {boolean}          Returns true if the data was written successfully, and false if a database lock was not acquired.
+ * @return {boolean}          Returns true if the data was written successfully, and false if a database lock was not acquired.
  */
 function saveMyDb_(wb, db)
 {
@@ -213,7 +213,7 @@ function UpdateDatabase()
    * Returns an object with the full record referenced for a given member in the partial records, indexed by UID.
    * 
    * @param {Object <string, MemberUpload>} partials UID-indexed object with the timestamps needed to query for the previous stored record.
-   * @returns {{records: Object <string, (string|number)[]>, indices: Object <string, number>}} Object containing UID-indexed full records, and the indices needed to order values in a new record.
+   * @return {{records: Object <string, (string|number)[]>, indices: Object <string, number>}} Object containing UID-indexed full records, and the indices needed to order values in a new record.
    */
   function _fetchExistingRecords_(partials)
   {
@@ -288,7 +288,7 @@ function UpdateDatabase()
      * @param {string} id The member's MHCC identifier
      * @param {CrownSnapshot} source The source of crown counts and time values
      * @param {Object <string, number>} indices The positions of specific values within the row
-     * @returns {(string|number)[]} A sparse array with data extracted from the input source.
+     * @return {(string|number)[]} A sparse array with data extracted from the input source.
      */
     function _makeRawRecord_(name, id, source, indices)
     {
@@ -366,8 +366,8 @@ function UpdateDatabase()
    *  otherwise, returns a uid-indexed Object with the database's maximum values for seen, touched, and crown data, and at least 1
    *  crown snapshot for which a full record needs to be constructed.
    *
-   * @param {string[][]} memberSet  The subset of the global member list for which data should be queried.
-   * @returns {{partials: Object <string, MemberUpload>, completed:boolean}} null, or an object with feedback about the query result and the minimal set of new crown data to be uploaded.
+   * @param {Array <string>[]} memberSet  The subset of the global member list for which data should be queried.
+   * @return {{partials: Object <string, MemberUpload>, completed: boolean}} null, or an object with feedback about the query result and the minimal set of new crown data to be uploaded.
    */
   function _getNewCrownData_(memberSet)
   {
@@ -379,7 +379,7 @@ function UpdateDatabase()
      * Check if the record has different stored crowns than all of the other ones being added.
      * @param {CrownSnapshot} record The crown snapshot being considered.
      * @param {CrownSnapshot[]} recordsToAdd Already-accepted crown snapshots.
-     * @returns {boolean} If the considered record has different crowns than the other records being added.
+     * @return {boolean} If the considered record has different crowns than the other records being added.
      */
     function _hasDifferentCrowns_(record, recordsToAdd)
     {
@@ -401,10 +401,14 @@ function UpdateDatabase()
     const data = {};
     memberSet.forEach(function (member) {
       if (!member[1]) return;
-      urlIDs.push(String(member[1]));
-      data[String(member[1])] = { collected: [], toAdd: [], storedInfo: { displayName: member[0] } };
+      urlIDs.push(member[1].toString());
+      data[member[1].toString()] = { collected: [], toAdd: [], storedInfo: { displayName: member[0] } };
     });
-    if (!urlIDs.length) { console.warn({ "message": "No valid UIDs in member set", "memberSet": memberSet }); return null; }
+    if (!urlIDs.length)
+    {
+      console.warn({ "message": "No valid UIDs in member set", "memberSet": memberSet });
+      return null;
+    }
 
     // Obtain the lastSeen and lastTouched timestamps for the users in this batch.
     var uidString = urlIDs.join(",");
@@ -467,14 +471,14 @@ function UpdateDatabase()
   }
   /** Nested function which handles querying HornTracker's MostMice endpoint and constructing the expected data object.
    * @param {string} uids  A comma-joined string of member identifiers for whom to request catch totals.
-   * @returns {Object <string, CrownSnapshot>}  A UID-indexed object with the latest known crown counts for the input members.
+   * @return {Object <string, CrownSnapshot>}  A UID-indexed object with the latest known crown counts for the input members.
    */
   function QueryMostMice_(uids)
   {
     /**
      * HornTracker returns the individual catch counts per mouse, so crown counts must be aggregated.
      * @param {Object <string, number>} mice The number of catches for each mouse, indexed by mouse name.
-     * @returns {{bronze: number, silver: number, gold: number}} The number of bronze, silver, and gold crowns, based on the input per-mouse catch data.
+     * @return {{bronze: number, silver: number, gold: number}} The number of bronze, silver, and gold crowns, based on the input per-mouse catch data.
      */
     function _getCrowns_(mice)
     {
@@ -493,14 +497,17 @@ function UpdateDatabase()
       return { bronze: nB, silver: nS, gold: nG };
     }
 
-    var htData = {};
+    const htData = {};
     try { var resp = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters=' + uids); }
     catch (e)
     {
       // If the query to HT failed in an unknown way, throw the new error.
       var msg = e.message.toLowerCase();
-      var knownErrors = ["unexpected error: h", "timeout: h", "502 bad gateway"];
-      knownErrors.forEach(function (fragment) { if (msg.indexOf(fragment) > -1) resp = null; });
+      const knownErrors = ["unexpected error: h", "timeout: h", "502 bad gateway"];
+      knownErrors.forEach(function (fragment) {
+        if (msg.indexOf(fragment) > -1)
+          resp = null;
+      });
       if (resp !== null)
       {
         e.message = "HT GET - errmsg: " + e.message;
@@ -512,7 +519,7 @@ function UpdateDatabase()
     if (!resp || resp.getResponseCode() !== 200)
       return htData;
 
-    var text = resp.getContentText();
+    const text = resp.getContentText();
     if (!text.length || text.toLowerCase().indexOf('connect to mysql') !== -1)
       return htData;
 
@@ -528,7 +535,7 @@ function UpdateDatabase()
     // NOTE: Apps Script does not use arguments for `toLocaleString`, i.e. the time zone cannot be specified.
     //   Without being able to specify the time zone, it is expected any HT data created or imported during US DST
     //   changeovers is off by up to 1 hour.
-    var timeOffset = (new Date()).toLocaleString().toLowerCase().indexOf("dt") > -1 ? "-0700" : "-0800";
+    const timeOffset = (new Date()).toLocaleString().toLowerCase().indexOf("dt") > -1 ? "-0700" : "-0800";
     // var utcMillisOffset = (new Date()).getTimezoneOffset() *60*1000;
 
     // Construct a UID-keyed Object from the received data, with the crown data as the value.
@@ -541,21 +548,21 @@ function UpdateDatabase()
       // Initialize this user's data object with bronze, silver, and gold crown counts.
       htData[uid] = _getCrowns_(mostMiceData[htKey].mice);
       // Timestamp the MostMice record (using ms since epoch to eliminate timezone issues).
-      htData[uid].seen = Date.parse(mostMiceData[htKey].lst.replace(/-/g, "/") + String(timeOffset));
+      htData[uid].seen = Date.parse(mostMiceData[htKey].lst.replace(/-/g, "/") + timeOffset);
     }
     return htData;
   }
   /** Nested function which handles querying @devjacksmith's "MH Latest Crowns" FusionTable and constructing the expected data object.
    * @param {string} uids  A comma-joined string of member identifiers for whom to request catch totals.
-   * @returns {Object <string, CrownSnapshot>} A UID-indexed object with the latest known crown counts for the input members.
+   * @return {Object <string, CrownSnapshot>} A UID-indexed object with the latest known crown counts for the input members.
    */
   function QueryJacksData_(uids)
   {
     // Jack provides a queryable FusionTable which may or may not have data for the users in question.
     // His fusiontable is unique on snuid - each person has only one record.
     // snuid | timestamp (seconds UTC) | bronze | silver | gold 
-    var sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
-    var jkData = {};
+    const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
+    const jkData = {};
     try { var resp = FusionTables.Query.sqlGet(sql); }
     catch (e)
     {
@@ -568,9 +575,11 @@ function UpdateDatabase()
       return jkData;
 
     // Check that the SQL response has the data we want.
-    var headers = resp.columns.map(function (col) { return col.toLowerCase(); });
-    var indices = {};
-    ["bronze", "silver", "gold", "timestamp"].forEach(function (label) { indices[label] = headers.indexOf(label); });
+    const headers = resp.columns.map(function (col) { return col.toLowerCase(); });
+    const indices = ["bronze", "silver", "gold", "timestamp"].reduce(function (acc, label) {
+      acc[label] = headers.indexOf(label);
+      return acc;
+    }, {});
     if (!Object.keys(indices).every(function (val) { return indices[val] > -1; }))
     {
       console.error({
@@ -580,7 +589,7 @@ function UpdateDatabase()
       return jkData;
     }
     resp.rows.forEach(function (record) {
-      jkData[String(record[0])] = {
+      jkData[record[0].toString()] = {
         bronze: record[indices.bronze] * 1,
         silver: record[indices.silver] * 1,
         gold: record[indices.gold] * 1,
@@ -653,6 +662,19 @@ function UpdateScoreboard()
         return;
       }
   }
+  /**
+   * Function that handles the prediction of the next scoreboard update.
+   * @param {string} targetSheet The sheet on which scoreboard timings are logged
+   * @param {string} predictionCell The cell in which the next scoreboard update time is estimated
+   * @param {string} logCell The cell in which the current scoreboard update's start time is logged
+   * @param {Date} start The time at which the current update began running.
+   */
+  function _estimateNextScoreboard(targetSheet, predictionCell, logCell, start)
+  {
+    const s = wb.getSheetByName(targetSheet), r = s.getRange(logCell);
+    s.getRange(predictionCell).setValue((start - r.getValue()) / (24 * 3600 * 1000));
+    r.setValue(start);
+  }
 
   const startTime = new Date(), wb = SpreadsheetApp.getActive();
   try { const aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
@@ -718,8 +740,8 @@ function UpdateScoreboard()
     ftBatchWrite_(rankUpload, rankTableId);
 
   // Provide estimate of the next new scoreboard posting and the time this one was posted.
-  wb.getSheetByName('Members').getRange('I23').setValue((startTime - wb.getSheetByName('Members').getRange('H23').getValue()) / (24 * 3600 * 1000));
-  wb.getSheetByName('Members').getRange('H23').setValue(startTime);
+  _estimateNextScoreboard('Members', 'I23', 'H23', startTime);
+
   // Overwrite the latest db version with the version that has the proper ranks, Squirrel, and ranktimes.
   saveMyDb_(wb, allHunters);
 
