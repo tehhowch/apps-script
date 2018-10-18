@@ -50,3 +50,5 @@ _ReSharper*/
 .svn
 ~$*
 /.vs
+/mhcc/node_modules/@types/google-apps-script
+/mhcc/.spyproject

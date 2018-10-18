@@ -19,7 +19,7 @@ var alt_table = "";
  * Returns a 2D array of the members' names and identifiers, from `start` until `limit`, or EOF.
  * @param  {number} start First retrieved index (relative to an alphabetical sort on members).
  * @param  {number} limit The maximum number of pairs to return.
- * @returns {string[][]} [Name, UID]
+ * @return {Array <string>[]} [Name, UID]
  */
 function getUserBatch_(start, limit)
 {
@@ -34,7 +34,7 @@ function getUserBatch_(start, limit)
  * the member is current).
  * A query with "UID IN ( ... ) AND LastTouched IN ( ... )" would relax but not eliminate the
  * "unique LastTouched" requirement.
- * @returns {Array[]}         N-by-crownDBnumColumns Array for UpdateScoreboard to parse.
+ * @return {Array[]}         N-by-crownDBnumColumns Array for UpdateScoreboard to parse.
  */
 function getLatestRows_()
 {
@@ -107,7 +107,7 @@ function getLatestRows_()
  * @param  {Array[]} newData  The 2D array of data that will be written to the database.
  * @param  {string}  tableId  The table to which the batch data should be written.
  * @param  {boolean} [strict=true] If the number of columns must match the table schema (default true).
- * @returns {number}          Returns the number of rows that were added to the database.
+ * @return {number}          Returns the number of rows that were added to the database.
  */
 function ftBatchWrite_(newData, tableId, strict)
 {
@@ -140,7 +140,7 @@ function ftBatchWrite_(newData, tableId, strict)
 /**
  * function getByteCount_   Computes the size in bytes of the passed string
  * @param  {string} str     The string to analyze
- * @returns {number}        The bytesize of the string, in bytes
+ * @return {number}        The bytesize of the string, in bytes
  */
 function getByteCount_(str)
 {
@@ -149,7 +149,7 @@ function getByteCount_(str)
 /**
  * Construct a CSV representation of an array. Adds quoting and escaping as needed.
  * @param  {Array[]} myArr A 2D array to be converted into a CSV string
- * @returns {string} A string representing the rows of the input array, joined by CRLF.
+ * @return {string} A string representing the rows of the input array, joined by CRLF.
  */
 function array2CSV_(myArr)
 {
@@ -158,11 +158,11 @@ function array2CSV_(myArr)
   /**
  * Ensure the given value is CSV-compatible, by escaping special characters and adding double-quotes if needed.
  * @param  {any} value An array element to be encapsulated into a CSV string.
- * @returns {string} A string that will interpreted as a single element by a CSV reader.
+ * @return {string} A string that will interpreted as a single element by a CSV reader.
  */
   function _val4CSV_(value)
   {
-    var str = (typeof value === 'string') ? value : value.toString();
+    const str = (typeof value === 'string') ? value : value.toString();
     if (str.indexOf(',') !== -1 || str.indexOf("\n") !== -1 || str.indexOf('"') !== -1)
       return '"' + str.replace(/"/g, '""') + '"';
     else
@@ -171,7 +171,7 @@ function array2CSV_(myArr)
   /**
  * Construct a CSV representation of in the input array.
  * @param  {Array} row A 1-D array of elements which may be strings or other types which support toString().
- * @returns {string} A string that will be interpreted as a single row by a CSV reader.
+ * @return {string} A string that will be interpreted as a single row by a CSV reader.
  */
   function _row4CSV_(row) { return row.map(_val4CSV_).join(","); }
 }
@@ -181,8 +181,8 @@ function array2CSV_(myArr)
  * and the slice of the memberlist near the old lastRan, ± number of changed rows.
  * @param {string} origUID The UID of the most recently updated member.
  * @param {number} origLastRan The original value of lastRan prior to any memberlist updates.
- * @param {string[][]} diffMembers The member names that were added or deleted: [Member, UID]
- * @returns {number} The value of lastRan that ensures the next update will not skip/redo any preexisting member.
+ * @param {Array <string>[]} diffMembers The member names that were added or deleted: [Member, UID]
+ * @return {number} The value of lastRan that ensures the next update will not skip/redo any preexisting member.
  */
 function getNewLastRanValue_(origUID, origLastRan, diffMembers)
 {
@@ -229,7 +229,7 @@ function getNewLastRanValue_(origUID, origLastRan, diffMembers)
  */
 function getDbSize()
 {
-  var sizeData = getDbSizeData_(getTotalRowCount_(ftid));
+  const sizeData = getDbSizeData_(getTotalRowCount_(ftid));
   var sizeStr = 'The crown database has ' + sizeData.nRows + ' entries, each consuming ~';
   sizeStr += sizeData.kbSize + ' kB of space, based on ';
   sizeStr += sizeData.samples + ' sampled rows.<br>The total database size is ~';
@@ -240,7 +240,7 @@ function getDbSize()
  * Return an object detailing the average size of a row (in KB), the total size (in MB), and the number of rows.
  * @param {number} nRows The total number of rows that exist in the database which is to be sampled from.
  * @param {Array[]} [db] The database to analyze. If omitted, will be the MHCC Crown DB.
- * @returns {{kbSize: number, totalSize: number, nRows: number, samples: number}} Size information about the given database
+ * @return {{kbSize: number, totalSize: number, nRows: number, samples: number}} Size information about the given database
  */
 function getDbSizeData_(nRows, db)
 {
@@ -280,7 +280,7 @@ function getDbSizeData_(nRows, db)
  *                              Returns the table id of the copy, if one was made.
  * @param {string} [tableId]    The FusionTable to operate on (default: MHCC Crowns).
  * @param {boolean} [deleteEarliest=true]  If true, the previous backup will be deleted after a successful backup.
- * @returns {string} The FusionTable ID for the newly-created FusionTable.
+ * @return {string} The FusionTable ID for the newly-created FusionTable.
  */
 function doBackupTable_(tableId, deleteEarliest)
 {
@@ -290,7 +290,7 @@ function doBackupTable_(tableId, deleteEarliest)
    * 
    * @param {any} store  A PropertiesService object (UserProperties or ScriptProperties)
    * @param {string} key The key which is used to access the object in the store.
-   * @returns {Object <string, Object <string, string>>} An object with keys of FusionTable IDs, yielding time-id associative objects.
+   * @return {Object <string, Object <string, string>>} An object with keys of FusionTable IDs, yielding time-id associative objects.
    */
   function _getBackupObject_(store, key)
   {
@@ -368,7 +368,7 @@ function doBackupTable_(tableId, deleteEarliest)
 /**
  * function getTotalRowCount_  Gets the total number of rows in the supplied FusionTable.
  * @param {string} tblID       The table id
- * @returns {number}            The number of rows in the table
+ * @return {number}            The number of rows in the table
  */
 function getTotalRowCount_(tblID)
 {

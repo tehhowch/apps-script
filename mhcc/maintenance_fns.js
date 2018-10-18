@@ -1,11 +1,11 @@
 /**
  * function queryStringMaker_ Based on the inputs, construct the relevant queryStrings with fewer than 
  *                            8100 characters each.
- * @param {String} tblID      The FusionTable identifier for the desired table
+ * @param {string} tblID      The FusionTable identifier for the desired table
  * @param {Array} selectArr   A 1D array of the FusionTable columns that should be selected
  * @param {Array} groupArr    A 1D array of the FusionTable columns that should be grouped on ([] for no group)
- * @param {String} orderStr   A valid column name + " ASC" or " DESC" as appropriate, or '' for no ordering
- * @param {String} limitStr   The number to limit by, or '' for no limiting
+ * @param {string} orderStr   A valid column name + " ASC" or " DESC" as appropriate, or '' for no ordering
+ * @param {string} limitStr   The number to limit by, or '' for no limiting
  * @param {Object} arrHeader  A nested object with as many primary keys as there are columns in the value
  *                            array. The primary keys should evaluate to the the respective column index
  *                            in the value array. Each object referenced by the primary key should have a
@@ -20,19 +20,19 @@
 function queryStringMaker_(tblID, selectArr, groupArr, orderStr, limitStr, arrHeader, valArray)
 {
   // Verify input types
-  if (typeof tblID != 'string' || tblID.length != 41)
+  if (typeof tblID !== 'string' || tblID.length !== 41)
     throw new TypeError('Table identifier should be type string with length 41');
-  if (selectArr.constructor != Array)
+  if (selectArr.constructor !== Array)
     throw new TypeError('SELECT clause values are not given in expected array');
-  if (groupArr.constructor != Array)
+  if (groupArr.constructor !== Array)
     throw new TypeError('Group By values are not given in expected array');
-  if (typeof orderStr != 'string')
+  if (typeof orderStr !== 'string')
     throw new TypeError('Ordering string should be type string');
-  if ((typeof limitStr != 'string') && (typeof limitStr != 'number'))
+  if (typeof limitStr !== 'string' && typeof limitStr !== 'number')
     throw new TypeError('Limit string should be type string or integer');
-  if (typeof arrHeader != 'object')
+  if (typeof arrHeader !== 'object')
     throw new TypeError('Array description should be type object');
-  if (valArray.constructor != Array)
+  if (valArray.constructor !== Array)
     throw new TypeError('"WHERE IN (..)" values are not given in expected array');
 
   var sqlBase = ['SELECT', selectArr.join(", "), 'FROM', tblID, 'WHERE'].join(" ");
@@ -43,13 +43,13 @@ function queryStringMaker_(tblID, selectArr, groupArr, orderStr, limitStr, arrHe
   orderStr = String(orderStr).trim();
   if (orderStr.length > 0)
   {
-    if (orderStr.toUpperCase().indexOf("BY") == -1)
+    if (orderStr.toUpperCase().indexOf("BY") === -1)
       orderStr = ["ORDER BY", orderStr].join(" ");
     
-    if (orderStr.toUpperCase().indexOf("SC") == -1)
+    if (orderStr.toUpperCase().indexOf("SC") === -1)
       orderStr = [orderStr.trim(), "ASC"].join(" ");
   }
-  if ((String(limitStr).toUpperCase().indexOf("LIMIT") == -1) && (String(limitStr).trim().length > 0))
+  if (String(limitStr).toUpperCase().indexOf("LIMIT") === -1 && String(limitStr).trim().length > 0)
     limitStr = ["LIMIT", String(limitStr).trim()].join(" ");
 
   var maxSQLlength = 8100;
@@ -66,24 +66,24 @@ function queryStringMaker_(tblID, selectArr, groupArr, orderStr, limitStr, arrHe
     }
   }
   var remLength = maxSQLlength - sqlBase.length - groupStr.length - orderStr.length - limitStr.length - headerLength;
-  remLength -= String(' AND ').length * (numDim - 1)
+  remLength -= String(' AND ').length * (numDim - 1);
   remLength -= String(' IN ()').length * numDim;
   // remLength is now the maximum length of characters we can add to our query and still process it.
   // Assume that each item is 15 characters long, then include the separator as well ( = 16).
-  var maxPairsPerQuery = Math.floor(remLength / (numDim * 16))
+  var maxPairsPerQuery = Math.floor(remLength / (numDim * 16));
   // Transpose valArray so we can easily splice each column's values for SQL WHERE IN ( ... ) insertion
   var valPrime = [];
   if (numDim > 1)
     valPrime = arrayTranspose_(valArray);
   // Already have splice-ready array
   else
-    valPrime = valArray
+    valPrime = valArray;
 
   var queryStrings = [];
   while (valPrime[0].length > 0)
   {
     // Construct queryString
-    var vals = {}
+    var vals = {};
     for (var key in arrHeader)
     {
       vals[key] = valPrime[key * 1].splice(0, maxPairsPerQuery);
@@ -100,8 +100,8 @@ function queryStringMaker_(tblID, selectArr, groupArr, orderStr, limitStr, arrHe
  *                            indicated table and select the rowids for records having those input
  *                            values. Will use as many queries as is needed while preventing any one
  *                            queryString from exceeding the allowed length of 8100 characters.
- * @param {String} tblID      The FusionTable identifier for the desired table.
- * @param {Object} arrHeader  A nested object with one primary keys per column in the value array.
+ * @param {string} tblID      The FusionTable identifier for the desired table.
+ * @param {Object <number, {val: string}>} arrHeader  A nested object with one primary keys per column in the value array.
  *                            The primary keys must evaluate to the respective column index in the
  *                            value array. Each object referenced by the primary key should have a
  *                            'val' property that is the name of the respective FusionTable column.
@@ -114,16 +114,16 @@ function queryStringMaker_(tblID, selectArr, groupArr, orderStr, limitStr, arrHe
  */
 function getKeptRowids_(tblID, arrHeader, valArray)
 {
-  if (typeof tblID != 'string' || tblID.length != 41)
+  if (typeof tblID !== 'string' || tblID.length !== 41)
     throw new Error('Table ID is not valid FusionTables identifier');
-  else if (typeof arrHeader != 'object')
+  else if (typeof arrHeader !== 'object')
     throw new TypeError('Array description should be type object');
-  else if (valArray.constructor != Array)
+  else if (valArray.constructor !== Array)
     throw new TypeError('Values are not given in expected array');
 
   var sqlQueries = queryStringMaker_(tblID, ['ROWID'], [], '', '', arrHeader, valArray) || [];
   
-  var rowidArr = []
+  var rowidArr = [];
   if (sqlQueries.length > 0)
     for (var queryNum = 0; queryNum < sqlQueries.length; ++queryNum)
     {
@@ -145,14 +145,7 @@ function getKeptRowids_(tblID, arrHeader, valArray)
     }
 
   // Convert from [ [rowid], [rowid], [rowid] ] to [rowid, rowid, rowid]
-  if (rowidArr.length > 0)
-  {
-    rowidArr = rowidArr.map(
-      function (value, index) { return value[0] }
-    );
-    return rowidArr;
-  }
-  return [];
+  return rowidArr.length > 0 ? rowidArr.map(function (val) { return val[0]; }) : [];
 }
 /**
  * function keepInterestingRecords 
@@ -161,7 +154,7 @@ function keepInterestingRecords_()
 {
   var startTime = new Date().getTime();
   var members = getUserBatch_(0, 100000);
-  var rowids = identifyDiffSeenAndRankRecords_(members.map(function(value,index){return value[1]}));
+  var rowids = identifyDiffSeenAndRankRecords_(members.map(function (value) { return value[1]; }));
   var totalRows = getTotalRowCount_(ftid);
   if (rowids.length < 1)
     throw new Error('No rowids received from DiffSeenAndRank');
@@ -185,7 +178,7 @@ function keepInterestingRecords_()
  * function identifyDiffSeenAndRankRecords_   Returns the ROWIDs of all members' records having
  *                                            different LastSeen or Ranks. The other records do not
  *                                            have data that is not already on these records.
- * @param {String[]} memUIDs                  The members to query for.
+ * @param {string[]} memUIDs                  The members to query for.
  * @return {Array}                            The ROWIDs of these members interesting records.
  */
 function identifyDiffSeenAndRankRecords_(memUIDs)
@@ -196,13 +189,13 @@ function identifyDiffSeenAndRankRecords_(memUIDs)
   while (memUIDs.length > 0)
   {
     var sql = '', sqlUIDs = [];
-    while ((sql.length <= 8000) && (memUIDs.length > 0))
+    while (sql.length <= 8000 && memUIDs.length > 0)
     {
       sqlUIDs.push(memUIDs.pop());
       sql = "SELECT ROWID, Member, UID, LastSeen, Rank FROM " + ftid + " WHERE UID IN (" + sqlUIDs.join(",") + ") ORDER BY LastSeen ASC";
     }
     var resp = FusionTables.Query.sqlGet(sql);
-    if (typeof resp.rows == 'undefined')
+    if (!resp.rows)
       throw new Error('Unable to reach FusionTables');
     else
     {
@@ -241,10 +234,7 @@ function identifyDiffSeenAndRankRecords_(memUIDs)
       rowidArray = [].concat(rowidArray, keptArray);
     }
   }
-  if (rowidArray.length > 0)
-    return rowidArray;
-  else
-    return [];
+  return rowidArray;
 }
 /**
  * function doReplace_      Replaces the contents of the specified FusionTable with the input array
@@ -286,7 +276,7 @@ function doReplace_(tblID, records)
  * function retrieveWholeRecords_    Queries for the specified ROWIDs, at most once per 0.5 sec.
  * @param {string[]} rowidArray      A 1D array of string rowids to retrieve (can be very large).
  * @param {string} tblID             The FusionTable which holds the desired records.
- * @returns {Array[]}                A 2D array of the specified records, or [].
+ * @return {Array[]}                A 2D array of the specified records, or [].
  */
 function retrieveWholeRecords_(rowidArray, tblID)
 {
@@ -335,7 +325,7 @@ function retrieveWholeRecords_(rowidArray, tblID)
  * Called if UpdateDatabase has no stored information about a member, to obtain their most recent record.
  * The record is used for crown change calculation.
  * @param {string} memUID         The UID of the member who needs a record.
- * @returns {Array[]}             The most recent update for the specified member, or [].
+ * @return {Array[]}             The most recent update for the specified member, or [].
  */
 function getMostRecentCrownRecord_(memUID)
 {
@@ -360,18 +350,14 @@ function getMostRecentCrownRecord_(memUID)
 function doBookending()
 {
   var members = getUserBatch_(0, 100000), startTime = new Date().getTime();
-  var rowids = identifyBookendRowids_(
-    members.map(
-      function (value, index) { return value[1] }
-    )
-  );
+  var rowids = identifyBookendRowids_(members.map(function (value) { return value[1]; }));
   var totalRowCount = getTotalRowCount_(ftid);
   Logger.log('Current non-bookend count: ' + (totalRowCount - rowids.length) + ' out of ' + totalRowCount + ' rows');
   if (rowids.length === totalRowCount)
     Logger.log('All records are bookends');
   else if (rowids.length > totalRowCount)
     throw new Error('More bookending records than records... How???');
-  else if (rowids.length == 0)
+  else if (!rowids.length)
     throw new Error('No rowids returned for bookending.');
   else if (doBackupTable_() === false)
     throw new Error("Couldn't back up existing table data");
@@ -393,14 +379,14 @@ function doBookending()
  *                                  If a user is newly seen, but doesn't get any new crowns, the
  *                                  record is ignored (keeping the earlier record having that same
  *                                  crown change date). 
- * @param {String[]} memUIDs        The members whose data will be kept.
+ * @param {string[]} memUIDs        The members whose data will be kept.
  * @return {Array}                  The ROWIDs of their "bookending" records
  */
 function identifyBookendRowids_(memUIDs)
 {
   if (memUIDs.constructor !== Array)
     throw new TypeError('Expected input to be type Array');
-  else if (memUIDs.length == 0 || typeof memUIDs[0] !== 'string')
+  else if (memUIDs.length === 0 || typeof memUIDs[0] !== 'string')
     throw new TypeError('Expected input array to contain strings');
   
   var startTime = new Date().getTime(), resultArr = [];
@@ -408,7 +394,7 @@ function identifyBookendRowids_(memUIDs)
   {
     var baseSQL = 'SELECT UID, LastCrown, ROWID, LastSeen, Rank FROM ' + ftid + ' WHERE UID IN (';
     var tailSQL = '', sqlUIDs = [], batchTime = new Date().getTime(), lengthLimit = 8050 - baseSQL.length;
-    while ((tailSQL.length <= lengthLimit) && (memUIDs.length > 0))
+    while (tailSQL.length <= lengthLimit && memUIDs.length > 0)
     {
       sqlUIDs.push(memUIDs.pop());
       tailSQL = sqlUIDs.join(",") + ") ORDER BY LastCrown ASC";
@@ -493,7 +479,7 @@ function identifyBookendRowids_(memUIDs)
         toAdd.push(lc.maxRank.rowid);
 
       // Add the user's unique rows for this LastCrown to the rowid list for fetching.
-      while (toAdd.length != 0)
+      while (toAdd.length !== 0)
         keptRowids.push(toAdd.pop());
     }
   Logger.log((new Date().getTime() - startTime) / 1000 + ' sec to find bookend ROWIDs');
@@ -506,15 +492,31 @@ function identifyBookendRowids_(memUIDs)
  */
 function keepOnlyUniqueRecords()
 {
+  /**
+   * Avoids exceeding the FusionTable API rate limits (5 / sec and 200 in 100 sec) by sleeping.
+   *
+   * @param {number} nq The maximum estimated number of queries that will be performed.
+   * @param {Date} start The time in which the most recent batch of queries began running
+   */
+  function _sleep(nq, start)
+  {
+    // Avoid exceeding API rate limits (200 / 100 sec and 5 / sec)
+    const elapsedMillis = new Date().getTime() - start;
+    if (nq > 190 && elapsedMillis < 600)
+      Utilities.sleep(601 - elapsedMillis);
+    else if (elapsedMillis < 200)
+      Utilities.sleep(201 - elapsedMillis);
+  }
+
   var sqlUnique = 'select UID, LastSeen, RankTime, MINIMUM(LastTouched) from ' + ftid + ' group by UID, LastSeen, RankTime';
   var totalRowCount = getTotalRowCount_(ftid);
   var uniqueRowList = FusionTables.Query.sqlGet(sqlUnique), uniqueRowCount = totalRowCount;
-  if (typeof uniqueRowList.rows == 'undefined')
-    throw new Error('No response from FusionTables for sql='+sqlUnique);
+  if (!uniqueRowList.rows)
+    throw new Error('No response from FusionTables for sql=' + sqlUnique);
   else
   {
     uniqueRowCount = uniqueRowList.rows.length;
-    if ((totalRowCount - uniqueRowCount) > 0)
+    if (totalRowCount - uniqueRowCount > 0)
     {
       if (!doBackupTable_())
         throw new Error("Couldn't back up existing table data");
@@ -528,7 +530,7 @@ function keepOnlyUniqueRecords()
           var lsArray = [], uidArray = [], rtArray = [], ltArray = [], batchStartTime = new Date().getTime();
           // Construct UID and LastSeen and RankTime arrays to be able to query the ROWID values
           var sql = '';
-          while ((sql.length <= 8010) && (uniqueRowList.rows.length > 0))
+          while (sql.length <= 8010 && uniqueRowList.rows.length > 0)
           {
             var row = uniqueRowList.rows.pop();
             uidArray.push(row[0]); lsArray.push(row[1]); rtArray.push(row[2]); ltArray.push(row[3]);
@@ -541,12 +543,7 @@ function keepOnlyUniqueRecords()
             var rowIDresult = FusionTables.Query.sqlGet(sql);
             nRows += rowIDresult.rows.length * 1;
             rowidArray = [].concat(rowidArray, rowIDresult.rows);
-            // Avoid exceeding API rate limits (200 / 100 sec and 5 / sec)
-            var elapsedMillis = new Date().getTime() - batchStartTime;
-            if (totalQueries > 190 && elapsedMillis < 600)
-              Utilities.sleep(601-elapsedMillis);
-            else if (elapsedMillis < 200)
-              Utilities.sleep(201-elapsedMillis);
+            _sleep(totalQueries, batchStartTime);
           }
           catch (e)
           {
@@ -556,7 +553,7 @@ function keepOnlyUniqueRecords()
         }
         Logger.log('Get ROWIDs: ' + (new Date().getTime() - st) + ' millis');
 
-        st = new Date().getTime()
+        st = new Date().getTime();
         // Duplicated records have same LastTouched value. Build an {mem:[lt]} object and check
         // against it (since members aren't returned alphabetically).
         var ltMap = {};
@@ -564,10 +561,10 @@ function keepOnlyUniqueRecords()
         {
           var sql = '', sqlRowIDs = [], batchStartTime = new Date().getTime();
           // Construct ROWID query sql from the list of unique ROWIDs.
-          while ((sql.length <= 8050) && (rowidArray.length > 0))
+          while (sql.length <= 8050 && rowidArray.length > 0)
           {
             var rowid = rowidArray.pop();
-            sqlRowIDs.push(rowid[0])
+            sqlRowIDs.push(rowid[0]);
             sql = "SELECT * FROM " + ftid + " WHERE ROWID IN (" + sqlRowIDs.join(",") + ")";
           }
           try
@@ -575,26 +572,21 @@ function keepOnlyUniqueRecords()
             batchResult = FusionTables.Query.sqlGet(sql);
             nReturned += batchResult.rows.length * 1;
             var kept = [];
-            for (var row = 0; row < batchResult.rows.length; ++row)
-            {
-              var memsLTs = ltMap[batchResult.rows[row][1]] || [];
-              if (memsLTs.indexOf(batchResult.rows[row][4]) == -1)
+            batchResult.rows.forEach(function (brRow) {
+              var memberID = brRow[1];
+              var memsLTs = ltMap[memberID] || [];
+              if (memsLTs.indexOf(brRow[4]) === -1)
               {
                 // Did not find this LastTouched in this member's array of already-added LastTouched values
-                kept.push(batchResult.rows[row])
-                if (memsLTs.length == 0)
-                  ltMap[batchResult.rows[row][1]]=[batchResult.rows[row][4]];
+                kept.push(brRow);
+                if (!memsLTs.length)
+                  ltMap[memberID] = [ brRow[4] ];
                 else
-                  ltMap[batchResult.rows[row][1]].push(batchResult.rows[row][4]);
+                  ltMap[memberID].push(brRow[4]);
               }
-            }
-            records = [].concat(records, kept);
-            // Avoid exceeding API rate limits (30 / min and 5 / sec)
-            var elapsedMillis = new Date().getTime() - batchStartTime;
-            if (totalQueries > 190 && elapsedMillis < 600)
-              Utilities.sleep(601-elapsedMillis);
-            else if (elapsedMillis < 200)
-              Utilities.sleep(201-elapsedMillis);
+            });
+            Array.prototype.push.apply(records, kept);
+            _sleep(totalQueries, batchStartTime);
           }
           catch (e)
           {
@@ -603,9 +595,10 @@ function keepOnlyUniqueRecords()
           }
         }
         Logger.log('Get Row Data: ' + (new Date().getTime() - st) + ' millis');
+
         st = new Date().getTime();
         if (records.length === uniqueRowCount)
-          doReplace_(ftid, records)
+          doReplace_(ftid, records);
         Logger.log('Upload data: ' + (new Date().getTime() - st) + ' millis');
       }
     }
@@ -620,9 +613,9 @@ function keepOnlyUniqueRecords()
  */
 function arrayTranspose_(oldArr)
 {
-  if (oldArr.constructor != Array)
+  if (oldArr.constructor !== Array)
     throw new TypeError('Array to transpose is not an array');
-  else if (oldArr[0].constructor != Array)
+  else if (oldArr[0].constructor !== Array)
     throw new TypeError('Array is 1D - not transposable');
   else if (oldArr[0][0].constructor === Array)
     throw new TypeError('Array has too many dimensions');
@@ -643,7 +636,7 @@ function populateRankFusionTable_()
 {
   /**
    * Obtain the UIDs of those members that have data in the Rank DB FusionTable.
-   * @return {String[]}
+   * @return {string[]} uids present in the rank db FusionTable
    */
   function _getRankTableUserIDs_()
   {
@@ -651,16 +644,15 @@ function populateRankFusionTable_()
     var resp = FusionTables.Query.sqlGet(sql, { quotaUser: "maintenance" });
     if (!resp || !resp.rows || !resp.columns)
       return [];
-    return (resp.rows.map(function (row) { return String(row[0]); }));
+    return resp.rows.map(function (row) { return String(row[0]); });
   }
   /**
    * Mutate the input records by determining the appropriate LastSeen and MHCC Crown values for each
    * member's unique RankTime values. If a RankTime is duplicated, only the first instance is kept.
    * 
    * @param {Array[]} records    2D array destined to be uploaded to the Rank DB FusionTable.
-   * @param {{uid: {rankTimes: {String: Number}}}} dataMap Object which stores yet-unprocessed RankTimes, and the source row.
+   * @param {Object <string, Object <string, number>>} dataMap Object which stores yet-unprocessed RankTimes, and the source row.
    * @param {Array[]} reference  2D array downloaded from the Crown DB FusionTable, which birthed the records array.
-   * @return {void}
    */
   function _fillRankRecords_(records, dataMap, reference)
   {
@@ -711,7 +703,7 @@ function populateRankFusionTable_()
     logs = [];
 
   // We only need the Member Name, UID, LastSeen, LastTouched, MHCC Crowns, Rank, and RankTime.
-  const SELECT = ("SELECT Member, UID, LastSeen, LastTouched, MHCC, Rank, RankTime FROM " + ftid),
+  const SELECT = "SELECT Member, UID, LastSeen, LastTouched, MHCC, Rank, RankTime FROM " + ftid,
     ORDER = ") ORDER BY UID ASC, RankTime ASC, LastTouched ASC";
 
   do {
@@ -752,7 +744,7 @@ function populateRankFusionTable_()
     console.timeEnd("Batch execution: " + uids.length + " members.");
     console.log({ "numDuplicates": duplicates.length, "rowsAdded": rankRecords.length, "rowsDownloaded": crownRecords.length });
     console.log({ "time shifts": timeShifts });
-  } while (toDo.length && (new Date() - start < 250 * 1000));
+  } while (toDo.length && new Date() - start < 250 * 1000);
 
   // Log a status report.
   console.info({ "message": logs.length + " queries completed", "logs": logs, "timeUsed": (new Date() - start) / 1000, "# Remaining": toDo.length });
@@ -763,10 +755,10 @@ function populateRankFusionTable_()
 /**
  * Function which drops the given columns from the target table. Returns true only if all requested drops were complete.
  * 
- * @param {String} tableId
- * @param {{matchOn:String, columns:any[]}} columnsToDrop An object which indicates what property of the columns should be matched, and the corresponding identifier to match.
+ * @param {string} tableId The Fusion Table to query
+ * @param {{matchOn: string, columns: any[]}} columnsToDrop An object which indicates what property of the columns should be matched, and the corresponding identifier to match.
  *                                                     For example, matchOn could be 'name', and columns would contain the names of columns to drop.
- * @return {Boolean}
+ * @return {boolean} Whether or not all requested columns were dropped
  */
 function columnDropper_(tableId, columnsToDrop)
 {
@@ -783,7 +775,7 @@ function columnDropper_(tableId, columnsToDrop)
   if (!backupID) return;
 
   // Ensure a valid ID was given by attempting to read it.
-  const options = { quotaUser: "maintenance", "fields": "tableId,name,columns" };
+  const options = { quotaUser: "maintenance", fields: "tableId,name,columns" };
   try { var target = FusionTables.Table.get(tableId, options); }
   catch (e) { console.error(e); return; }
 
@@ -806,7 +798,7 @@ function columnDropper_(tableId, columnsToDrop)
 /**
    * Query the Crown FusionTable to determine how many rows each member has, and return a UID-indexed object.
    * 
-   * @return {{uid:Number}}
+   * @return {Object <string, number>} a uid-indexed count of the rows per member.
    */
 function getCrownTableRowCounts_()
 {
@@ -821,18 +813,18 @@ function getCrownTableRowCounts_()
  * and number of rows queried will be below the supplied arguments.
  * Mutates the input "remaining" array.
  * 
- * @param {String[][]} remaining MUTABLE 2D array of [Name, UID] of members that have yet to be migrated.
- * @param {{uid:Number}} rowKey  Lookup object which stores the number of rows a given UID adds to the overall query.
- * @param {Number} maxRows       The maximum number of rows that should return from a query (i.e. to not generate a "Response > 10 MB" 503 error).
- * @param {Number} maxUIDStrLength The maximum joined length of the queried UIDs (total query string length must be < ~8050 characters).
- * @return {String[]}
+ * @param {Array <string>[]} remaining MUTABLE 2D array of [Name, UID] of members that have yet to be migrated.
+ * @param {Object <string, number>} rowKey  Lookup object which stores the number of rows a given UID adds to the overall query.
+ * @param {number} maxRows       The maximum number of rows that should return from a query (i.e. to not generate a "Response > 10 MB" 503 error).
+ * @param {number} maxUIDStrLength The maximum joined length of the queried UIDs (total query string length must be < ~8050 characters).
+ * @return {string[]} The next set of UIDs to be queried.
  */
 function getNextUserSet_(remaining, rowKey, maxRows, maxUIDStrLength)
 {
   if (!remaining || !remaining.length)
     return [];
   if (!maxUIDStrLength) maxUIDStrLength = 7900;
-  const unknown = remaining.filter(function (memUID) { return (!rowKey[memUID[1]] && rowKey[memUID[1]] !== 0); });
+  const unknown = remaining.filter(function (memUID) { return !rowKey[memUID[1]] && rowKey[memUID[1]] !== 0; });
   if (unknown.length)
   {
     console.warn({ "no-row members": unknown });
@@ -848,7 +840,7 @@ function getNextUserSet_(remaining, rowKey, maxRows, maxUIDStrLength)
   for (var m = 0; m < remaining.length; /* mutating */)
   {
     var memberRows = rowKey[remaining[m][1]];
-    if (memberRows && (nextRows + memberRows < maxRows) && (queryLength + remaining[m][1].length < maxUIDStrLength))
+    if (memberRows && nextRows + memberRows < maxRows && queryLength + remaining[m][1].length < maxUIDStrLength)
     {
       var uid = String(remaining.splice(m, 1)[0][1]);
       nextSet.push(uid);
@@ -888,8 +880,8 @@ function correctTimestamps_()
    * by checking if the record was generated within the DST "activation windows".
    * Returns the number of milliseconds that need to be added to the LastSeen and LastCrown timestamps.
    * 
-   * @param {Number} lastTouched
-   * @return {Number}
+   * @param {number} lastTouched a Date milliseconds value.
+   * @return {number} The computed timezone offset.
    */
   function _getTzOffset_(lastTouched)
   {
@@ -907,9 +899,9 @@ function correctTimestamps_()
    * Deletes user rows prior to the upload of their new, fixed rows.
    * Returns the number of rows that were modified.
    * 
-   * @param {String[]} uidsToDelete The users for whom records are being fixed.
-   * @param {String} tableId The table to operate on (Rank DB or Crown DB id)
-   * @return {Number} 
+   * @param {string[]} uidsToDelete The users for whom records are being fixed.
+   * @param {string} tableId The table to operate on (Rank DB or Crown DB id)
+   * @return {number} The number of rows modified.
    */
   function _deleteUserRows_(uidsToDelete, tableId)
   {
@@ -923,11 +915,11 @@ function correctTimestamps_()
     return sheet ? sheet : SpreadsheetApp.getActive().insertSheet("tzshifted");
   }
   /**
-   * Acquire all rows from the given table for the given users
+   * Acquire all rows from the given table for the given users. No safeguards or repeated queries.
    * 
-   * @param {String[]} usersToGet
-   * @param {String} tableId
-   * @return {Array[]}
+   * @param {string[]} usersToGet array of user ids to retrieve
+   * @param {string} tableId FusionTable identifier to work with
+   * @return {Array[]} all rows belonging to the requested users in the given table.
    */
   function _getRows_(usersToGet, tableId)
   {
@@ -1003,7 +995,7 @@ function correctTimestamps_()
 
     //   6) Add the UIDs of these members to the spreadsheet.
     logSheet.getRange(logSheet.getLastRow() + 1, 1, uids.length, 1).setValues(uids.map(function (u) { return [u]; }));
-  } while (toDo.length && (new Date() - start < 300 * 1000));
+  } while (toDo.length && new Date() - start < 300 * 1000);
   if (toDo.length)
     ScriptApp.newTrigger("correctTimestamps").timeBased().at(new Date(new Date().getTime() + 60 * 1000)).create();
   else console.log("All LastSeen and LastCrown records have been corrected.");
