@@ -8,8 +8,8 @@ import time
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
-from services import DriveHandler
-from services import FusionTableHandler
+from services import DriveHandler, FusionTableHandler
+from services import HttpError
 from services import print_progress_bar as ppb
 from services import _write_as_csv as save
 
@@ -425,9 +425,9 @@ def pick_table() -> str:
     '''
     def is_valid_fusiontable(id: str) -> bool:
         try:
-            handlers['FusionTable'].table.get(tableId=id).execute()
+            handlers['FusionTables'].table.get(tableId=id).execute()
             return True
-        except Exception as err:
+        except HttpError as err:
             print(err)
             return False
 
@@ -436,7 +436,7 @@ def pick_table() -> str:
         typed = input("Enter the table name from above, or a table id: ")
         if len(typed) == 41 and is_valid_fusiontable(typed):
             choice = typed
-        elif typed in TABLE_LIST.keys():
+        elif typed in TABLE_LIST:
             choice = TABLE_LIST[typed]
         else:
             print("Unable to use your input.")
