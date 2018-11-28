@@ -730,12 +730,15 @@ if __name__ == "__main__":
     crowns = get_crown_data()#time_start, time_end)
     #parseMHCCTimes(crowns)
     collected_bad_crowns = []
+    lastcrown_recalculations = []
     indexed_crowns = {}
     for record in crowns:
         indexed_crowns.setdefault(record['UID'], []).append(record)
     for i, uid in enumerate(uids):
         member_crowns = indexed_crowns.get(uid, [])
         member_crowns.sort(key=sort_by_lasttouched)
+        lastcrown_modifications = []
+
         indices = get_prune_range(member_crowns)
         while indices is not None:
             # Verify assumption that only members with entries in Jack's Crown DB have bad data
@@ -743,11 +746,25 @@ if __name__ == "__main__":
             to_prune = member_crowns[indices[0] : indices[1]]
             assert len(set(x['LastSeen'] for x in to_prune)) == 1
             collected_bad_crowns.extend(to_prune)
+            # Recalculate the "LastCrown" column
+            if indices[1] is not None:
+                # There is a record to compute with.
+                reference = member_crowns[indices[0] - 1]
+                modified = member_crowns[indices[1]]
+                if all(modified[key] == reference[key] for key in ('Silver', 'Gold', 'MHCC')):
+                    modified['LastCrown'] = reference['LastCrown']
+                    lastcrown_modifications.append(modified)
+                elif modified['LastCrown'] != modified['LastSeen']:
+                    print(f'Has new MHCC crowns but not new LastCrown. Updating from {modified["LastCrown"]} to {modified["LastSeen"]}')
+                    modified['LastCrown'] = modified['LastSeen']
+                    lastcrown_modifications.append(modified)
             # It is possible there is more than one set of bad data. Remove all of them.
             del member_crowns[indices[0] : indices[1]]
             indices = get_prune_range(member_crowns)
         # Update the stored data to reflect the fixed representation.
         indexed_crowns[uid] = member_crowns
+        kept_rowids = set(x['rowid'] for x in member_crowns)
+        lastcrown_recalculations.extend([x for x in lastcrown_modifications if x['rowid'] in kept_rowids])
     if collected_bad_crowns:
         # Write this data to disk (allow avoiding an expensive requery of the table)
         with open('bad_crown_data.csv', 'w', encoding='utf-8', newline='') as file:
