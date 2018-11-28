@@ -314,9 +314,9 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
 
 
     @staticmethod
-    def get_filename_for_table(tableId: str) -> str:
+    def get_filename_for_table(tableId: str, method: str = '') -> str:
         """Returns the name that would be used to save that table data locally"""
-        return f'table_{tableId}.csv'
+        return f'table_{tableId}{method}.csv'
 
     # Generic data fetch methods
     def verify_ft_service(self):
@@ -766,7 +766,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         if not tableId or not new_row_data:
             return False
         if not filename:
-            filename = self.get_filename_for_table(tableId)
+            filename = self.get_filename_for_table(tableId, 'replaceRows')
         # Create a resumable MediaFileUpload with the "interesting" data to retain.
         sep = ','
         upload = _make_media_file(new_row_data, filename, True, sep)
@@ -814,7 +814,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         if not tableId or not new_row_data:
             return False
         if not filename:
-            filename = self.get_filename_for_table(tableId)
+            filename = self.get_filename_for_table(tableId, 'importRows')
         # Create a resumable MediaFileUpload with the "interesting" data to retain.
         sep = ','
         upload = _make_media_file(new_row_data, filename, True, sep)
