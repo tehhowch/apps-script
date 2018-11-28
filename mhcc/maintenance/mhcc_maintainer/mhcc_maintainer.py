@@ -695,7 +695,6 @@ if __name__ == "__main__":
     collected_bad_ranks = []
     for i, uid in enumerate(uids):
         member_ranks = indexed_ranks.get(uid, [])
-        #member_ranks = get_rank_data(uid=uid) # results in per-user quota violation
 
         member_ranks.sort(key=sort_by_ranktime)
         indices = get_prune_range(member_ranks)
@@ -704,13 +703,10 @@ if __name__ == "__main__":
             assert uid in problem_uids, f'{uid} is not in Jacks db'
             to_prune = member_ranks[indices[0] : indices[1]]
             assert len(set(x['LastSeen'] for x in to_prune)) == 1
-            print(f'{i *100 / len(uids):>6.2f}%: Found {len(to_prune)} rank records to prune for {uid}')
             collected_bad_ranks.extend(to_prune)
             # It is possible there is more than one set of bad data. Remove all of them.
             del member_ranks[indices[0] : indices[1]]
             indices = get_prune_range(member_ranks)
-            if indices is not None:
-                print(f'Additional bad ranges found for {member_ranks[0]["Member"]}')
         # Update the stored data to reflect the fixed representation.
         indexed_ranks[uid] = member_ranks
 
@@ -724,11 +720,32 @@ if __name__ == "__main__":
 
         min_ms = min(x["RankTime"] for x in collected_bad_ranks if x['MHCC Crowns'] > 0)
         print(f'Earliest rank regression was on {datetime.utcfromtimestamp(min_ms//1000).replace(microsecond=min_ms%1000*1000).strftime(STRTM_FMT)}')
+
         # Create a backup of the rank table
-        #backup = ft.backup_table(TABLE_LIST['MHCC Rank DB'])
-        #if backup:
-            #rowids = [x['rowid'] for x in collected_bad_ranks]
+        tid = TABLE_LIST['MHCC Rank DB']
+        backup = ft.backup_table(tid)
+        if backup:
+            # Avoid deletions while the backup is cloning
+            while True:
+                tasks = ft.get_tasks(backup['tableId'])
+                if tasks:
+                    print(tasks[0]['type'], tasks[0]['progress'])
+                    time.sleep(5)
+                else:
+                    break
+
+            rowids = [x['rowid'] for x in collected_bad_ranks]
             # Delete the rows with the given ROWIDs
+            num_rows = ft.count_rows(tid)
+            target_rows = num_rows - len(rowids)
+            delete_records_by_rowid(ft, tid, rowids)
+            new_count = ft.count_rows(tid)
+            if new_count >= num_rows:
+                print('Rank table does not have fewer rows', new_count, num_rows)
+            if new_count != target_rows:
+                print(f'Expected rank table to have {target_rows}, but it has {new_count}')
+        else:
+            print('Skipped rank data deletion due to failed backup')
 
     # Bad data may have additionally accumulated in the Crowns DB that does not quite correspond to that visible via the Rank DB
     # For example, if information from all data sources is added, then the recorded information toggles between the two, but only the most
@@ -736,7 +753,6 @@ if __name__ == "__main__":
     print(f'Collecting crown data in range {time_start}-{time_end}')
     crowns = get_crown_data(time_start, time_end)
     crown_header_order = [x['name'] for x in ft.get_all_columns(TABLE_LIST['MHCC Crowns DB'])['columns']]
-    #parseMHCCTimes(crowns)
     collected_bad_crowns = []
     lastcrown_recalculations = []
     indexed_crowns = {}
@@ -800,10 +816,18 @@ if __name__ == "__main__":
 
             rowids = [x['rowid'] for x in collected_bad_crowns]
             # Delete the rows with the given ROWIDs
-            #delete_records_by_rowid(ft, tid, rowids)
+            num_rows = ft.count_rows(tid)
+            target_rows = num_rows - len(rowids)
+            delete_records_by_rowid(ft, tid, rowids)
+            new_count = ft.count_rows(tid)
+            if new_count >= num_rows:
+                print('Crown table does not have fewer rows', new_count, num_rows)
+            if new_count != target_rows:
+                print(f'Expected crown table to have {target_rows}, but it has {new_count}')
 
             # Update the associated LastCrown records
             rowids = [x['rowid'] for x in lastcrown_recalculations]
-            #delete_records_by_rowid(ft, tid, rowids)
-            #ft.import_rows(tid, [x['new_record'] for x in lastcrown_recalculations])
+            delete_records_by_rowid(ft, tid, rowids)
+            added = ft.import_rows(tid, [x['new_record'] for x in lastcrown_recalculations])
+            print(f'{added} of {len(lastcrown_recalculations)} rows with corrected LastCrown values were uploaded.')
     print('waiting for you to do stuff')
