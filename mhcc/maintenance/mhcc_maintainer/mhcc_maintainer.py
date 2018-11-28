@@ -496,6 +496,7 @@ if __name__ == "__main__":
                 dt = datetime.utcfromtimestamp(ms//1000).replace(microsecond=ms%1000*1000).strftime(STRTM_FMT)
                 row[f'{k}_TS'] = dt
 
+
     def coerce_to_typed_info(tableId: str, data):
         '''Converts str-only data elements to str, int, or float, in accordance with the FusionTable's
         formatPattern and type for the given column'''
@@ -503,7 +504,7 @@ if __name__ == "__main__":
         coerced = [{k: converter[k](v) for k, v in x.items()} for x in data]
         return coerced
 
-    def get_rank_data(ranktime_start: str = '', ranktime_end: str = '', uid: str = ''):
+    def get_rank_data(ranktime_start: str = None, ranktime_end: str = None, uid: str = None):
         ''' For the given restrictions, obtain the corresponding MHCC Rank DB records '''
         tid = TABLE_LIST['MHCC Rank DB']
         sql = f'SELECT rowid, Member, UID, LastSeen, RankTime, Rank, \'MHCC Crowns\' FROM {tid}'
@@ -536,29 +537,35 @@ if __name__ == "__main__":
         output = (dict(zip(headers, x)) for x in rank_data['rows'])
         return coerce_to_typed_info(tid, output)
 
-    def get_associated_crown_data(bad_rank_data: list):
-        ''' Use the information from the input rank records to determine the faulty Crown records '''
-        uid_lastseen = {}
-        for record in bad_rank_data:
-            uid_lastseen.setdefault(record['UID'], set()).add(str(record['LastSeen']))
-
+    def get_crown_data(crowntime_start: str = None, crowntime_end: str = None, uid: str = None):
+        ''' For the given restrictions, obtain the corresponding MHCC Crown DB records '''
         tid = TABLE_LIST['MHCC Crowns DB']
         sql = f'SELECT rowid, Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC FROM {tid}'
-        crown_data = {'rows': []}
-        for uid, ls in uid_lastseen.items():
-            ls = set(str(x['LastSeen']) for x in member_data.get('ranks', []))
-            query = sql + f' WHERE UID = {uid} and LastSeen IN ({",".join(ls)}) ORDER BY LastTouched ASC'
-            try:
-                batch_data = ft.get_query_result(query=query, kb_row_size=0.25)
-            except HttpError:
-                print('Unable to obtain ROWIDs in bulk Crown query')
-                batch_bytes = ft.query.sqlGet_media(sql=query).execute()
-                batch_data = ft.bytestring_to_queryresult(batch_bytes)
-            if 'columns' not in crown_data:
-                crown_data['columns'] = batch_data['columns']
-            crown_data['rows'].extend(batch_data['rows'])
-            time.sleep(1)
-        
+        if any((crowntime_start, crowntime_end, uid)):
+            sql += ' WHERE '
+        # For any input time strings, convert to the corresponding UTC millis value.
+        if crowntime_start:
+            ts = datetime.strptime(crowntime_start, STRTM_FMT).timestamp() * 1000
+            sql += f'LastTouched > {ts}'
+        if crowntime_end:
+            te = datetime.strptime(crowntime_end, STRTM_FMT).timestamp() * 1000
+            if crowntime_start:
+                sql += ' and '
+            sql += f'LastTouched < {te}'
+        if uid:
+            if crowntime_start or crowntime_end:
+                sql += ' and '
+            sql += f'UID = {uid}'
+        sql += ' ORDER BY UID ASC, LastTouched ASC'
+
+        # Download the subset of data from FusionTables
+        try:
+            crown_data = ft.get_query_result(query=sql, kb_row_size=0.25)
+        except HttpError:
+            print('Unable to obtain ROWIDs in bulk crown query')
+            crown_bytes = ft.query.sqlGet_media(sql=sql).execute()
+            crown_data = ft.bytestring_to_queryresult(crown_bytes)
+        # Convert from list of lists to list of dicts
         headers = crown_data['columns']
         output = (dict(zip(headers, x)) for x in crown_data['rows'])
         return coerce_to_typed_info(tid, output)
@@ -570,7 +577,12 @@ if __name__ == "__main__":
             try:
                 return int(val)
             except ValueError:
-                return int(float(val))
+                try:
+                    return int(float(val))
+                except ValueError as err:
+                    if val == 'NaN':
+                        return None
+                    raise err
 
         cols = ft.table.get(tableId=id, fields='columns(columnId,name,type,formatPattern)').execute()['columns']
         maps = {'rowid': str}
@@ -588,14 +600,23 @@ if __name__ == "__main__":
             maps[c['name']] = f_func
         return maps
 
+
     def sort_by_ranktime(record):
         return record['RankTime']
+    def sort_by_lasttouched(record):
+        return record['LastTouched']
 
-    def get_first_decrease(ranks: list, key: str):
+    def get_first_decrease(records: list, key: str):
         ''' Find the first record for the given UID in which the value of the given key decreases '''
-        if ranks:
-            last_key_value = ranks[0][key]
-            for i, record in enumerate(ranks[1:], 1):
+        if records:
+            last_key_value = None
+            start = 0
+            while last_key_value is None and start < len(records):
+                last_key_value = records[start][key]
+                start += 1
+            if last_key_value is None:
+                return None
+            for i, record in enumerate(records[start:], start):
                 current_key_value = record[key]
                 if(last_key_value > current_key_value):
                     return i
@@ -622,35 +643,41 @@ if __name__ == "__main__":
             return None
         # Find the next record that restores the required "LastSeen increasing" property
         first_good = get_first_correct(sorted_records, 'LastSeen', first_bad)
-        assert first_good is not None and first_good < len(sorted_records), f'Unterminated range of bad data'
+        if first_good is None:
+            print(f'All records after {first_bad} are bad ({len(sorted_records)} total records).')
+        else:
+            assert first_good < len(sorted_records), f'First good index exceeds allowable dimension'
         return (first_bad, first_good)
+
 
     def delete_records_by_rowid(service: FusionTableHandler, tableId: str, rowids: list):
         ''' Delete the given records from the given FusionTable. Does not back up the table first.'''
         raw_sql = 'DELETE FROM ' + tableId + ' WHERE ROWID IN ({})'
-        max_query_length = service.MAX_GET_QUERY_LENGTH - max(len(str(x)) for x in rowids)
+        max_query_length = service.MAX_GET_QUERY_LENGTH * .75 - 2 * max(len(str(x)) for x in rowids)
+        deleted = 0
         while rowids:
             query_ids = [rowids.pop()]
             while rowids and len(raw_sql.format(','.join(query_ids))) < max_query_length:
                 query_ids.append(rowids.pop())
             query = raw_sql.format(','.join(query_ids))
-            assert len(query) <= max_query_length, f'Query too long {len(query)}'
+            assert len(query) <= service.MAX_GET_QUERY_LENGTH, f'Query too long {len(query)} vs {service.MAX_GET_QUERY_LENGTH}'
             print(f'Estimated remaining time of {len(rowids) / len(query_ids)} sec.')
-            service.query.sql(sql=query).execute(num_retries=2)
-            time.sleep(.5)
-        print(f'Deletion completed')
+            resp = service.query.sql(sql=query).execute(num_retries=2)
+            deleted += int(resp['rows'][0][0])
+            time.sleep(1)
+        print(f'Deleted {deleted} rows.')
+        return deleted
 
     def delete_records_by_criteria(service: FusionTableHandler, tableId: str, records):
         ''' Delete the given records by specifying various criteria other than rowid.
-        E.g. all bad records for a given UID have the same LastSeen and fall in a certain range of RankTimes'''
+        E.g. all bad records for a given UID have the same LastSeen and fall in a certain range of RankTimes / LastTouched'''
         pass
 
-    jd = loadJacksData()
-    #parseTimestamps(jd)
-    at_risk = getMHCCMembersInJacks(jd)
-    rankStart = '2018-05-29T12:00:00.000000+0000'
-    rankEnd = '2018-11-30T12:00:00.000000+0000'
-    ranks = get_rank_data(rankStart, rankEnd)
+
+    at_risk = getMHCCMembersInJacks(loadJacksData())
+    time_start = '2018-05-29T12:00:00.000000+0000'
+    time_end = '2018-11-30T12:00:00.000000+0000'
+    ranks = get_rank_data(time_start, time_end)
     #parseMHCCTimes(ranks)
     problem_uids = set(x['snuid'] for x in at_risk)
     print(f'Indexing {len(ranks)} by UID')
@@ -658,7 +685,7 @@ if __name__ == "__main__":
     for record in ranks:
         indexed_ranks.setdefault(record['UID'], []).append(record)
 
-    collected_bad = []
+    collected_bad_ranks = []
     for i, uid in enumerate(uids):
         member_ranks = indexed_ranks.get(uid, [])
         #member_ranks = get_rank_data(uid=uid) # results in per-user quota violation
@@ -671,7 +698,7 @@ if __name__ == "__main__":
             to_prune = member_ranks[indices[0] : indices[1]]
             assert len(set(x['LastSeen'] for x in to_prune)) == 1
             print(f'{i *100 / len(uids):>6.2f}%: Found {len(to_prune)} rank records to prune for {uid}')
-            collected_bad.extend(to_prune)
+            collected_bad_ranks.extend(to_prune)
             # It is possible there is more than one set of bad data. Remove all of them.
             del member_ranks[indices[0] : indices[1]]
             indices = get_prune_range(member_ranks)
@@ -680,39 +707,55 @@ if __name__ == "__main__":
         # Update the stored data to reflect the fixed representation.
         indexed_ranks[uid] = member_ranks
 
-    if collected_bad:
+    indexed_bad_data = {}
+    if collected_bad_ranks:
         # Write this data to disk (allow avoiding an expensive requery of the table)
         with open('bad_rank_data.csv', 'w', encoding='utf-8', newline='') as file:
             dw = csv.DictWriter(file, fieldnames=list(collected_bad_ranks[0].keys()), quoting=csv.QUOTE_NONNUMERIC)
             dw.writeheader()
             dw.writerows(collected_bad_ranks)
 
-        min_ms = min(x["RankTime"] for x in collected_bad if x['MHCC Crowns'] > 0)
+        min_ms = min(x["RankTime"] for x in collected_bad_ranks if x['MHCC Crowns'] > 0)
         print(f'Earliest rank regression was on {datetime.utcfromtimestamp(min_ms//1000).replace(microsecond=min_ms%1000*1000).strftime(STRTM_FMT)}')
-        # Get the related records in Crown DB for each LastSeen
-        associated_crown_data = get_associated_crown_data(collected_bad)
-        
-        # Associate crown & rank data for each member per LastSeen value
-        indexed_bad_data = {}
-        skipped_crown_rows = 0
-        for record in collected_bad:
-            ls_data = indexed_bad_data.setdefault(record['UID'], {}).setdefault(record['LastSeen'], {})
-            ls_data.setdefault('ranks', []).append(record)
-            # For each LastSeen, store the minimum associated RankTime. Any crown data appearing more than
-            # 6h (e.g. ~2 update cycles) earlier is considered valid
-            if record['RankTime'] < ls_data.get('min', 0):
-                ls_data['min'] = record['RankTime']
-        for record in associated_crown_data:
-            ls_data = indexed_bad_data.setdefault(record['UID'], {}).setdefault(record['LastSeen'], {})
-            if record['LastTouched'] >= ls_data['min']:
-                ls_data.setdefault('crowns', []).append(record)
-            else:
-                skipped_crown_rows += 1
-        print(f'Skipped {skipped_crown_rows} crown records that were assumed valid based on time delta')
         # Create a backup of the rank table
         #backup = ft.backup_table(TABLE_LIST['MHCC Rank DB'])
         #if backup:
-            #rowids = [x['rowid'] for x in collected_bad]
+            #rowids = [x['rowid'] for x in collected_bad_ranks]
             # Delete the rows with the given ROWIDs
 
+    # Bad data may have additionally accumulated in the Crowns DB that does not quite correspond to that visible via the Rank DB
+    # For example, if information from all data sources is added, then the recorded information toggles between the two, but only the most
+    # recently added would be presented for inclusion in the Rank DB.
+    print('Collecting crown data in range {time_start}-{time_end}')
+    crowns = get_crown_data()#time_start, time_end)
+    #parseMHCCTimes(crowns)
+    collected_bad_crowns = []
+    indexed_crowns = {}
+    for record in crowns:
+        indexed_crowns.setdefault(record['UID'], []).append(record)
+    for i, uid in enumerate(uids):
+        member_crowns = indexed_crowns.get(uid, [])
+        member_crowns.sort(key=sort_by_lasttouched)
+        indices = get_prune_range(member_crowns)
+        while indices is not None:
+            # Verify assumption that only members with entries in Jack's Crown DB have bad data
+            assert uid in problem_uids, f'{uid} is not in Jacks db'
+            to_prune = member_crowns[indices[0] : indices[1]]
+            assert len(set(x['LastSeen'] for x in to_prune)) == 1
+            collected_bad_crowns.extend(to_prune)
+            # It is possible there is more than one set of bad data. Remove all of them.
+            del member_crowns[indices[0] : indices[1]]
+            indices = get_prune_range(member_crowns)
+        # Update the stored data to reflect the fixed representation.
+        indexed_crowns[uid] = member_crowns
+    if collected_bad_crowns:
+        # Write this data to disk (allow avoiding an expensive requery of the table)
+        with open('bad_crown_data.csv', 'w', encoding='utf-8', newline='') as file:
+            dw = csv.DictWriter(file, fieldnames=list(collected_bad_crowns[0].keys()), quoting=csv.QUOTE_NONNUMERIC)
+            dw.writeheader()
+            dw.writerows(collected_bad_crowns)
+
+        min_ms = min(x["LastTouched"] for x in collected_bad_crowns if x['MHCC'] > 0)
+        print(f'Earliest data regression was on {datetime.utcfromtimestamp(min_ms//1000).replace(microsecond=min_ms%1000*1000).strftime(STRTM_FMT)}')
+        
     print('waiting for you to do stuff')
