@@ -35,39 +35,41 @@ Refs https://stackoverflow.com/a/34325723
 
 
 
-def _send_whole_upload(request: HttpRequest) -> bool:
+def _send_whole_upload(request: HttpRequest):
     '''Upload a non-resumable media file.
 
 @params:
     request: HttpRequest, a MediaUpload object.
 
-@return: bool, whether or not the upload succeeded.
+@return: tuple(bool, whether or not the upload succeeded
+               response, the result of the executed request (or None)
     '''
     if not request or not isinstance(request, HttpRequest):
-        return False
+        return (False, None)
 
     try:
-        request.execute(num_retries=2)
-        return True
+        resp = request.execute(num_retries=2)
+        return (True, resp)
     except (HttpLib2Error | HttpError) as err:
         print('Upload failed:', err)
-        return False
+    return (False, None)
 
 
 
-def _step_upload(request: HttpRequest) -> bool:
+def _step_upload(request: HttpRequest):
     '''Print the percentage complete for a given upload while it is executing.
 
 @params:
     request: HttpRequest, supporting next_chunk() (i.e., is resumable).
 
-@return: bool, whether or not the upload succeeded.
+@return: tuple(bool, whether or not the upload succeeded
+               response, the result of the executed request (or None)
 
 @raises: HttpError 417.
         This error indicates if the FusionTable's self size limit will be exceeded.
     '''
     if not request or not isinstance(request, HttpRequest):
-        return False
+        return (False, None)
 
     done = None
     fails = 0
@@ -79,7 +81,7 @@ def _step_upload(request: HttpRequest) -> bool:
         except HttpError as err:
             print()
             if err.resp.status in [404]:
-                return False
+                return (False, None)
             if err.resp.status in [500, 502, 503, 504] and fails < 5:
                 time.sleep(2 ^ fails)
                 fails += 1
@@ -88,12 +90,12 @@ def _step_upload(request: HttpRequest) -> bool:
                 raise err
             else:
                 print('Upload failed:', err)
-                return False
+                return (False, None)
         else:
             print_progress_bar(status.progress() if status else 1., 1., 'Uploading...', length=50)
 
     print()
-    return True
+    return (True, done)
 
 
 
@@ -776,8 +778,8 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         # Try the upload twice (which requires creating a new request).
         if upload and upload.resumable():
             try:
-                if not _step_upload(self.table.replaceRows(**kwargs)):
-                    return _step_upload(self.table.replaceRows(**kwargs))
+                if not _step_upload(self.table.replaceRows(**kwargs))[0]:
+                    return _step_upload(self.table.replaceRows(**kwargs))[0]
             except HttpError as err:
                 if (err.resp.status in [417]
                         and 'Table will exceed allowed maximum size' in err.__str__()):
@@ -785,14 +787,54 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                     # anyway. If the table's current data is too large, such that old + new >= 250,
                     # then Error 417 is returned.  Handle this by explicitly deleting the rows first.
                     if self.delete_all_rows(tableId):
-                        return _step_upload(self.table.importRows(**kwargs))
+                        return _step_upload(self.table.importRows(**kwargs))[0]
                     return False
                 raise err
 
         elif upload:
-            if not _send_whole_upload(self.table.replaceRows(**kwargs)):
-                return _send_whole_upload(self.table.replaceRows(**kwargs))
+            if not _send_whole_upload(self.table.replaceRows(**kwargs))[0]:
+                return _send_whole_upload(self.table.replaceRows(**kwargs))[0]
         return True
+
+
+    def import_rows(self, tableId: str, new_row_data: list, filename='') -> int:
+        '''Upload the new data into the target table
+
+    Performs a FusionTables.tables().importRows() call to the input table, adding the input rows.
+    Does not attempt to back up the table for you.
+
+    @params:
+        tableId: str, the FusionTable to update (String)
+        new_row_data: list, the values to overwrite the FusionTable with (list of lists)
+        filename: str, the name of a file to which the uploaded data should first be serialized.
+                Defaults to a unique name based on the target table, in the local directory.
+
+    @return: int, the number of rows added to the table.
+        '''
+        if not tableId or not new_row_data:
+            return False
+        if not filename:
+            filename = self.get_filename_for_table(tableId)
+        # Create a resumable MediaFileUpload with the "interesting" data to retain.
+        sep = ','
+        upload = _make_media_file(new_row_data, filename, True, sep)
+        kwargs = {'tableId': tableId,
+                  'media_body': upload,
+                  'media_mime_type': 'application/octet-stream',
+                  'encoding': 'UTF-8',
+                  'delimiter': sep}
+        # Try the upload twice (which requires creating a new request).
+        result, resp = None, None
+        if upload and upload.resumable():
+            result, resp = _step_upload(self.table.importRows(**kwargs))
+            if not result:
+                result, resp = _step_upload(self.table.importRows(**kwargs))
+        elif upload:
+            result, resp = _send_whole_upload(self.table.importRows(**kwargs))
+            if not result:
+                result, resp = _send_whole_upload(self.table.importRows(**kwargs))
+
+        return int(resp['numRowsReceived']) if result else 0
 
 
     @staticmethod
