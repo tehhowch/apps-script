@@ -12,7 +12,7 @@ STRTM_FMT = '%Y-%m-%dT%H:%M:%S.%f%z'
 table = '1xNi2C5Jfxz8QMkvVitUOgLumz3GTewm5t29hrkUF' # jacks ft id
 ft: FusionTableHandler = None
 
-def loadJacksData():
+def loadJacksData(add_LastSeen: bool = False):
     ''' TODO: replace with read from live fusiontable (and associated processing) '''
     def convertTimestampToMillis(jd: dict):
         '''Add a naive-tz datetime to each record (for easier human consumption), and creates a 'LastSeen' field
@@ -31,13 +31,15 @@ def loadJacksData():
     # Annotate the data (list of dicts instead of list of lists)
     # TODO: *flexibly* coerce to typed data
     jd = [dict(zip(headers, [str(x[0]), int(x[1]) * 1000, int(x[2]), int(x[3]), int(x[4])] )) for x in jacks_data]
+    if add_LastSeen:
+        convertTimestampToMillis(jd)
     return jd
 
-def getMHCCMembersInJacks(jd: dict):
-    mhcc_jd = [x for x in jd if x['snuid'] in uids]
+def getMHCCMembersInJacks(users: list, jd: dict):
+    mapper = {uid: name for (name, uid) in users}
+    mhcc_jd = [x for x in jd if x['snuid'] in mapper]
     for m in mhcc_jd:
-        name = [x[0] for x in users if x[1] == m['snuid']][0]
-        m['name'] = name
+        m['name'] = mapper.get(m['snuid'], '')
     return mhcc_jd
 
 
@@ -155,7 +157,7 @@ def get_first_correct(records: list, key: str, start: int):
     Implicitly assumes that the records are appropriately sorted.
     Implicitly assumes that comparing all input records is sensible.
     '''
-    if ranks:
+    if records:
         assert start < len(records), f'Inspection index {start} exceeds maximum dimension {len(records)-1}'
         assert start > 0, f'Unable to obtain required comparison value due to invalid starting index {start}'
         last_key_value = records[start - 1][key]
@@ -208,7 +210,7 @@ def clean_rank_regression(service: FusionTableHandler, uids: list, start: str, e
         indexed_ranks[record['UID']].append(record)
 
     collected_bad_ranks = []
-    for i, uid in enumerate(uids):
+    for uid in uids:
         member_ranks: list = indexed_ranks[uid]
 
         member_ranks.sort(key=sort_by_ranktime)
@@ -263,7 +265,7 @@ def clean_crown_regression(service: FusionTableHandler, uids: list, start: str, 
     lastcrown_recalculations = []
 
     collected_bad_crowns = []
-    for i, uid in enumerate(uids):
+    for uid in uids:
         member_crowns: list = indexed_crowns[uid]
         member_crowns.sort(key=sort_by_lasttouched)
         lastcrown_modifications = []
@@ -304,7 +306,7 @@ def clean_crown_regression(service: FusionTableHandler, uids: list, start: str, 
 
         min_ms = min(x["LastTouched"] for x in collected_bad_crowns if x['MHCC'] > 0)
         print(f'Earliest data regression was on {datetime.utcfromtimestamp(min_ms//1000).replace(microsecond=min_ms%1000*1000).strftime(STRTM_FMT)}')
-        
+
         # Create a backup of the crowns table
         if ft.backup_table(tableId, await_clone=True):
             _perform_deletion(ft, tableId, [x['rowid'] for x in collected_bad_crowns])
