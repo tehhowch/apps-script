@@ -232,6 +232,7 @@ Full documentation of the actual service available here:
 https://developers.google.com/resources/api-libraries/documentation/fusiontables/v2/python/latest/
     """
     MAX_GET_QUERY_LENGTH = 7900
+    MAX_DELETE_QUERY_LENGTH = 7000
 
     def __init__(self, credentials: 'google.auth.credentials.Credentials'):
         super().__init__('fusiontables', 'v2', credentials)
@@ -597,7 +598,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         self._user_table = tableId
 
 
-    def backup_table(self, tableId: str) -> dict:
+    def backup_table(self, tableId: str, await_clone=False) -> dict:
         '''Create a copy of the the input FusionTable
         
     Writes the new name & id to disk as well.
@@ -605,6 +606,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
 
     @params:
         tableId: str, the ID for a FusionTable which should be copied. (str)
+        await_clone: bool, whether to wait until the created backup is done importing rows.
 
     @return: dict, the minimal metadata for the copied FusionTable (id, name, description).
         '''
@@ -617,7 +619,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         try:
             backup = self.table.copy(**kwargs).execute()
         except HttpError as err:
-            print('Backup operation failed due to error:', err)
+            print('Backup operation failed due to error:\n', err)
             return {}
 
         # Rename the copied table, and provide a better description.
@@ -630,11 +632,20 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         kwargs = {'tableId': backup['tableId'],
                   'body': backup,
                   'fields': 'tableId,name,description'}
-        #self._service.table().patch(**kwargs).execute()
         self.table.patch(**kwargs).execute()
         # Log this new table to disk.
         with open('tables.txt', 'a', newline='') as f:
             csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[backup['name'], backup['tableId']]])
+
+        if await_clone:
+            # Pause all activities while the backup is cloning
+            while True:
+                tasks = self.get_tasks(backup['tableId'])
+                if tasks:
+                    print(tasks[0]['type'], tasks[0]['progress'])
+                    time.sleep(5)
+                else:
+                    break
         print(f'Backup of table \'{tableId}\' completed; new table logged to disk.')
         return backup
 
@@ -728,7 +739,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
     @params:
         tableId: str, the ID of the FusionTable which should have all rows deleted.
 
-    @return: bool, hether or not the delete operation succeeded.
+    @return: bool, whether or not the delete operation succeeded.
         '''
         kwargs = {'sql': "DELETE FROM " + tableId}
         try:
@@ -741,12 +752,40 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         while True:
             tasks = self.get_tasks(tableId)
             if tasks:
-                print(tasks[0]['type'], "progress:", tasks[0]['progress'])
-                time.sleep(1)
+                print(tasks[0]['type'], tasks[0]['progress'])
+                time.sleep(2)
             else:
                 break
         print("Deleted rows:", response['rows'][0][0])
         return True
+
+
+    def delete_records_by_rowid(self, tableId: str, rowids: list):
+        '''Delete the given records from the given FusionTable. Does not back up the table
+        first. Does not require all input rowids to be present in the target table.
+
+    @params:
+        tableId: str, the ID of the FusionTable which should have select rows deleted.
+        rowids: list, the rowids identifying data to remove.
+
+    @return: int, the number of deleted rows.
+        '''
+        raw_sql = 'DELETE FROM ' + tableId + ' WHERE ROWID IN ({})'
+        max_query_length = MAX_DELETE_QUERY_LENGTH - 2 * max(len(str(x)) for x in rowids)
+        deleted = 0
+        while rowids:
+            query_ids = [rowids.pop()]
+            while rowids and len(raw_sql.format(','.join(query_ids))) < max_query_length:
+                query_ids.append(rowids.pop())
+            query = raw_sql.format(','.join(query_ids))
+            assert len(query) <= MAX_DELETE_QUERY_LENGTH, f'Query too long ({len(query)} chars).'
+
+            response = self.query.sql(sql=query).execute(num_retries=2)
+            deleted += int(response['rows'][0][0])
+            time.sleep(1)
+
+        print(f'Deleted {deleted} rows.')
+        return deleted
 
 
     def replace_rows(self, tableId: str, new_row_data: list, filename='') -> bool:
