@@ -41,72 +41,41 @@ def getMHCCMembersInJacks(jd: dict):
     return mhcc_jd
 
 
-def get_rank_data(tableId: str, ranktime_start: str = None, ranktime_end: str = None, uid: str = None):
-    ''' For the given restrictions, obtain the corresponding MHCC Rank DB records '''
-    tid = tableId
-    sql = f'SELECT rowid, Member, UID, LastSeen, RankTime, Rank, \'MHCC Crowns\' FROM {tid}'
-    if any((ranktime_start, ranktime_end, uid)):
-        sql += ' WHERE '
-    # For any input time strings, convert to the corresponding UTC millis value.
-    if ranktime_start:
-        ts = datetime.strptime(ranktime_start, STRTM_FMT).timestamp() * 1000
-        sql += f'RankTime > {ts}'
-    if ranktime_end:
-        te = datetime.strptime(ranktime_end, STRTM_FMT).timestamp() * 1000
-        if ranktime_start:
-            sql += ' and '
-        sql += f'RankTime < {te}'
-    if uid:
-        if ranktime_start or ranktime_end:
-            sql += ' and '
-        sql += f'UID = {uid}'
-    sql += ' ORDER BY UID ASC, RankTime ASC'
+def get_sql(headers, tableId: str, order: str,
+            criteria_key: str = None, start: str = None, end: str = None):
+    '''Generate the appropriate select statement to obtain records that should be checked for data regressions'''
+    parts = ['SELECT', ', '.join(headers), f'FROM {tableId}']
 
-    # Download the subset of data from FusionTables
+    # Add any optional WHERE arguments
+    if criteria_key and any((start, end)):
+        parts.append('WHERE')
+        # For any input time strings, convert to the corresponding UTC millis value.
+        if start:
+            ts = datetime.strptime(start, STRTM_FMT).timestamp() * 1000
+            parts.append(f'{criteria_key} > {ts}')
+        if end:
+            te = datetime.strptime(end, STRTM_FMT).timestamp() * 1000
+            if start:
+                parts.append('and')
+            parts.append(f'{criteria_key} < {te}')
+
+    # Add the ordering instruction
+    parts.append(f'ORDER BY {order}')
+
+    return ' '.join(parts)
+
+def get_table_data(service: FusionTableHandler, tableId: str, sql: str):
+    '''Obtain annotated table data as determined from the input SQL'''
     try:
-        rank_data = ft.get_query_result(query=sql, kb_row_size=0.25)
+        data = service.get_query_result(query=sql, kb_row_size=0.2)
     except HttpError:
-        print('Unable to obtain ROWIDs in bulk rank query')
-        rank_bytes = ft.query.sqlGet_media(sql=sql).execute()
-        rank_data = ft.bytestring_to_queryresult(rank_bytes)
-    # Convert from list of lists to list of dicts
-    headers = rank_data['columns']
-    output = (dict(zip(headers, x)) for x in rank_data['rows'])
-    return coerce_to_typed_info(tid, output)
-
-def get_crown_data(tableId: str, crowntime_start: str = None, crowntime_end: str = None, uid: str = None):
-    ''' For the given restrictions, obtain the corresponding MHCC Crown DB records '''
-    tid = tableId
-    sql = f'SELECT rowid, Member, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel FROM {tid}'
-    if any((crowntime_start, crowntime_end, uid)):
-        sql += ' WHERE '
-    # For any input time strings, convert to the corresponding UTC millis value.
-    if crowntime_start:
-        ts = datetime.strptime(crowntime_start, STRTM_FMT).timestamp() * 1000
-        sql += f'LastTouched > {ts}'
-    if crowntime_end:
-        te = datetime.strptime(crowntime_end, STRTM_FMT).timestamp() * 1000
-        if crowntime_start:
-            sql += ' and '
-        sql += f'LastTouched < {te}'
-    if uid:
-        if crowntime_start or crowntime_end:
-            sql += ' and '
-        sql += f'UID = {uid}'
-    sql += ' ORDER BY UID ASC, LastTouched ASC'
-
-    # Download the subset of data from FusionTables
-    try:
-        crown_data = ft.get_query_result(query=sql, kb_row_size=0.25)
-    except HttpError:
-        print('Unable to obtain ROWIDs in bulk crown query')
-        crown_bytes = ft.query.sqlGet_media(sql=sql).execute()
-        crown_data = ft.bytestring_to_queryresult(crown_bytes)
-    # Convert from list of lists to list of dicts
-    headers = crown_data['columns']
-    output = (dict(zip(headers, x)) for x in crown_data['rows'])
-    return coerce_to_typed_info(tid, output)
-
+        print('Unable to obtain ROWIDs in bulk query')
+        byte_data = service.query.sqlGet_media(sql=sql).execute()
+        data = service.bytestring_to_queryresult(byte_data)
+    # Convert list of list to list of dicts
+    headers = data['columns']
+    output = (dict(zip(headers, x)) for x in data['rows'])
+    return coerce_to_typed_info(tableId, output)
 
 def coerce_to_typed_info(tableId: str, data):
         '''Converts str-only data elements to str, int, or float, in accordance with the FusionTable's
@@ -229,7 +198,10 @@ def clean_rank_regression(service: FusionTableHandler, uids: list, start: str, e
     ft = service
 
     print(f'Collecting rank data in range {start} - {end}')
-    ranks = get_rank_data(tableId, start, end)
+    ranks = get_table_data(service, tableId,
+                           get_sql(headers=('rowid', 'Member', 'UID', 'LastSeen', 'RankTime', 'Rank', '\'MHCC Crowns\''),
+                                   tableId=tableId, order='UID ASC, RankTime ASC',
+                                   criteria_key='RankTime', start=start, end=end))
     print(f'Indexing {len(ranks)} by UID')
     indexed_ranks = defaultdict(list)
     for record in ranks:
@@ -278,7 +250,10 @@ def clean_crown_regression(service: FusionTableHandler, uids: list, start: str, 
     ft = service
 
     print(f'Collecting crown data in range {start} - {end}')
-    crowns = get_crown_data(tableId, start, end)
+    crowns = get_table_data(service, tableId,
+                            get_sql(headers=('rowid', 'Member', 'UID', 'LastSeen', 'LastCrown', 'LastTouched', 'Bronze', 'Silver', 'Gold', 'MHCC', 'Squirrel'),
+                                    tableId=tableId, order='UID ASC, LastTouched ASC',
+                                    criteria_key='LastTouched', start=start, end=end))
     print(f'Indexing {len(crowns)} by UID')
     indexed_crowns = defaultdict(list)
     for record in crowns:
