@@ -51,3 +51,8 @@ _ReSharper*/
 ~$*
 /.vs
 node_modules/*
+
+# Backups of table data
+table_backups/
+table_*.csv
+*data*.csv
