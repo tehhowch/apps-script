@@ -5,6 +5,7 @@ initiates a resumable upload to handle the large datasetimport csv
 import csv
 import random
 import time
+from datetime import datetime
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
@@ -13,11 +14,14 @@ from services import HttpError
 from services import print_progress_bar as ppb
 from services import _write_as_csv as save
 
+STRTM_FMT = '%Y-%m-%dT%H:%M:%S.%f%z'
+
 LOCAL_KEYS = {}
 TABLE_LIST = {}
 
 SCOPES = ['https://www.googleapis.com/auth/fusiontables',
           'https://www.googleapis.com/auth/drive']
+
 
 def initialize(keys: dict, tables: dict):
     '''Read in the FusionTable IDs and any saved OAuth data/tokens
@@ -309,6 +313,7 @@ def prune_crowns(tableId: str):
     if not tableId or not isinstance(tableId, str):
         return
     # [Member, UID, LastSeen, LastCrown, LastTouched, B, S, G, MHCC, Squirrel]
+    return
 
 
 def keep_interesting_records(tableId: str):
@@ -443,6 +448,25 @@ def pick_table() -> str:
     return choice
 
 
+def addTimestringFields(records: list):
+    '''Add a naive-tz datetime to each annotated record for each millisecond-based time value (for easier human consumption)'''
+    transformables = set(('LastSeen', 'LastCrown', 'LastTouched', 'RankTime'))
+    keys = transformables.intersection(records[0].keys())
+    for row in records:
+        for k in keys:
+            ms = row[k]
+            dt = datetime.utcfromtimestamp(ms//1000).replace(microsecond=ms%1000*1000).strftime(STRTM_FMT)
+            row[f'{k}_TS'] = dt
+
+
+def clean_regressions(service: FusionTableHandler,
+                      time_start='2018-05-29T12:00:00.000000+0000',
+                      time_end='2018-11-30T12:00:00.000000+0000'):
+    from regression_fixer import clean_rank_regression, clean_crown_regression
+    uids = [x[1] for x in service.get_user_batch()]
+    args = (service, uids, time_start, time_end)
+    clean_rank_regression(*args, tableId=TABLE_LIST['MHCC Rank DB'])
+    clean_crown_regression(*args, tableId=TABLE_LIST['MHCC Crowns DB'])
 
 if __name__ == "__main__":
     initialize(LOCAL_KEYS, TABLE_LIST)
@@ -455,3 +479,4 @@ if __name__ == "__main__":
     #prune_ranks(TABLE_LIST['MHCC Rank DB'], handlers['FusionTables'])
     #print('Select the crown table')
     #prune_crowns(TABLE_LIST['MHCC Crown DB'], handlers['FusionTables'])
+    print('waiting for you to do stuff')

@@ -35,39 +35,41 @@ Refs https://stackoverflow.com/a/34325723
 
 
 
-def _send_whole_upload(request: HttpRequest) -> bool:
+def _send_whole_upload(request: HttpRequest):
     '''Upload a non-resumable media file.
 
 @params:
     request: HttpRequest, a MediaUpload object.
 
-@return: bool, whether or not the upload succeeded.
+@return: tuple(bool, whether or not the upload succeeded
+               response, the result of the executed request (or None)
     '''
     if not request or not isinstance(request, HttpRequest):
-        return False
+        return (False, None)
 
     try:
-        request.execute(num_retries=2)
-        return True
+        resp = request.execute(num_retries=2)
+        return (True, resp)
     except (HttpLib2Error | HttpError) as err:
         print('Upload failed:', err)
-        return False
+    return (False, None)
 
 
 
-def _step_upload(request: HttpRequest) -> bool:
+def _step_upload(request: HttpRequest):
     '''Print the percentage complete for a given upload while it is executing.
 
 @params:
     request: HttpRequest, supporting next_chunk() (i.e., is resumable).
 
-@return: bool, whether or not the upload succeeded.
+@return: tuple(bool, whether or not the upload succeeded
+               response, the result of the executed request (or None)
 
 @raises: HttpError 417.
         This error indicates if the FusionTable's self size limit will be exceeded.
     '''
     if not request or not isinstance(request, HttpRequest):
-        return False
+        return (False, None)
 
     done = None
     fails = 0
@@ -79,7 +81,7 @@ def _step_upload(request: HttpRequest) -> bool:
         except HttpError as err:
             print()
             if err.resp.status in [404]:
-                return False
+                return (False, None)
             if err.resp.status in [500, 502, 503, 504] and fails < 5:
                 time.sleep(2 ^ fails)
                 fails += 1
@@ -88,18 +90,18 @@ def _step_upload(request: HttpRequest) -> bool:
                 raise err
             else:
                 print('Upload failed:', err)
-                return False
+                return (False, None)
         else:
             print_progress_bar(status.progress() if status else 1., 1., 'Uploading...', length=50)
 
     print()
-    return True
+    return (True, done)
 
 
 
 def _make_media_file(values: list, path: str, is_resumable=None, delimiter=','):
     '''Returns a MediaFileUpload with UTF-8 encoding.
-    
+
 Also creates a hard disk backup (to facilitate the MediaFile creation).
 If the upload fails, the backup can be used to avoid re-downloading the input.
     '''
@@ -129,7 +131,7 @@ class GoogleService():
     """Basic authenticated Google API"""
 
     def __init__(self, API_NAME: str, API_VERSION: str, credentials: 'google.oauth2.credentials.Credentials'):
-        self.__service: Resource = build(API_NAME, API_VERSION, credentials=credentials) # type: googleapiclient.discovery.Resource
+        self.__service: Resource = build(API_NAME, API_VERSION, credentials=credentials)
         self.__API_NAME: str = API_NAME
         self.__API_VERSION: str = API_VERSION
         self.__credentials: google.auth.credentials.Credentials = credentials
@@ -137,7 +139,7 @@ class GoogleService():
 
     def get_service(self) -> Resource:
         return self.__service
-    
+
     def get_credentials(self):
         return self.__credentials
 
@@ -170,7 +172,7 @@ https://developers.google.com/resources/api-libraries/documentation/drive/v3/pyt
 
     def get_modified_info(self, file_id: str) -> dict:
         '''Acquire basic metadata about the given file.
-        
+
     Reads the modifiedTime of the referenced file via the Drive API. The version attribute
     will change when almost any part of the table is changed.
 
@@ -225,11 +227,12 @@ class FusionTableHandler(GoogleService):
 Required scopes for this particular class:
     'https://www.googleapis.com/auth/fusiontables',
     'https://www.googleapis.com/auth/drive'
-    
+
 Full documentation of the actual service available here:
 https://developers.google.com/resources/api-libraries/documentation/fusiontables/v2/python/latest/
     """
     MAX_GET_QUERY_LENGTH = 7900
+    MAX_DELETE_QUERY_LENGTH = 7000
 
     def __init__(self, credentials: 'google.auth.credentials.Credentials'):
         super().__init__('fusiontables', 'v2', credentials)
@@ -312,9 +315,9 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
 
 
     @staticmethod
-    def get_filename_for_table(tableId: str) -> str:
+    def get_filename_for_table(tableId: str, method: str = '') -> str:
         """Returns the name that would be used to save that table data locally"""
-        return f'table_{tableId}.csv'
+        return f'table_{tableId}{method}.csv'
 
     # Generic data fetch methods
     def verify_ft_service(self):
@@ -420,7 +423,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         '''Download the specified rows from the specified table
 
     Returns a list of lists (i.e. 2D array) corresponding to the full records (SELECT * FROM ...)
-    associated with the requested rowids in the specified table. 
+    associated with the requested rowids in the specified table.
 
     @params:
         rowids: list[str], the ids of rows to acquire.
@@ -460,7 +463,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         progress_parameters = {'total': data['requested_row_count'],
                                'prefix': 'Record retrieval: ',
                                'length': 50}
-        
+
         # Row Collection callback.
         # TODO: alter this? BatchHttpRequests don't seem to work nicely, giving winerr 10053.
         def collect_rows(rq_id: str, response: dict, exception: HttpError):
@@ -595,14 +598,15 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         self._user_table = tableId
 
 
-    def backup_table(self, tableId: str) -> dict:
+    def backup_table(self, tableId: str, await_clone=False) -> dict:
         '''Create a copy of the the input FusionTable
-        
+
     Writes the new name & id to disk as well.
     Does not delete any previous backups (and thus can trigger used space quota exception).
 
     @params:
         tableId: str, the ID for a FusionTable which should be copied. (str)
+        await_clone: bool, whether to wait until the created backup is done importing rows.
 
     @return: dict, the minimal metadata for the copied FusionTable (id, name, description).
         '''
@@ -615,7 +619,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         try:
             backup = self.table.copy(**kwargs).execute()
         except HttpError as err:
-            print('Backup operation failed due to error:', err)
+            print('Backup operation failed due to error:\n', err)
             return {}
 
         # Rename the copied table, and provide a better description.
@@ -628,11 +632,20 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         kwargs = {'tableId': backup['tableId'],
                   'body': backup,
                   'fields': 'tableId,name,description'}
-        #self._service.table().patch(**kwargs).execute()
         self.table.patch(**kwargs).execute()
         # Log this new table to disk.
         with open('tables.txt', 'a', newline='') as f:
             csv.writer(f, quoting=csv.QUOTE_ALL).writerows([[backup['name'], backup['tableId']]])
+
+        if await_clone:
+            # Pause all activities while the backup is cloning
+            while True:
+                tasks = self.get_tasks(backup['tableId'])
+                if tasks:
+                    print(tasks[0]['type'], tasks[0]['progress'])
+                    time.sleep(5)
+                else:
+                    break
         print(f'Backup of table \'{tableId}\' completed; new table logged to disk.')
         return backup
 
@@ -726,7 +739,7 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
     @params:
         tableId: str, the ID of the FusionTable which should have all rows deleted.
 
-    @return: bool, hether or not the delete operation succeeded.
+    @return: bool, whether or not the delete operation succeeded.
         '''
         kwargs = {'sql': "DELETE FROM " + tableId}
         try:
@@ -739,15 +752,42 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         while True:
             tasks = self.get_tasks(tableId)
             if tasks:
-                print(tasks[0]['type'], "progress:", tasks[0]['progress'])
-                time.sleep(1)
+                print(tasks[0]['type'], tasks[0]['progress'])
+                time.sleep(2)
             else:
                 break
         print("Deleted rows:", response['rows'][0][0])
         return True
 
 
-    def replace_rows(self, tableId: str, new_row_data: list, filename='') -> bool:
+    def delete_records_by_rowid(self, tableId: str, rowids: list):
+        '''Delete the given records from the given FusionTable. Does not back up the table
+        first. Does not require all input rowids to be present in the target table.
+
+    @params:
+        tableId: str, the ID of the FusionTable which should have select rows deleted.
+        rowids: list, the rowids identifying data to remove.
+
+    @return: int, the number of deleted rows.
+        '''
+        raw_sql = 'DELETE FROM ' + tableId + ' WHERE ROWID IN ({})'
+        max_query_length = self.MAX_DELETE_QUERY_LENGTH - 2 * max(len(str(x)) for x in rowids)
+        deleted = 0
+        while rowids:
+            query_ids = [rowids.pop()]
+            while rowids and len(raw_sql.format(','.join(query_ids))) < max_query_length:
+                query_ids.append(rowids.pop())
+            query = raw_sql.format(','.join(query_ids))
+            assert len(query) <= self.MAX_DELETE_QUERY_LENGTH, f'Query too long ({len(query)} chars).'
+
+            response = self.query.sql(sql=query).execute(num_retries=2)
+            deleted += int(response['rows'][0][0])
+            time.sleep(1)
+
+        return deleted
+
+
+    def replace_rows(self, tableId: str, new_row_data: list, filename='') -> int:
         '''Upload the new data to the target table
 
     Performs a FusionTables.tables().replaceRows() call to the input table, replacing its contents
@@ -759,12 +799,12 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         filename: str, the name of a file to which the uploaded data should first be serialized.
                 Defaults to a unique name based on the target table, in the local directory.
 
-    @return: bool, whether or not the indicated FusionTable's rows were replaced.
+    @return: int, the number of rows that comprise the table contents.
         '''
         if not tableId or not new_row_data:
             return False
         if not filename:
-            filename = self.get_filename_for_table(tableId)
+            filename = self.get_filename_for_table(tableId, 'replaceRows')
         # Create a resumable MediaFileUpload with the "interesting" data to retain.
         sep = ','
         upload = _make_media_file(new_row_data, filename, True, sep)
@@ -774,10 +814,12 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                   'encoding': 'UTF-8',
                   'delimiter': sep}
         # Try the upload twice (which requires creating a new request).
+        result, resp = None, None
         if upload and upload.resumable():
             try:
-                if not _step_upload(self.table.replaceRows(**kwargs)):
-                    return _step_upload(self.table.replaceRows(**kwargs))
+                result, resp = _step_upload(self.table.replaceRows(**kwargs))
+                if not result:
+                    result, resp = _step_upload(self.table.replaceRows(**kwargs))
             except HttpError as err:
                 if (err.resp.status in [417]
                         and 'Table will exceed allowed maximum size' in err.__str__()):
@@ -785,20 +827,63 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
                     # anyway. If the table's current data is too large, such that old + new >= 250,
                     # then Error 417 is returned.  Handle this by explicitly deleting the rows first.
                     if self.delete_all_rows(tableId):
-                        return _step_upload(self.table.importRows(**kwargs))
-                    return False
-                raise err
+                        result, resp = _step_upload(self.table.importRows(**kwargs))
+                    else:
+                        raise InterruptedError('Unable to delete target table via API calls.')
+                else:
+                    raise err
 
         elif upload:
-            if not _send_whole_upload(self.table.replaceRows(**kwargs)):
-                return _send_whole_upload(self.table.replaceRows(**kwargs))
-        return True
+            result, resp = _send_whole_upload(self.table.replaceRows(**kwargs))
+            if not result:
+                result, resp = _send_whole_upload(self.table.replaceRows(**kwargs))
+        return int(resp['numRowsReceived']) if result else 0
+
+
+    def import_rows(self, tableId: str, new_row_data: list, filename='') -> int:
+        '''Upload the new data into the target table
+
+    Performs a FusionTables.tables().importRows() call to the input table, adding the input rows.
+    Does not attempt to back up the table for you.
+
+    @params:
+        tableId: str, the FusionTable to update (String)
+        new_row_data: list, the values to overwrite the FusionTable with (list of lists)
+        filename: str, the name of a file to which the uploaded data should first be serialized.
+                Defaults to a unique name based on the target table, in the local directory.
+
+    @return: int, the number of rows added to the table.
+        '''
+        if not tableId or not new_row_data:
+            raise TypeError('Missing required function inputs')
+        if not filename:
+            filename = self.get_filename_for_table(tableId, 'importRows')
+        # Create a resumable MediaFileUpload with the "interesting" data to retain.
+        sep = ','
+        upload = _make_media_file(new_row_data, filename, True, sep)
+        kwargs = {'tableId': tableId,
+                  'media_body': upload,
+                  'media_mime_type': 'application/octet-stream',
+                  'encoding': 'UTF-8',
+                  'delimiter': sep}
+        # Try the upload twice (which requires creating a new request).
+        result, resp = None, None
+        if upload and upload.resumable():
+            result, resp = _step_upload(self.table.importRows(**kwargs))
+            if not result:
+                result, resp = _step_upload(self.table.importRows(**kwargs))
+        elif upload:
+            result, resp = _send_whole_upload(self.table.importRows(**kwargs))
+            if not result:
+                result, resp = _send_whole_upload(self.table.importRows(**kwargs))
+
+        return int(resp['numRowsReceived']) if result else 0
 
 
     @staticmethod
     def can_use_local_data(tableId: str, filename: str, drive_handler: DriveHandler) -> bool:
         """Check if a local file can be used to update a remote table.
-        
+
     If the named local file is present, compares determines
     its modification time. This modification time is then compared to the modification time of the
     given FusionTable. If the FusionTable was modified more recently than the local data, then the

@@ -191,14 +191,14 @@ function UpdateDatabase()
 
   /**
    * @typedef {{bronze: number, silver: number, gold: number, seen: number}} CrownSnapshot
-   *  
+   *
    * @typedef {Object} MemberData A member-specific object with information about this member's stored Crown DB data.
    * @property {string} displayName The name of this member
    * @property {number} lastSeen The most recent "LastSeen" value for this member's stored records.
    * @property {number} lastCrown The most recent "LastCrown" value for this member's stored records.
    * @property {number} lastTouched The most recent "LastTouched" value, indicating the last time this member's stored data was updated.
    */
-  /** 
+  /**
    * @typedef {Object} MemberUpdate A combination of new data from datasources, and stored data from the Crown DB.
    * @property {MemberData} storedInfo A summary of stored information in the MHCC Crown DB for this member.
    * @property {CrownSnapshot[]} collected All crown snapshots read from the datasources for this member that could be added.
@@ -211,7 +211,7 @@ function UpdateDatabase()
   /**
    * Nested function which handles obtaining the previously known data for the given partial records.
    * Returns an object with the full record referenced for a given member in the partial records, indexed by UID.
-   * 
+   *
    * @param {Object <string, MemberUpload>} partials UID-indexed object with the timestamps needed to query for the previous stored record.
    * @return {{records: Object <string, (string|number)[]>, indices: Object <string, number>}} Object containing UID-indexed full records, and the indices needed to order values in a new record.
    */
@@ -274,7 +274,7 @@ function UpdateDatabase()
   }
   /**
    * Nested function which constructs new records based on the previously known data and the latest input data.
-   * 
+   *
    * @param {Object <string, MemberUpload>} partials The latest crown snapshots for the members being updated.
    * @param {Object <string, (string|number)[]>} existingRecords  The most recent records for the members being updated.
    * @param {Object <string, number>} indices Mapping between column names and column position in the record.
@@ -372,9 +372,6 @@ function UpdateDatabase()
   function _getNewCrownData_(memberSet)
   {
 
-    // Check if the two lastSeen timestamps (milliseconds) differ by more than 10 seconds.
-    function _isDifferentEnough_(lastSeen1, lastSeen2) { return Math.abs(lastSeen1 - lastSeen2) / 1000 > 10; }
-
     /**
      * Check if the record has different stored crowns than all of the other ones being added.
      * @param {CrownSnapshot} record The crown snapshot being considered.
@@ -439,32 +436,54 @@ function UpdateDatabase()
     const output = {};
     for (var uid in data)
     {
-      // If this member's records as held by the datasources are different than the stored data, stage it.
+      // If this member's records as held by the datasources are different than the stored data, stage them.
+      var last_stored = data[uid].storedInfo.lastSeen || 0;
+      var elapsed_since_storage = (now - (data[uid].storedInfo.lastTouched || 0)) / (1000 * 86400);
+      var insert_anyway = elapsed_since_storage > 7;
       for (var ds = 0; ds < datasourceData.length; ++ds)
       {
         var dsr = datasourceData[ds][uid];
-        if (dsr && (dsr.seen > (data[uid].storedInfo.lastSeen || 0) || (now - (data[uid].storedInfo.lastTouched || 0)) / (1000 * 86400) > 7))
+        if (!dsr)
+          continue;
+        // Is this a new record, relative to what we have stored? Or has it been a
+        // long time since we stored a record for this member (new or otherwise)?
+        if (dsr.seen > last_stored || insert_anyway)
           data[uid].collected.push(dsr);
       }
 
-      // Keep only unique staged records (i.e. multiple datasources may have collected the same data at a similar time).
-      var latest = 0;
-      // Sort the collected records by LastSeen, descending (so that the latest snapshot with a given set of crowns is kept).
-      data[uid].collected.sort(function (a, b) { return b.seen - a.seen; });
-      data[uid].collected.forEach(function (record) {
-        if (_isDifferentEnough_(record.seen, latest)
-          && _hasDifferentCrowns_(record, data[uid].toAdd))
-        {
-          latest = Math.max(latest, record.seen);
-          data[uid].toAdd.push(record);
-        }
-      });
+      // If this is a "courtesy" insert, we only want the most recent record. The most recent
+      // record is the one which the database has been working with since its insertion, and
+      // inserting any other records would distort the collected records.
+      // If not, then we want any records which are newer than the stored record.
 
+      // Sort the crown snapshots from most to least recently acquired.
+      data[uid].collected.sort(function (a, b) { return b.seen - a.seen; });
+      if (insert_anyway)
+        data[uid].toAdd.push(data[uid].collected[0]);
+      else
+      {
+        data[uid].collected.forEach(function (record)
+        {
+          // We know that this record is newer than the stored record (otherwise
+          // it would not be 'collected' unless the forced insert was happening).
+          // Thus, if it has different crowns compared to what we have already
+          // decided to add, include it for addition.
+          if (_hasDifferentCrowns_(record, data[uid].toAdd))
+            data[uid].toAdd.push(record);
+        });
+      }
+
+      // No matter why we are inserting data, we want the record with the most
+      // recent LastSeen value to come last. This ensures it will be the last
+      // record inserted for the member (and receive the largest LastTouched).
       if (data[uid].toAdd.length)
+      {
+        data[uid].toAdd.sort(function (a, b) { return a.seen - b.seen; });
         output[uid] = {
           storedInfo: data[uid].storedInfo,
           newData: data[uid].toAdd
         };
+      }
     }
 
     return { partials: output, completed: true };
@@ -560,7 +579,7 @@ function UpdateDatabase()
   {
     // Jack provides a queryable FusionTable which may or may not have data for the users in question.
     // His fusiontable is unique on snuid - each person has only one record.
-    // snuid | timestamp (seconds UTC) | bronze | silver | gold 
+    // snuid | timestamp (seconds UTC) | bronze | silver | gold
     const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
     try { var resp = FusionTables.Query.sqlGet(sql); }
