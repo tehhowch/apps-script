@@ -81,7 +81,7 @@ def authorize(local_keys: dict) -> 'Dict[str, GoogleService]':
     fusiontables = FusionTableHandler(creds)
     print('\nVerifying FusionTables access by requesting tables you\'ve accessed.')
     fusiontables.verify_ft_service()
- 
+
     print('Authorization & service verification completed successfully.')
     return {'FusionTables': fusiontables, 'Drive': drive}
 
@@ -153,13 +153,13 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
         """Add the rowid of interesting records into input, and return a copy with only the interesting records"""
         kept_records = []
         for record in records:
-            uid = record[indices['uid']].__str__()
+            uid = str(record[indices['uid']])
             try:
-                ls = int(record[indices['ls']]).__str__()
+                ls = str(int(record[indices['ls']]))
             except ValueError:
-                continue;
-            rank = int(record[indices['rank']]).__str__()
-            rt = int(record[indices['rt']]).__str__()
+                continue
+            rank = str(int(record[indices['rank']]))
+            rt = str(int(record[indices['rt']]))
             if uid not in tracker:
                 tracker[uid] = dict([(ls, {rank})])
             elif ls not in tracker[uid]:
@@ -168,7 +168,7 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
                 tracker[uid][ls].add(rank)
             else:
                 continue
-            rowids.append(record[indices['rowid']].__str__())
+            rowids.append(str(record[indices['rowid']]))
             kept_records.append(record[:])
         return kept_records
 
@@ -193,7 +193,7 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
                 row[0] = row[0].__str__().partition('.')[0]
         assert not [x for x in remote_row_counts if '.' in x[0]]
 
-        mhcc_members = set([x[1] for x in members])
+        mhcc_members = set(x[1] for x in members)
         local_row_counts = {}
         rows_with_errors = []
         coerced = set()
@@ -211,7 +211,7 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
                 local_row_counts[str(row[1])] += 1
             except KeyError:
                 local_row_counts[str(row[1])] = 1
-            
+
         if rows_with_errors:
             print(f'{len(rows_with_errors)} rows had incorrect column lengths:')
             print(rows_with_errors)
@@ -277,7 +277,7 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
         return
     print('Found {:,} records to remove from {:,} total records.'.format(
         len(criteria_records) - len(interesting_records), len(criteria_records)))
-    
+
     # Download the records to be kept.
     local_filename = ft.get_filename_for_table(tableId)
     table_data = ([] if not ft.can_use_local_data(tableId, local_filename, handlers['Drive'])
@@ -295,7 +295,7 @@ def prune_ranks(tableId: str, ft: FusionTableHandler):
         save(table_data, 'invalid_rank_data_snapshot.csv')
         return
 
-    backup = ft.backup_table(tableId)
+    backup = ft.backup_table(tableId, await_clone=True)
     if not backup:
         print('Failed to create table backup. Aborting prune...')
         return
