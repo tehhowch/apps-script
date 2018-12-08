@@ -97,11 +97,11 @@ function AddMemberToDB_(dbList) {
   if ( memList.length == 0 ) return 1;
   for ( var i = 0; i<dbList.length; i++ ) {
     // Loop over all names on the database list
-    var dbID = dbList[i][1]*1;
+    var dbID = dbList[i][1].toString();
     // Check against an ever-shortening list (derived from the Members sheet)
     for ( var j = 0; j<memList.length; j++ ) {
       var mplink = memList[j][1];
-      var mpID = mplink.slice(mplink.search("=")+1)*1;
+      var mpID = mplink.slice(mplink.search("=")+1).toString();
       if ( mpID === dbID ) {
         memList.splice(j,1);
         break;
@@ -111,7 +111,7 @@ function AddMemberToDB_(dbList) {
   // After memList is only the new items to add to SheetDb, this runs:
   var UID = '';
   for (i = 0;i<memList.length;i++) {
-    UID=memList[i][1].slice(memList[i][1].search("=")+1);
+    UID=memList[i][1].slice(memList[i][1].search("=")+1).toString();
     dbList.push([memList[i][0],
                  UID,
                  'https://www.mousehuntgame.com/profile.php?snuid='+UID,
@@ -166,7 +166,7 @@ function UpdateDatabase() {
       // batches can be run without reaching 50% usage
       var btime = new Date().getTime();
       var dHunters = db.slice(LastRan,LastRan-0+BatchSize-0);  // Create a new array from LastRan to LastRan + BatchSize. 
-      var sIDstring = dHunters[0][1]*1;            // Get the first ID for the string
+      var sIDstring = dHunters[0][1].toString();            // Get the first ID for the string
       var i = 0;
       for ( i=1;i<dHunters.length;i++ ) {
         if ( dHunters[i][1] != '' ) {
