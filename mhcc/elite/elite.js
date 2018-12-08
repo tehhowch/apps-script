@@ -132,7 +132,7 @@ function AddMemberToDB_(dbList) {
 }
 function UpdateDatabase() {
   // This function is used to update the database's values, and runs frequently on small sets of data
-  var BatchSize = 1;//127;                                                               // Number of records to process on each execution
+  var BatchSize = 150;//127;                                                               // Number of records to process on each execution
   var LastRan = 1*PropertiesService.getScriptProperties().getProperty('LastRan');                           // Determine the last successfully processed record
   var db = [];
   db = getMyDb_(1);             // Get the db, sort on col 1 (name)
