@@ -285,7 +285,7 @@ function UpdateScoreboard() {
                      Utilities.formatDate(new Date(AllHunters[i-1][3]), 'EST', 'yyyy-MM-dd'), // Last Seen
                      Utilities.formatDate(new Date(AllHunters[i-1][4]), 'EST', 'yyyy-MM-dd') // Last Crown
                     ])
-    if ( i%150 == 0 ) Scoreboard.push(['Rank','Name','Profile','Hunter','Squirrel','Gold','Silver','Bronze','Points','Last Seen','Last Crown'] )
+    if ( i%550 == 0 ) Scoreboard.push(['Rank','Name','Profile','Hunter','Squirrel','Gold','Silver','Bronze','Points','Last Seen','Last Crown'] )
     AllHunters[i-1][10]=i++;  // Store the hunter's rank in the db listing
   }
   saveMyDb_(AllHunters);    // Store & alphabetize the new ranks
