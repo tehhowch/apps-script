@@ -58,29 +58,50 @@
 var dbSheetName = 'SheetDb';
 var SS = SpreadsheetApp.getActive();
 
-function getMyDb_(sortObj) {
-  var sheet = SS.getSheetByName(dbSheetName);
-  var db = sheet.getRange(2, 1, sheet.getLastRow()-1, sheet.getLastColumn()).sort(sortObj).getValues();
-  return db
+/**
+ * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling
+ *                            code as a rectangular array. Does not supply header information.
+ * @param  {GoogleAppsScript.Spreadsheet.Spreadsheet} wb      The workbook containing the worksheet named SheetDb
+ * @param  {number|Array <{column: number, ascending: boolean}>} [sortObj]   An integer column number or an Object[][] of sort objects
+ * @return {Array[]}          An M by N rectangular array which can be used with Range.setValues() methods
+ */
+function getMyDb_(wb, sortObj)
+{
+  const SS = wb.getSheetByName(dbSheetName);
+  try
+  {
+    var r = SS.getRange(2, 1, SS.getLastRow() - 1, SS.getLastColumn());
+    if ( sortObj )
+      r.sort(sortObj);
+    return r.getValues();
+  }
+  catch (e) { console.warn({ "message": e.message, "error": e, "dbRange": r, "sorter": sortObj }); return []; }
 }
-function saveMyDb_(db,range) {
-  if ( db == null ) return 1
+function saveMyDb_(db, range)
+{
+  if ( !db ) return false;
   var lock = LockService.getScriptLock();
   lock.tryLock(30000);
-  if ( lock.hasLock() ) {
+  if ( lock.hasLock() )
+  {
     // Have a lock on the db, now save
     var sheet = SS.getSheetByName(dbSheetName);
-    if ( range == null) {
+    if ( !range )
+    {
       // No position input -> full db write -> no sorting needed
-      if ( db.length < sheet.getLastRow()-1 ) {
+      if ( db.length < sheet.getLastRow()-1 )
+      {
         // new db is smaller than old db, so clear it out
-        sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).setValue('');
+        sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
+        SpreadsheetApp.flush();
       }
       sheet.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
-    } else {
+    }
+    else
+    {
       // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
       sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).sort(1);
-      sheet.getRange(range[0],range[1],range[2],range[3]).setValues(db);
+      sheet.getRange(range[0], range[1], range[2], range[3]).setValues(db);
     }
     SpreadsheetApp.flush(); // Commit changes
     lock.releaseLock();
@@ -88,21 +109,25 @@ function saveMyDb_(db,range) {
   }
   return false
 }
-function AddMemberToDB_(dbList) { 
+function AddMemberToDB_(dbList)
+{ 
   // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
-  if ( dbList == null ) return 1;
+  if ( !dbList ) return false;
   // MemberRange = [[Name, Profile Link],[Name2, ProfLink2],...]
   var memSS = SS.getSheetByName('Members');  
   var memList = memSS.getRange(2, 1, memSS.getLastRow()-1, 2).sort(1).getValues();  // Get an alphabetically sorted list of members
-  if ( memList.length == 0 ) return 1;
-  for ( var i = 0; i<dbList.length; i++ ) {
+  if ( !memList.length ) return false;
+  for ( var i = 0; i < dbList.length; i++ )
+  {
     // Loop over all names on the database list
     var dbID = dbList[i][1].toString();
     // Check against an ever-shortening list (derived from the Members sheet)
-    for ( var j = 0; j<memList.length; j++ ) {
+    for ( var j = 0; j < memList.length; j++ )
+    {
       var mplink = memList[j][1];
       var mpID = mplink.slice(mplink.search("=")+1).toString();
-      if ( mpID === dbID ) {
+      if ( mpID === dbID )
+      {
         memList.splice(j,1);
         break;
       }
@@ -110,8 +135,9 @@ function AddMemberToDB_(dbList) {
   }
   // After memList is only the new items to add to SheetDb, this runs:
   var UID = '';
-  for (i = 0;i<memList.length;i++) {
-    UID=memList[i][1].slice(memList[i][1].search("=")+1).toString();
+  for ( i = 0; i < memList.length; i++ )
+  {
+    UID = memList[i][1].slice(memList[i][1].search("=")+1).toString();
     dbList.push([memList[i][0],
                  UID,
                  'https://www.mousehuntgame.com/profile.php?snuid='+UID,
@@ -123,19 +149,20 @@ function AddMemberToDB_(dbList) {
                  0, // Gold
                  0, // Points
                  dbList.length-0+1, // Rank
-                 '', // Squirrel
+                 '', // Comment
                  'Old'  // Status
                 ]);
   }
   saveMyDb_(dbList)  // write the new db
-  return 0;
+  return true;
 }
-function UpdateDatabase() {
+function UpdateDatabase()
+{
   // This function is used to update the database's values, and runs frequently on small sets of data
   var BatchSize = 150;//127;                                                               // Number of records to process on each execution
   var LastRan = 1*PropertiesService.getScriptProperties().getProperty('LastRan');                           // Determine the last successfully processed record
   var db = [];
-  db = getMyDb_(1);             // Get the db, sort on col 1 (name)
+  db = getMyDb_(SS, 1);             // Get the db, sort on col 1 (name)
   var nMembers = db.length               // Database records count
   var sheet = SS.getSheetByName('Members');
   var nRows = sheet.getLastRow()-1;                                                     // Spreadsheet records count
@@ -143,13 +170,15 @@ function UpdateDatabase() {
   var aScoring = SS.getSheetByName('Scoring').getRange(2, 1, 3, 2).getValues();   // (row column numberrows numbercolumns)
   var Minimums = SS.getRangeByName('Minimums').getValues();
   // New Member check
-  if ( nMembers < nRows ) {
+  if ( nMembers < nRows )
+  {
     var rs = AddMemberToDB_(db);
     return rs;
   }
   
   // Perform scoreboard update check / progress reset
-  if ( LastRan >= nMembers ) {
+  if ( LastRan >= nMembers )
+  {
     UpdateScoreboard();
     PropertiesService.getScriptProperties().setProperty('LastRan', 0);        // Point the script back to the start
     return 0;
@@ -158,88 +187,106 @@ function UpdateDatabase() {
   // Grab a subset of the alphabetized member record
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
-  if ( lock.hasLock() ) {
+  if ( lock.hasLock() )
+  {
     var starttime = new Date().getTime();
     Logger.log('Started with ' + LastRan + ' completed rows')// Perform time-remaining check (operate for up to 10% of allowable time)
-    while ( ((new Date().getTime()) - starttime)/1000 < 120 && LastRan < nMembers) {
+    while ( ((new Date().getTime()) - starttime)/1000 < 120 && LastRan < nMembers)
+    {
       // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.  Use start/stop times to determine if multiple
       // batches can be run without reaching 50% usage
       var btime = new Date().getTime();
       var dHunters = db.slice(LastRan,LastRan-0+BatchSize-0);  // Create a new array from LastRan to LastRan + BatchSize. 
       var sIDstring = dHunters[0][1].toString();            // Get the first ID for the string
       var i = 0;
-      for ( i=1;i<dHunters.length;i++ ) {
+      for ( i=1;i<dHunters.length;i++ )
+      {
         if ( dHunters[i][1] != '' ) {
           sIDstring = sIDstring + ',' + dHunters[i][1];  // Concatenate all the remaining non-null IDs
         }
       }
       // Have built the ID string, now query HT's MostMice.php
       var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters=' + sIDstring).getContentText();
-      if (MM.length <= 10) {break;}
+      if (MM.length <= 10)
+        break;
       MM = JSON.parse(MM); // Separate line for debug purposes
       // Cannot requery the returned batch to ensure exact matching IDs, so have to requery the returned MM object
       // by looping over our db subset dHunters
       Logger.log(Object.keys(MM.hunters).length + ' returned hunters out of ' + BatchSize)
-      for ( i=0;i<dHunters.length;i++ ) {
+      for ( i=0;i<dHunters.length;i++ )
+      {
         var j = 'ht_'+dHunters[i][1];
-        if ( typeof MM.hunters[j] != 'undefined' ) {
+        if ( typeof MM.hunters[j] != 'undefined' )
+        {
           // The hunter's ID was found in the MostMice object, he is not "lost"
           // Thus, the update can be performed
           var nB = 0;
           var nS = 0;
           var nG = 0;
-          for ( var k in MM.hunters[j].mice ) {
+          for ( var k in MM.hunters[j].mice )
+          {
             // Assign crowns by summing over all mice
             if ( MM.hunters[j].mice[k] >= 500 ) nG = nG + 1;
             else if ( MM.hunters[j].mice[k] >= 100 ) nS = nS + 1;
             else if ( MM.hunters[j].mice[k] >= 10 ) nB = nB + 1;
           }
           dHunters[i][3] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
-          if ( dHunters[i][8] != nG || dHunters[i][7] != nS || dHunters[i][6] != nB ) dHunters[i][4] = new Date().getTime();
+          if ( dHunters[i][8] !== nG || dHunters[i][7] !== nS || dHunters[i][6] !== nB )
+            dHunters[i][4] = new Date().getTime();
           dHunters[i][5] = new Date().getTime();  // Time of last update, the 'touched' value
           dHunters[i][6] = nB // Bronze
           dHunters[i][7] = nS // Silver
           dHunters[i][8] = nG // Gold
-          if ( nG < Minimums[0][0] ) {
+          if ( nG < Minimums[0][0] )
+          {
             dHunters[i][11] = 'Need ' + (Minimums[0][0]-nG) + ' more Gold';
             dHunters[i][9] = nG;
-          } else if ( nG + nS < Minimums[1][0] ) {
+          }
+          else if ( nG + nS < Minimums[1][0] )
+          {
             dHunters[i][11] = 'Need ' + (Minimums[1][0]-nG-nS) + ' more Silver';
             dHunters[i][9] = nG*2;
-          } else if ( nG + nS + nB < Minimums[2][0] ) {
+          }
+          else if ( nG + nS + nB < Minimums[2][0] )
+          {
             dHunters[i][11] = 'Need ' + (Minimums[2][0]-nG-nS-nB) + ' more Bronze';
-            dHunters[i][9] = nG*3+nS;
-          } else {
+            dHunters[i][9] = nG*3 + nS;
+          }
+          else
+          {
             dHunters[i][9] = nG*aScoring[0][1] + nS*aScoring[1][1] + nB*aScoring[2][1]; // Points
             dHunters[i][11] = '';
           }  
-          /*// Determine the points of this hunter
-          for ( var k = 0; k<aScoring.length; k++ ) {
-            if ( dHunters[i][9] >= aScoring[k][0] ) {
-              // Crown count meets/exceeds required crowns for this level
-              dHunters[i][11] = aScoring[k][2] // Set the Squirrel value
-              break;
-            }
-          }*/
-          if ( dHunters[i][3] >= (new Date().getTime() - 2000000000) ) dHunters[i][12] = 'Current';
-          else dHunters[i][12] = 'Old';
+          if ( dHunters[i][3] >= (new Date().getTime() - 2000000000) )
+            dHunters[i][12] = 'Current';
+          else
+            dHunters[i][12] = 'Old';
           
-        } else {
+        }
+        else
+        {
           // The hunter is not found in the MM object; (s)he is lost/excluded from MM.
           dHunters[i][12] = 'Manual';
           nB = dHunters[i][6] // Bronze
           nS = dHunters[i][7] // Silver
           nG = dHunters[i][8] // Gold
-          if ( nG < Minimums[0][0] ) {
+          if ( nG < Minimums[0][0] )
+          {
             dHunters[i][11] = 'Need ' + (Minimums[0][0]-nG) + ' more Gold';
             dHunters[i][9] = nG;
-          } else if ( nG + nS < Minimums[1][0] ) {
+          }
+          else if ( nG + nS < Minimums[1][0] )
+          {
             dHunters[i][11] = 'Need ' + (Minimums[1][0]-nG-nS) + ' more Gold & Silver';
             dHunters[i][9] = nG*2;
-          } else if ( nG + nS + nB < Minimums[2][0] ) {
+          }
+          else if ( nG + nS + nB < Minimums[2][0] )
+          {
             dHunters[i][11] = 'Need ' + (Minimums[2][0]-nG-nS-nB) + ' more crowns';
-            dHunters[i][9] = nG*3+nS;
-          } else {
+            dHunters[i][9] = nG*3 + nS;
+          }
+          else
+          {
             dHunters[i][9] = nG*aScoring[0][1] + nS*aScoring[1][1] + nB*aScoring[2][1]; // Points
             dHunters[i][11] = '';
           }  
@@ -247,7 +294,7 @@ function UpdateDatabase() {
       }
       // Have now completed the loop over the dHunters subset.  Rather than refresh the entire db each time this runs, 
       // only the changed rows will be updated.
-      saveMyDb_(dHunters,[2+LastRan-0,1,dHunters.length,dHunters[0].length]);
+      saveMyDb_(dHunters, [2+LastRan-0,1,dHunters.length,dHunters[0].length]);
       LastRan = LastRan-0 + BatchSize-0; // Increment LastRan for next batch's usage
       PropertiesService.getScriptProperties().setProperties({'LastRan':LastRan, 'AvgTime':(((new Date().getTime()) - starttime)/1000+PropertiesService.getScriptProperties().getProperty('AvgTime')*1)/2});
       Logger.log('Batch time of ' + ((new Date().getTime()) - btime)/1000 + ' sec')
@@ -256,23 +303,17 @@ function UpdateDatabase() {
     lock.releaseLock();
   }
 }
-function UpdateScoreboard() {
+function UpdateScoreboard()
+{
   // This function is used to update the spreadsheet's values, and runs after a complete db sweep
   
-  var start = new Date().getTime();
-  // Check for stale & lost hunters
-  start = new Date().getTime();
-  /*UpdateStale();
-  Logger.log((new Date().getTime() - start)/1000 + ' sec for Lost & Stale Hunters');
-  */
-  // Build scoreboard
-  start = new Date().getTime();
   // Get the crown-count sorted memberlist
-  var AllHunters = getMyDb_([{column:10,ascending:false},{column:9,ascending:false},{column:8,ascending:false},{column:7,ascending:false}]);
+  var AllHunters = getMyDb_(SS, [{column:10,ascending:false},{column:9,ascending:false},{column:8,ascending:false},{column:7,ascending:false}]);
   var Scoreboard = [];
   var i = 1;
   // Scoreboard format:   i UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
-  while ( i <= AllHunters.length ) {
+  while ( i <= AllHunters.length )
+  {
     Scoreboard.push([i, 
                      AllHunters[i-1][0],  // Name
                      AllHunters[i-1][2],   // Profile Link (fb)
@@ -285,8 +326,9 @@ function UpdateScoreboard() {
                      Utilities.formatDate(new Date(AllHunters[i-1][3]), 'EST', 'yyyy-MM-dd'), // Last Seen
                      Utilities.formatDate(new Date(AllHunters[i-1][4]), 'EST', 'yyyy-MM-dd') // Last Crown
                     ])
-    if ( i%550 == 0 ) Scoreboard.push(['Rank','Name','Profile','Hunter','Squirrel','Gold','Silver','Bronze','Points','Last Seen','Last Crown'] )
-    AllHunters[i-1][10]=i++;  // Store the hunter's rank in the db listing
+    if ( i%550 === 0 )
+      Scoreboard.push(['Rank','Name','Profile','Hunter','Squirrel','Gold','Silver','Bronze','Points','Last Seen','Last Crown'] )
+    AllHunters[i-1][10] = i++;  // Store the hunter's rank in the db listing
   }
   saveMyDb_(AllHunters);    // Store & alphabetize the new ranks
   // Clear out old data
@@ -296,10 +338,8 @@ function UpdateScoreboard() {
   // Write new data
   SS.getRange(6, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);//.sort([{column: 5, ascending:false},{column: 3, ascending: true}, {column: 2, ascending:true}]);
   SS.getRange(6, 4, Scoreboard.length, 1).setFormulaR1C1('=HYPERLINK(R[0]C[-1],R[0]C[-2])');
-  Logger.log((new Date().getTime() - start)/1000 + ' sec for scoreboard');
   
   // Force full write before returning
   SpreadsheetApp.flush();
-  Logger.log((new Date().getTime() - start)/1000 + ' sec for scoreboard flush');
   SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members').getRange('K1').setValue(new Date());
 }
