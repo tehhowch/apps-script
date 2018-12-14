@@ -461,7 +461,7 @@ def addTimestringFields(records: list):
 
 def clean_regressions(service: FusionTableHandler,
                       time_start='2018-05-29T12:00:00.000000+0000',
-                      time_end='2018-11-30T12:00:00.000000+0000'):
+                      time_end='2019-11-30T12:00:00.000000+0000'):
     from regression_fixer import clean_rank_regression, clean_crown_regression
     uids = [x[1] for x in service.get_user_batch()]
     args = (service, uids, time_start, time_end)

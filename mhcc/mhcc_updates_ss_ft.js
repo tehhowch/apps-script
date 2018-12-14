@@ -456,21 +456,24 @@ function UpdateDatabase()
       // inserting any other records would distort the collected records.
       // If not, then we want any records which are newer than the stored record.
 
-      // Sort the crown snapshots from most to least recently acquired.
-      data[uid].collected.sort(function (a, b) { return b.seen - a.seen; });
-      if (insert_anyway)
-        data[uid].toAdd.push(data[uid].collected[0]);
-      else
+      if (data[uid].collected.length)
       {
-        data[uid].collected.forEach(function (record)
+        // Sort the crown snapshots from most to least recently acquired.
+        data[uid].collected.sort(function (a, b) { return b.seen - a.seen; });
+        if (insert_anyway)
+          data[uid].toAdd.push(data[uid].collected[0]);
+        else
         {
-          // We know that this record is newer than the stored record (otherwise
-          // it would not be 'collected' unless the forced insert was happening).
-          // Thus, if it has different crowns compared to what we have already
-          // decided to add, include it for addition.
-          if (_hasDifferentCrowns_(record, data[uid].toAdd))
-            data[uid].toAdd.push(record);
-        });
+          data[uid].collected.forEach(function (record)
+          {
+            // We know that this record is newer than the stored record (otherwise
+            // it would not be 'collected' unless the forced insert was happening).
+            // Thus, if it has different crowns compared to what we have already
+            // decided to add, include it for addition.
+            if (_hasDifferentCrowns_(record, data[uid].toAdd))
+              data[uid].toAdd.push(record);
+          });
+        }
       }
 
       // No matter why we are inserting data, we want the record with the most
