@@ -540,11 +540,17 @@ function UpdateDatabase()
     }
     // Validate the returned data prior to attempting to coerce it to JSON.
     if (!resp || resp.getResponseCode() !== 200)
+    {
+      console.log({ "message": "HornTracker query failed in known manner", "response": resp, "targets": uids.split(",") });
       return htData;
+    }
 
     const text = resp.getContentText();
     if (!text.length || text.toLowerCase().indexOf('connect to mysql') !== -1)
+    {
+      console.log("HornTracker database unavailable");
       return htData;
+    }
 
     try { var mostMiceData = JSON.parse(text).hunters; }
     catch (e)
