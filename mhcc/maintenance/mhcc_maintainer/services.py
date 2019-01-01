@@ -232,7 +232,7 @@ Full documentation of the actual service available here:
 https://developers.google.com/resources/api-libraries/documentation/fusiontables/v2/python/latest/
     """
     MAX_GET_QUERY_LENGTH = 7900
-    MAX_DELETE_QUERY_LENGTH = 7000
+    MAX_DELETE_QUERY_LENGTH = 6000
 
     def __init__(self, credentials: 'google.auth.credentials.Credentials'):
         super().__init__('fusiontables', 'v2', credentials)
