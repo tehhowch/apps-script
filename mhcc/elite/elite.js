@@ -178,150 +178,117 @@ function AddMemberToDB_(dbList)
 function UpdateDatabase()
 {
   // This function is used to update the database's values, and runs frequently on small sets of data
-  var BatchSize = 150;//127;                                                               // Number of records to process on each execution
-  var LastRan = 1 * PropertiesService.getScriptProperties().getProperty('LastRan');                           // Determine the last successfully processed record
-  var db = [];
-  db = getMyDb_(SS, 1);             // Get the db, sort on col 1 (name)
-  var nMembers = db.length               // Database records count
-  var sheet = SS.getSheetByName('Members');
+  const BatchSize = 150;//127;                                                               // Number of records to process on each execution
+  const store = PropertiesService.getScriptProperties();
+  var LastRan = 1 * store.getProperty('LastRan');                           // Determine the last successfully processed record
+  const db = getMyDb_(SS, 1);             // Get the db, sort on col 1 (name)
+  var memberCount = db.length               // Database records count
+  const sheet = SS.getSheetByName('Members');
   var nRows = sheet.getLastRow() - 1;                                                     // Spreadsheet records count
 
-  var aScoring = SS.getSheetByName('Scoring').getRange(2, 1, 3, 2).getValues();   // (row column numberrows numbercolumns)
-  var Minimums = SS.getRangeByName('Minimums').getValues();
+  var aScoring = SS.getSheetByName('Scoring').getSheetValues(2, 1, 3, 2);
+  var minimum = SS.getRangeByName('Minimums').getValues().reduce(function (acc, row, i) {
+    var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
+    if (key)
+      acc[key] = row[0];
+    return acc;
+  }, {});
   // New Member check
-  if (nMembers < nRows)
-  {
-    var rs = AddMemberToDB_(db);
-    return rs;
-  }
+  if (memberCount < nRows)
+    return AddMemberToDB_(db);
 
   // Perform scoreboard update check / progress reset
-  if (LastRan >= nMembers)
+  if (LastRan >= memberCount)
   {
     UpdateScoreboard();
-    PropertiesService.getScriptProperties().setProperty('LastRan', 0);        // Point the script back to the start
+    store.setProperty('LastRan', 0);        // Point the script back to the start
     return 0;
   }
 
   // Grab a subset of the alphabetized member record
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  if (lock.hasLock())
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(30000))
   {
-    var starttime = new Date().getTime();
-    Logger.log('Started with ' + LastRan + ' completed rows')// Perform time-remaining check (operate for up to 10% of allowable time)
-    while (((new Date().getTime()) - starttime) / 1000 < 120 && LastRan < nMembers)
-    {
-      // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.  Use start/stop times to determine if multiple
-      // batches can be run without reaching 50% usage
-      var btime = new Date().getTime();
+    const start = new Date().getTime();
+    // Perform time-remaining check (operate for up to 120 s (maximum 360)).
+
+    do {
+      // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.
       var dHunters = db.slice(LastRan, LastRan - 0 + BatchSize - 0);  // Create a new array from LastRan to LastRan + BatchSize.
-      var sIDstring = dHunters[0][1].toString();            // Get the first ID for the string
-      var i = 0;
-      for (i = 1; i < dHunters.length; i++)
-      {
-        if (dHunters[i][1] != '')
-        {
-          sIDstring = sIDstring + ',' + dHunters[i][1];  // Concatenate all the remaining non-null IDs
-        }
-      }
+      var idString = dHunters.map(function (member) { return member[1]; })
+        .filter(function (id) { return !!id; }).join(",");
+
       // Have built the ID string, now query HT's MostMice.php
-      var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters=' + sIDstring).getContentText();
+      var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters=' + idString).getContentText();
       if (MM.length <= 10)
         break;
-      MM = JSON.parse(MM); // Separate line for debug purposes
-      // Cannot requery the returned batch to ensure exact matching IDs, so have to requery the returned MM object
-      // by looping over our db subset dHunters
-      Logger.log(Object.keys(MM.hunters).length + ' returned hunters out of ' + BatchSize)
-      for (i = 0; i < dHunters.length; i++)
-      {
-        var j = 'ht_' + dHunters[i][1];
-        if (typeof MM.hunters[j] != 'undefined')
+      var mmData = JSON.parse(MM).hunters;
+      // Overwrite data in the sliced array, and rewrite the range subset to the database.
+      dHunters.forEach(function (member) {
+        var dataId = 'ht_' + member[1];
+        var hunterData = mmData[dataId];
+        if (hunterData)
         {
-          // The hunter's ID was found in the MostMice object, he is not "lost"
-          // Thus, the update can be performed
-          var nB = 0;
-          var nS = 0;
-          var nG = 0;
-          for (var k in MM.hunters[j].mice)
+          var bronze = 0, silver = 0, gold = 0;
+          for (var k in hunterData.mice)
           {
             // Assign crowns by summing over all mice
-            if (MM.hunters[j].mice[k] >= 500) nG = nG + 1;
-            else if (MM.hunters[j].mice[k] >= 100) nS = nS + 1;
-            else if (MM.hunters[j].mice[k] >= 10) nB = nB + 1;
+            if (hunterData.mice[k] >= 500) ++gold;
+            else if (hunterData.mice[k] >= 100) ++silver;
+            else if (hunterData.mice[k] >= 10) ++bronze;
           }
-          dHunters[i][3] = Date.parse((MM.hunters[j].lst).replace(/-/g, "/"));
-          if (dHunters[i][8] !== nG || dHunters[i][7] !== nS || dHunters[i][6] !== nB)
-            dHunters[i][4] = new Date().getTime();
-          dHunters[i][5] = new Date().getTime();  // Time of last update, the 'touched' value
-          dHunters[i][6] = nB // Bronze
-          dHunters[i][7] = nS // Silver
-          dHunters[i][8] = nG // Gold
-          if (nG < Minimums[0][0])
-          {
-            dHunters[i][11] = 'Need ' + (Minimums[0][0] - nG) + ' more Gold';
-            dHunters[i][9] = nG;
-          }
-          else if (nG + nS < Minimums[1][0])
-          {
-            dHunters[i][11] = 'Need ' + (Minimums[1][0] - nG - nS) + ' more Silver';
-            dHunters[i][9] = nG * 2;
-          }
-          else if (nG + nS + nB < Minimums[2][0])
-          {
-            dHunters[i][11] = 'Need ' + (Minimums[2][0] - nG - nS - nB) + ' more Bronze';
-            dHunters[i][9] = nG * 3 + nS;
-          }
-          else
-          {
-            dHunters[i][9] = nG * aScoring[0][1] + nS * aScoring[1][1] + nB * aScoring[2][1]; // Points
-            dHunters[i][11] = '';
-          }
-          if (dHunters[i][3] >= (new Date().getTime() - 2000000000))
-            dHunters[i][12] = 'Current';
-          else
-            dHunters[i][12] = 'Old';
-
+          // Set the "Last Seen" for this record.
+          member[3] = Date.parse(hunterData.lst.replace(/-/g, "/"));
+          // Set the "Last Crown" for this record
+          if (member[8] !== gold || member[7] !== silver || member[6] !== bronze)
+            member[4] = new Date().getTime();
+          member[5] = new Date().getTime();
+          member[6] = bronze;
+          member[7] = silver;
+          member[8] = gold;
+          // Report if this record is using recent data or not.
+          member[12] = (member[3] >= start - 20 * 864000 * 1000) ? "Current" : "Old";
         }
         else
         {
-          // The hunter is not found in the MM object; (s)he is lost/excluded from MM.
-          dHunters[i][12] = 'Manual';
-          nB = dHunters[i][6] // Bronze
-          nS = dHunters[i][7] // Silver
-          nG = dHunters[i][8] // Gold
-          if (nG < Minimums[0][0])
-          {
-            dHunters[i][11] = 'Need ' + (Minimums[0][0] - nG) + ' more Gold';
-            dHunters[i][9] = nG;
-          }
-          else if (nG + nS < Minimums[1][0])
-          {
-            dHunters[i][11] = 'Need ' + (Minimums[1][0] - nG - nS) + ' more Gold & Silver';
-            dHunters[i][9] = nG * 2;
-          }
-          else if (nG + nS + nB < Minimums[2][0])
-          {
-            dHunters[i][11] = 'Need ' + (Minimums[2][0] - nG - nS - nB) + ' more crowns';
-            dHunters[i][9] = nG * 3 + nS;
-          }
-          else
-          {
-            dHunters[i][9] = nG * aScoring[0][1] + nS * aScoring[1][1] + nB * aScoring[2][1]; // Points
-            dHunters[i][11] = '';
-          }
+          // Manually entered data. All that might change are the needed amounts.
+          gold = member[8];
+          silver = member[7];
+          bronze = member[6];
+          member[12] = "Manual";
         }
-      }
+        // Check if any comments are needed.
+        var comment = "";
+        var points = 0;
+        if (gold < minimum.gold)
+        {
+          comment = 'Need ' + (minimum.gold - gold) + ' more Gold';
+          points = gold;
+        }
+        else if (gold + silver < minimum.silver)
+        {
+          comment = 'Need ' + (minimum.silver - gold - silver) + ' more Silver';
+          points = gold * 2;
+        }
+        else if (gold + silver + bronze < minimum.bronze)
+        {
+          comment = 'Need ' + (minimum.bronze - gold - silver - bronze) + ' more Bronze';
+          points = gold * 3 + silver;
+        }
+        else
+          points = gold * aScoring[0][1] + silver * aScoring[1][1] + bronze * aScoring[2][1];
+        member[9] = points;
+        member[11] = comment;
+      });
       // Have now completed the loop over the dHunters subset.  Rather than refresh the entire db each time this runs,
       // only the changed rows will be updated.
       saveMyDb_(dHunters, [2 + LastRan - 0, 1, dHunters.length, dHunters[0].length]);
-      LastRan = LastRan - 0 + BatchSize - 0; // Increment LastRan for next batch's usage
-      PropertiesService.getScriptProperties().setProperties({ 'LastRan': LastRan, 'AvgTime': (((new Date().getTime()) - starttime) / 1000 + PropertiesService.getScriptProperties().getProperty('AvgTime') * 1) / 2 });
-      Logger.log('Batch time of ' + ((new Date().getTime()) - btime) / 1000 + ' sec')
-    }
-    Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime()) - starttime) / 1000 + ' sec');
-    lock.releaseLock();
+      LastRan += BatchSize - 0; // Increment LastRan for next batch's usage
+    } while (new Date() - start < 120000 && LastRan < memberCount)
+    Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date() - start) / 1000) + ' sec');
+    store.setProperty('LastRan', LastRan.toString());
   }
+  lock.releaseLock();
 }
 
 
