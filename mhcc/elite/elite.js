@@ -175,9 +175,11 @@ function AddMemberToDB_(dbList)
 
 
 
+/**
+ * Update the database's values, and runs frequently on small sets of data
+ */
 function UpdateDatabase()
 {
-  // This function is used to update the database's values, and runs frequently on small sets of data
   const BatchSize = 150;//127;                                                               // Number of records to process on each execution
   const store = PropertiesService.getScriptProperties();
   var LastRan = 1 * store.getProperty('LastRan');                           // Determine the last successfully processed record
@@ -293,43 +295,40 @@ function UpdateDatabase()
 
 
 
+/**
+ * Update the spreadsheet's displayed values (after a complete update cycle).
+ */
 function UpdateScoreboard()
 {
-  // This function is used to update the spreadsheet's values, and runs after a complete db sweep
+  // Get the points-sorted memberlist. (Points, then Gold, then Silver, then Bronze)
+  const AllHunters = getMyDb_(SS, [{ column: 10, ascending: false }, { column: 9, ascending: false }, { column: 8, ascending: false }, { column: 7, ascending: false }]);
+  const newData = AllHunters.map(function (member, i) {
+    member[10] = i + 1;
+    return [
+      member[10], // Rank
+      member[0], // Name
+      member[2], // FB Profile Link
+      '=HYPERLINK("' + member[2] + '", "' + member[0] + '")',
+      member[8], // Gold
+      member[7] + member[8], // G + S
+      member[6] + member[7] + member[8], // G + S + B
+      member[9], // Points
+      member[11], // Comments
+      Utilities.formatDate(new Date(member[3]), "EST", "yyyy-MM-dd"), // Last Seen
+      Utilities.formatDate(new Date(member[4]), "EST", "yyyy-MM-dd") // Last Crown
+    ];
+  });
+  // Store & alphabetize the new ranks.
+  saveMyDb_(AllHunters);
 
-  // Get the crown-count sorted memberlist
-  var AllHunters = getMyDb_(SS, [{ column: 10, ascending: false }, { column: 9, ascending: false }, { column: 8, ascending: false }, { column: 7, ascending: false }]);
-  var Scoreboard = [];
-  var i = 1;
-  // Scoreboard format:   i UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
-  while (i <= AllHunters.length)
-  {
-    Scoreboard.push([i,
-      AllHunters[i - 1][0],  // Name
-      AllHunters[i - 1][2],   // Profile Link (fb)
-      "",  // Filler for the hyperlink formula
-      AllHunters[i - 1][8],                                        // #Gold Crowns
-      AllHunters[i - 1][7] + AllHunters[i - 1][8],                     // #G+Silver Crowns
-      AllHunters[i - 1][6] + AllHunters[i - 1][7] + AllHunters[i - 1][8],  // #Total Crowns
-      AllHunters[i - 1][9],  // #Points
-      AllHunters[i - 1][11], // Comments
-      Utilities.formatDate(new Date(AllHunters[i - 1][3]), 'EST', 'yyyy-MM-dd'), // Last Seen
-      Utilities.formatDate(new Date(AllHunters[i - 1][4]), 'EST', 'yyyy-MM-dd') // Last Crown
-    ])
-    if (i % 550 === 0)
-      Scoreboard.push(['Rank', 'Name', 'Profile', 'Hunter', 'Squirrel', 'Gold', 'Silver', 'Bronze', 'Points', 'Last Seen', 'Last Crown'])
-    AllHunters[i - 1][10] = i++;  // Store the hunter's rank in the db listing
-  }
-  saveMyDb_(AllHunters);    // Store & alphabetize the new ranks
-  // Clear out old data
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Scoreboard');
-  SS.getRange(6, 1, SS.getLastRow(), Scoreboard[0].length).setValue('');
-
-  // Write new data
-  SS.getRange(6, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);//.sort([{column: 5, ascending:false},{column: 3, ascending: true}, {column: 2, ascending:true}]);
-  SS.getRange(6, 4, Scoreboard.length, 1).setFormulaR1C1('=HYPERLINK(R[0]C[-1],R[0]C[-2])');
-
-  // Force full write before returning
+  // Clear out old data.
+  const sheet = SS.getSheetByName('Scoreboard');
+  sheet.getRange(6, 1, sheet.getLastRow(), newData[0].length).setValue('');
   SpreadsheetApp.flush();
-  SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members').getRange('K1').setValue(new Date());
+
+  // Write new data.
+  sheet.getRange(6, 1, newData.length, newData[0].length).setValues(newData);
+  sheet.getRange(6, 4, newData.length, 1).setFormulaR1C1('=HYPERLINK(R[0]C[-1],R[0]C[-2])');
+  // Timestamp the update.
+  SS.getRange('Members!K1').setValue(new Date());
 }
