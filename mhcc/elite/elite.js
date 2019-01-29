@@ -85,14 +85,14 @@ function getMyDb_(wb, sortObj)
 
 function saveMyDb_(db, range)
 {
-  if (!db)
+  if (!db || !db.length || !db[0].length)
     return false;
-  var lock = LockService.getScriptLock();
+  const lock = LockService.getScriptLock();
   lock.tryLock(30000);
   if (lock.hasLock())
   {
     // Have a lock on the db, now save
-    var sheet = SS.getSheetByName(dbSheetName);
+    const sheet = SS.getSheetByName(dbSheetName);
     if (!range)
     {
       // No position input -> full db write -> no sorting needed
@@ -118,41 +118,44 @@ function saveMyDb_(db, range)
 }
 
 
-
+/**
+ * Add any members found only on "Members" to the database.
+ * @param {Array <string[]>} dbList The existing members from SheetDb
+ * @returns {boolean} Whether any members were added to the database.
+ */
 function AddMemberToDB_(dbList)
 {
-  // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
   if (!dbList)
     return false;
+  const knownMembers = dbList.reduce(function (acc, entry, i) {
+    var dbID = entry[1].toString();
+    acc[dbID] = { "index": i, "name": entry[0] };
+    return acc;
+  }, {});
+
+  // Get an alphabetically sorted list of members
   // MemberRange = [[Name, Profile Link],[Name2, ProfLink2],...]
-  var memSS = SS.getSheetByName('Members');
-  var memList = memSS.getRange(2, 1, memSS.getLastRow() - 1, 2).sort(1).getValues();  // Get an alphabetically sorted list of members
+  const memSS = SS.getSheetByName('Members');
+  const memList = memSS.getRange(2, 1, memSS.getLastRow() - 1, 2).sort(1)
+    .getValues()
+    .map(function (row) {
+      var mplink = row[1];
+      var mpID = mplink.slice(mplink.search("=") + 1).toString();
+      return {'name': row[0], 'uid': mpID, 'link': mplink };
+    })
+    .filter(function (member) {
+      return !knownMembers.hasOwnProperty(member.uid);
+    });
+  // If all the members are known, there's nothing to do.
   if (!memList.length)
     return false;
-  for (var i = 0; i < dbList.length; i++)
-  {
-    // Loop over all names on the database list
-    var dbID = dbList[i][1].toString();
-    // Check against an ever-shortening list (derived from the Members sheet)
-    for (var j = 0; j < memList.length; j++)
-    {
-      var mplink = memList[j][1];
-      var mpID = mplink.slice(mplink.search("=") + 1).toString();
-      if (mpID === dbID)
-      {
-        memList.splice(j, 1);
-        break;
-      }
-    }
-  }
-  // After memList is only the new items to add to SheetDb, this runs:
-  var UID = '';
-  for (i = 0; i < memList.length; i++)
-  {
-    UID = memList[i][1].slice(memList[i][1].search("=") + 1).toString();
-    dbList.push([memList[i][0],
-      UID,
-      'https://www.mousehuntgame.com/profile.php?snuid=' + UID,
+
+  var nextRank = dbList.length;
+  const newDbEntries = memList.map(function (newMember) {
+    return [
+      newMember.name,
+      newMember.uid,
+      'https://www.mousehuntgame.com/profile.php?snuid=' + newMember.uid,
       0, // LastSeen
       0, // LastCrown
       0, // LastTouched
@@ -160,12 +163,13 @@ function AddMemberToDB_(dbList)
       0, // Silver
       0, // Gold
       0, // Points
-      dbList.length - 0 + 1, // Rank
+      ++nextRank,
       '', // Comment
       'Old'  // Status
-    ]);
-  }
-  saveMyDb_(dbList)  // write the new db
+    ];
+  });
+  Array.prototype.push.apply(dbList, newDbEntries);
+  saveMyDb_(dbList);
   return true;
 }
 
