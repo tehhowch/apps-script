@@ -1,3 +1,4 @@
+// @ts-check
 /**
  *  This spreadsheet uses Google Apps Script and the Spreadsheets API functionality to maintain a record of all Elite MHCC members placed on the
  *  'Members' sheet. Via the UpdateDatabase script and the external Horntracker.com website, the crowns of all members can be updated in an
@@ -53,23 +54,23 @@
  *  UpdateScoreboard:  This function manages the updates for the Scoreboard. After generating the scoreboard, it will then write the current rank of each member
  *                     to the SheetDb page.
  */
-
+// @OnlyCurrentDoc
 var dbSheetName = 'SheetDb';
 var SS = SpreadsheetApp.getActive();
 
 /**
- * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling
- *                            code as a rectangular array. Does not supply header information.
- * @param  {GoogleAppsScript.Spreadsheet.Spreadsheet} wb      The workbook containing the worksheet named SheetDb
- * @param  {number|Array <{column: number, ascending: boolean}>} [sortObj]   An integer column number or an Object[][] of sort objects
- * @return {Array[]}          An M by N rectangular array which can be used with Range.setValues() methods
+ * Reads the contents of the designated database worksheet, under the assumption
+ * that the first row is header information.
+ * @param  {GoogleAppsScript.Spreadsheet.Spreadsheet} wb The workbook containing the worksheet named SheetDb
+ * @param  {number|Array <{column: number, ascending: boolean}>} [sortObj] An integer column number or an Object[][] of sort objects
+ * @returns {Array[]} An M by N rectangular array which can be used with Range.setValues() methods
  */
-function getMyDb_(wb, sortObj)
+function getLocalDb_(wb, sortObj)
 {
-  const SS = wb.getSheetByName(dbSheetName);
+  const sheet = wb.getSheetByName(dbSheetName);
   try
   {
-    var r = SS.getRange(2, 1, SS.getLastRow() - 1, SS.getLastColumn());
+    var r = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn());
     if (sortObj)
       r.sort(sortObj);
     return r.getValues();
@@ -82,34 +83,33 @@ function getMyDb_(wb, sortObj)
 }
 
 
-
-function saveMyDb_(db, range)
+/**
+ *
+ * @param {Array[]} db Database records to be recorded.
+ * @param {{row: number, col: number, numRows: number, numCols: number}} [range] A specific address to write the given records.
+ * @returns {boolean} Whether the save was successfully performed.
+ */
+function saveLocalDb_(db, range)
 {
   if (!db || !db.length || !db[0].length)
     return false;
   const lock = LockService.getScriptLock();
-  lock.tryLock(30000);
-  if (lock.hasLock())
+  if (lock.tryLock(30000))
   {
     // Have a lock on the db, now save
     const sheet = SS.getSheetByName(dbSheetName);
-    if (!range)
+    if (!range && db.length < sheet.getLastRow() - 1)
     {
-      // No position input -> full db write -> no sorting needed
-      if (db.length < sheet.getLastRow() - 1)
-      {
-        // new db is smaller than old db, so clear it out
-        sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
-        SpreadsheetApp.flush();
-      }
-      sheet.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
+      sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
+      SpreadsheetApp.flush();
     }
-    else
-    {
-      // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
+    else if (range)
       sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).sort(1);
-      sheet.getRange(range[0], range[1], range[2], range[3]).setValues(db);
-    }
+
+    if (!range)
+      range = { 'row': 2, 'col': 1, 'numRows': db.length, 'numCols': db[0].length };
+
+    sheet.getRange(range.row, range.col, range.numRows, range.numCols).setValues(db);
     SpreadsheetApp.flush(); // Commit changes
     lock.releaseLock();
     return true
@@ -139,7 +139,7 @@ function AddMemberToDB_(dbList)
   const memList = memSS.getRange(2, 1, memSS.getLastRow() - 1, 2).sort(1)
     .getValues()
     .map(function (row) {
-      var mplink = row[1];
+      var mplink = row[1].toString();
       var mpID = mplink.slice(mplink.search("=") + 1).toString();
       return {'name': row[0], 'uid': mpID, 'link': mplink };
     })
@@ -169,41 +169,33 @@ function AddMemberToDB_(dbList)
     ];
   });
   Array.prototype.push.apply(dbList, newDbEntries);
-  saveMyDb_(dbList);
+  saveLocalDb_(dbList);
   return true;
 }
 
 
 
 /**
- * Update the database's values, and runs frequently on small sets of data
+ * Update the local database's values
  */
 function UpdateDatabase()
 {
-  const BatchSize = 150;//127;                                                               // Number of records to process on each execution
-  const store = PropertiesService.getScriptProperties();
-  var LastRan = 1 * store.getProperty('LastRan');                           // Determine the last successfully processed record
-  const db = getMyDb_(SS, 1);             // Get the db, sort on col 1 (name)
-  var memberCount = db.length               // Database records count
-  const sheet = SS.getSheetByName('Members');
-  var nRows = sheet.getLastRow() - 1;                                                     // Spreadsheet records count
+  const db = getLocalDb_(SS, 1), // Get the db, sorted ascending by name.
+      memberCount = db.length,
+      BatchSize = 150; // Number of records to process on each execution
 
-  var aScoring = SS.getSheetByName('Scoring').getSheetValues(2, 1, 3, 2);
-  var minimum = SS.getRangeByName('Minimums').getValues().reduce(function (acc, row, i) {
-    var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
-    if (key)
-      acc[key] = row[0];
-    return acc;
-  }, {});
-  // New Member check
-  if (memberCount < nRows)
+  // New Member check (1 header row on the sheet).
+  if (memberCount < SS.getSheetByName('Members').getLastRow() - 1)
     return AddMemberToDB_(db);
 
-  // Perform scoreboard update check / progress reset
+  // Retrieve the last successfully updated database record index.
+  const store = PropertiesService.getScriptProperties();
+  var LastRan = parseInt(store.getProperty('LastRan'), 10);
   if (LastRan >= memberCount)
   {
+    // Print the scoreboard and restart the cycle.
     UpdateScoreboard();
-    store.setProperty('LastRan', 0);        // Point the script back to the start
+    store.setProperty('LastRan', "0");
     return 0;
   }
 
@@ -212,7 +204,14 @@ function UpdateDatabase()
   if (lock.tryLock(30000))
   {
     const start = new Date().getTime();
-    // Perform time-remaining check (operate for up to 120 s (maximum 360)).
+    /** @type {Array <[string, number]>} */
+    const aScoring = SS.getSheetByName('Scoring').getSheetValues(2, 1, 3, 2);
+    const minimum = SS.getRangeByName('Minimums').getValues().reduce(function (acc, row, i) {
+      var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
+      if (key)
+        acc[key] = row[0];
+      return acc;
+    }, { 'gold': 0, 'silver': 0, 'bronze': 0 });
 
     do {
       // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.
@@ -249,7 +248,7 @@ function UpdateDatabase()
           member[7] = silver;
           member[8] = gold;
           // Report if this record is using recent data or not.
-          member[12] = (member[3] >= start - 20 * 864000 * 1000) ? "Current" : "Old";
+          member[12] = (member[3] >= start - 20 * 86400 * 1000) ? "Current" : "Old";
         }
         else
         {
@@ -284,10 +283,10 @@ function UpdateDatabase()
       });
       // Have now completed the loop over the dHunters subset.  Rather than refresh the entire db each time this runs,
       // only the changed rows will be updated.
-      saveMyDb_(dHunters, [2 + LastRan - 0, 1, dHunters.length, dHunters[0].length]);
+      saveLocalDb_(dHunters, { 'row': 2 + LastRan -0, 'col': 1, 'numRows': dHunters.length, 'numCols': dHunters[0].length });
       LastRan += BatchSize - 0; // Increment LastRan for next batch's usage
-    } while (new Date() - start < 120000 && LastRan < memberCount)
-    Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date() - start) / 1000) + ' sec');
+    } while (new Date().getTime() - start < 120000 && LastRan < memberCount)
+    Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime() - start) / 1000) + ' sec');
     store.setProperty('LastRan', LastRan.toString());
   }
   lock.releaseLock();
@@ -301,13 +300,13 @@ function UpdateDatabase()
 function UpdateScoreboard()
 {
   // Get the points-sorted memberlist. (Points, then Gold, then Silver, then Bronze)
-  const AllHunters = getMyDb_(SS, [{ column: 10, ascending: false }, { column: 9, ascending: false }, { column: 8, ascending: false }, { column: 7, ascending: false }]);
+  const AllHunters = getLocalDb_(SS, [{ column: 10, ascending: false }, { column: 9, ascending: false }, { column: 8, ascending: false }, { column: 7, ascending: false }]);
   const newData = AllHunters.map(function (member, i) {
     member[10] = i + 1;
     return [
       member[10], // Rank
       member[0], // Name
-      member[2], // FB Profile Link
+      member[2], // MH Profile Link
       '=HYPERLINK("' + member[2] + '", "' + member[0] + '")',
       member[8], // Gold
       member[7] + member[8], // G + S
@@ -319,16 +318,15 @@ function UpdateScoreboard()
     ];
   });
   // Store & alphabetize the new ranks.
-  saveMyDb_(AllHunters);
+  saveLocalDb_(AllHunters);
 
   // Clear out old data.
   const sheet = SS.getSheetByName('Scoreboard');
-  sheet.getRange(6, 1, sheet.getLastRow(), newData[0].length).setValue('');
+  sheet.getRange(6, 1, sheet.getLastRow(), newData[0].length).clearContent();
   SpreadsheetApp.flush();
 
   // Write new data.
   sheet.getRange(6, 1, newData.length, newData[0].length).setValues(newData);
-  sheet.getRange(6, 4, newData.length, 1).setFormulaR1C1('=HYPERLINK(R[0]C[-1],R[0]C[-2])');
   // Timestamp the update.
   SS.getRange('Members!K1').setValue(new Date());
 }

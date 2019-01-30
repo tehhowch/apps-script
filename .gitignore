@@ -12,6 +12,7 @@ __pycache__/*
 *.pyc
 
 # General-purpose ignores
+.clasp.json
 client_secret_*
 [Tt]humbs.db
 *.DS_Store
