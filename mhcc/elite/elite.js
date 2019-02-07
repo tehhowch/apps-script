@@ -307,7 +307,7 @@ function UpdateScoreboard()
       member[10], // Rank
       member[0], // Name
       member[2], // MH Profile Link
-      '=HYPERLINK("' + member[2] + '", "' + member[0].replace(/"/g, '\\"') + '")',
+      '=HYPERLINK("' + member[2] + '", "' + member[0].replace(/"/g, '""') + '")',
       member[8], // Gold
       member[7] + member[8], // G + S
       member[6] + member[7] + member[8], // G + S + B
