@@ -6,14 +6,6 @@
 * the person's data is refreshed.
 * Bonus: this means we can serve new data such as most crowns in the last 30 days.
 */
-/** Table of the user names and their associated UID. */
-var utbl = '1O4lBLsuvfEzmtySkJ-n-GjOSD_Ab2GsVgNIX8uZ-';
-/** Table of the user's crown data. Unique on LastTouched. */
-var ftid = '1hGdCWlLjBbbd-WW1y32I2e-fFqudDgE3ev-skAff';
-/** Table of the user's rank data. */
-var rankTableId = '1Mt7E_3qWRkpGGUZ-pbxkdFYCdhNbyj1oWnEx5haL';
-/** Table for alternate crown lookups (Jack's MH Crowns). */
-var alt_table = "";
 
 /**
  * Returns a 2D array of the members' names and identifiers, from `start` until `limit`, or EOF.
@@ -113,7 +105,7 @@ function ftBatchWrite_(newData, tableId, strict)
 {
   if (!tableId) return;
   const options = { isStrict: strict !== false };
-  
+
   var dataAsCSV = array2CSV_(newData);
   try { var dataAsBlob = Utilities.newBlob(dataAsCSV, "application/octet-stream"); }
   catch (e)
@@ -122,7 +114,7 @@ function ftBatchWrite_(newData, tableId, strict)
     console.error({ "message": e.message, "input": newData, "csv": dataAsCSV, "blob": dataAsBlob });
     throw e;
   }
-  
+
   try { return FusionTables.Table.importRows(tableId, dataAsBlob, options).numRowsReceived * 1; }
   catch (e)
   {
@@ -287,7 +279,7 @@ function doBackupTable_(tableId, deleteEarliest)
   /**
    * Access or initialize a backup object for the given user. The backup objects store the tableIds of copies for
    * a given input table, keyed to the time at which they were created.
-   * 
+   *
    * @param {any} store  A PropertiesService object (UserProperties or ScriptProperties)
    * @param {string} key The key which is used to access the object in the store.
    * @return {Object <string, Object <string, string>>} An object with keys of FusionTable IDs, yielding time-id associative objects.
@@ -308,7 +300,7 @@ function doBackupTable_(tableId, deleteEarliest)
     newObject[tableId] = {};
     return newObject;
   }
-  
+
   if (!tableId) tableId = ftid;
   deleteEarliest = deleteEarliest !== false;
 
