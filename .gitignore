@@ -11,6 +11,7 @@ keys.js
 __pycache__/*
 .mypy_cache/
 *.pyc
+Pipfile*
 
 # General-purpose ignores
 .clasp.json
