@@ -5,11 +5,13 @@ auth.txt
 tables.txt
 mhcc/.vs*
 env/
+keys.js
 
 # Python ignores
 __pycache__/*
 .mypy_cache/
 *.pyc
+Pipfile*
 
 # General-purpose ignores
 .clasp.json

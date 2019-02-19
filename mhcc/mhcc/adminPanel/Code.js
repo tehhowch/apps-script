@@ -3,7 +3,7 @@ function getSidebar() {
 }
 
 function doSideBar_() {
-  var filename = "adminPanel\\UI.html";
+  var filename = "adminPanel/UI.html";
   var sb = HtmlService.createHtmlOutputFromFile(filename);
   sb.setTitle("MHCC Admin Panel").setFaviconUrl("https://i.imgur.com/QMghA1l.png");
   return sb;
@@ -74,7 +74,7 @@ function validateSidebarInput_(form)
 
 /**
  * Query the MHCC Members FusionTable to acquire this member's information.
- * 
+ *
  * @param {string} uid The MHCC identifier for this particular individual.
  * @returns {MemberQueryResult} If found, the individual's known name and table row. Otherwise, an error.
  */
@@ -110,7 +110,7 @@ function getMemberInfo(uid)
 
 /**
  * Query the MHCC Members table to determine if this member can be added.
- * 
+ *
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationFeasibility} An object instructing the sidebar how to react.
  */
@@ -153,7 +153,7 @@ function canAdd(form)
   }
   else if (input.error)
     output.log = input.error.message;
-  
+
   return output;
 }
 
@@ -200,20 +200,20 @@ function canDelete(form)
         ].forEach(function (query) { resp.push(FusionTables.Query.sqlGet(query)); });
         try { output.dataRows = resp.reduce(function (acc, val) { return acc + (val.rows && val.rows.length) ? val.rows[0][0] * 1 : 0; }, 0); }
         catch (e) { console.warn(e); output.dataRows = ""; }
-        
+
         output.log = "Deleting '" + member.name + "' will also delete their " + (output.dataRows ? output.dataRows + " " : "") + "crown records.";
       }
     }
   }
   else if (input.error)
     output.log = input.error.message;
-  
+
   return output;
 }
 
 /**
  * Method called by the sidebar after an "Add Member" operation validates as a name change, and the administrator OKs it.
- * 
+ *
  * @param {SidebarForm} form The sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
@@ -239,13 +239,13 @@ function changeMemberName(form)
   }
   else
     output.log = (input.canDo === false) ? "Cannot perform request." : "Invalid request. Revalidation is required.";
-  
+
   return output;
 }
 
 /**
  * Add the given individual to the MHCC Members FusionTable.
- * 
+ *
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
@@ -265,20 +265,20 @@ function addMemberToFusion(form)
     const memCsv = [[input.request.name, input.request.uid]];
     const uUpload = Utilities.newBlob(array2CSV_(memCsv), "application/octet-stream");
     const resp = FusionTables.Table.importRows(utbl, uUpload).numRowsReceived;
-    
+
     output.report = "Added '" + input.request.name + "' to the database.";
     output.reset = true;
   }
   else
     output.log = (input.canDo === false) ? "Cannot perform request." : "Invalid request. Revalidation is required.";
-  
+
   console.log({ "message": "Adding member", "output": output, "can_Add": input, "fn_Arg": form });
   return output;
 }
 
 /**
  * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB FusionTables.
- * 
+ *
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
@@ -306,13 +306,13 @@ function delMemberFromFusion(form)
       output.reset = true;
     }
     catch (e) { console.warn({ "message": "Error while deleting member.", "error": e, "input": input }); throw e; }
-    
+
     const r = { "message": "Deleted user '" + input.request.name + "' from the Member, Rank DB, and Crown DB FusionTables.", "input": input, "responses": resp };
     console.log(r);
     output.report = r.message;
   }
   else
     output.log = (input.canDo === false) ? "Cannot perform request." : "Invalid request. Revalidation is required.";
-    
+
   return output;
 }
