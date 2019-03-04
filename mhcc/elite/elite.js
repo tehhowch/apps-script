@@ -68,9 +68,10 @@ var SS = SpreadsheetApp.getActive();
 function getLocalDb_(wb, sortObj)
 {
   const sheet = wb.getSheetByName(dbSheetName);
+  var r;
   try
   {
-    var r = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn());
+    r = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn());
     if (sortObj)
       r.sort(sortObj);
     return r.getValues();
@@ -112,9 +113,9 @@ function saveLocalDb_(db, range)
     sheet.getRange(range.row, range.col, range.numRows, range.numCols).setValues(db);
     SpreadsheetApp.flush(); // Commit changes
     lock.releaseLock();
-    return true
+    return true;
   }
-  return false
+  return false;
 }
 
 
@@ -182,7 +183,7 @@ function UpdateDatabase()
 {
   const db = getLocalDb_(SS, 1), // Get the db, sorted ascending by name.
       memberCount = db.length,
-      BatchSize = 150; // Number of records to process on each execution
+      BatchSize = 100; // Number of records to process on each execution
 
   // New Member check (1 header row on the sheet).
   if (memberCount < SS.getSheetByName('Members').getLastRow() - 1)
@@ -228,9 +229,9 @@ function UpdateDatabase()
       dHunters.forEach(function (member) {
         var dataId = 'ht_' + member[1];
         var hunterData = mmData[dataId];
+        var bronze = 0, silver = 0, gold = 0;
         if (hunterData)
         {
-          var bronze = 0, silver = 0, gold = 0;
           for (var k in hunterData.mice)
           {
             // Assign crowns by summing over all mice
@@ -285,7 +286,7 @@ function UpdateDatabase()
       // only the changed rows will be updated.
       saveLocalDb_(dHunters, { 'row': 2 + LastRan -0, 'col': 1, 'numRows': dHunters.length, 'numCols': dHunters[0].length });
       LastRan += BatchSize - 0; // Increment LastRan for next batch's usage
-    } while (new Date().getTime() - start < 120000 && LastRan < memberCount)
+    } while (new Date().getTime() - start < 120000 && LastRan < memberCount);
     Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime() - start) / 1000) + ' sec');
     store.setProperty('LastRan', LastRan.toString());
   }

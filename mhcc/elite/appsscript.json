@@ -5,6 +5,10 @@
       "userSymbol": "FusionTables",
       "serviceId": "fusiontables",
       "version": "v2"
+    }, {
+      "userSymbol": "BigQuery",
+      "serviceId": "bigquery",
+      "version": "v2"
     }]
   },
   "exceptionLogging": "STACKDRIVER"
