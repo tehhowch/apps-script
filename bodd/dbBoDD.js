@@ -64,11 +64,11 @@ function AddMemberToDB_(dbList) {
   if ( memList.length == 0 ) return 1;
   for ( var i = 0; i<dbList.length; i++ ) {
     // Loop over all names on the database list
-    var dbID = dbList[i][1]*1;
+    var dbID = dbList[i][1].toString();
     // Check against an ever-shortening list (derived from the Members sheet)
     for ( var j = 0; j<memList.length; j++ ) {
       var mplink = memList[j][2];
-      var mpID = mplink.slice(mplink.search("=")+1)*1;
+      var mpID = mplink.slice(mplink.search("=")+1).toString();
       if ( mpID === dbID ) {
         memList.splice(j,1);
         break;
@@ -78,7 +78,7 @@ function AddMemberToDB_(dbList) {
   // After memList is only the new items to add to SheetDb, this runs:
   var UID = '';
   for (i = 0;i<memList.length;i++) {
-    UID=memList[i][2].slice(memList[i][2].search("=")+1);
+    UID=memList[i][2].slice(memList[i][2].search("=")+1).toString();
     dbList.push([memList[i][0],
                  UID,
                  'http://apps.facebook.com/mousehunt/profile.php?snuid='+UID,
@@ -133,7 +133,7 @@ function UpdateDatabase() {
       // batches can be run without reaching 50% usage
       var btime = new Date().getTime();
       var dHunters = db.slice(LastRan,LastRan-0+BatchSize-0);  // Create a new array from LastRan to LastRan + BatchSize.
-      var sIDstring = dHunters[0][1]*1;            // Get the first ID for the string
+      var sIDstring = dHunters[0][1].toString();            // Get the first ID for the string
       var i = 0;
       for ( i=1;i<dHunters.length;i++ ) {
         if ( dHunters[i][1] != '' ) {
@@ -288,12 +288,12 @@ function ReverseMemberFind() {
   for ( var i = 0; i<SBList.length; i++ ) {
     // Loop over all names on the scoreboard list
     var splink = SBList[i][6];
-    var spID = splink.slice(splink.search("=")+1)*1;
+    var spID = splink.slice(splink.search("=")+1).toString();
     var hasmatch = false;
     for ( var j = 0; j<MemberList.length; j++ ) {
       // Loop over all names on the member list
       var mplink = MemberList[j][2];
-      var mpID = mplink.slice(mplink.search("=")+1)*1;
+      var mpID = mplink.slice(mplink.search("=")+1).toString();
       if ( mpID === spID ) {
         hasmatch = true;
         MemberList.splice(j,1);
@@ -317,7 +317,7 @@ function IsDupeMember() {
   var db = getMyDb_(1);
   if ( db.length == 0 ) return 1
   var memIDstr = '';
-  memIDstr = db[0][1];
+  memIDstr = db[0][1].toString();
   for ( var i = 1;i<db.length;i++ ) {
     memIDstr = memIDstr + ',' + db[i][1];
   }
