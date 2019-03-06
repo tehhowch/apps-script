@@ -2,26 +2,26 @@
 
 function                Purpose
 
-AddMemberToDB           Called by UpdateDatabase whenever the number of rows on 'Members' is more than the 
-                        internal count of members, e.g. new members have been added to the group.  If the 
-                        member being evaluated already exists, nothing happens, but if the member does not 
+AddMemberToDB           Called by UpdateDatabase whenever the number of rows on 'Members' is more than the
+                        internal count of members, e.g. new members have been added to the group.  If the
+                        member being evaluated already exists, nothing happens, but if the member does not
                         exist, he is added.
-                        
-UpdateDatabase          Called by a time-based trigger, this function is in charge of everything.  Makes use 
+
+UpdateDatabase          Called by a time-based trigger, this function is in charge of everything.  Makes use
                         of the script property LastRan to provide inter-execution consistency.
-                        
-UpdateStale             Called by the UpdateScoreboard function or a time-based trigger, this function 
-                        provides access to a means of updating the publicly-viewable links of members that 
+
+UpdateStale             Called by the UpdateScoreboard function or a time-based trigger, this function
+                        provides access to a means of updating the publicly-viewable links of members that
                         need a data refresh
-                        
-UpdateScoreboard        Called by UpdateDatabase, this function will iterate over the internal database and 
-                        create the various scoreboards Roll of Honour, Alphabetical, and Underlings.  This 
+
+UpdateScoreboard        Called by UpdateDatabase, this function will iterate over the internal database and
+                        create the various scoreboards Roll of Honour, Alphabetical, and Underlings.  This
                         function can also be called manually.
-                        
+
 ReverseMemberFind       Called by a time-based trigger, this function will iterate over the Alphabetical scoreboard
                         and determine if a member listed there is not listed on the 'Members' worksheet.  Any such
-                        hunters are placed into the "Gone, but not yet" region on the 'Members' sheet as a reminder 
-                        to either perform the ManualMemberRemoval script (if the member is to be deleted), or to 
+                        hunters are placed into the "Gone, but not yet" region on the 'Members' sheet as a reminder
+                        to either perform the ManualMemberRemoval script (if the member is to be deleted), or to
                         restore the accidentally deleted row (if the member is supposed to exist)
 
 */
@@ -55,11 +55,11 @@ function saveMyDb_(db,range) {
   }
   return false
 }
-function AddMemberToDB_(dbList) { 
+function AddMemberToDB_(dbList) {
   // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
   if ( dbList == null ) return 1;
   // MemberRange = [[Name, JoinDate, Profile Link],[Name2, JoinDate2, ProfLink2],...]
-  var memSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members');  
+  var memSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members');
   var memList = memSS.getRange(2, 1, memSS.getLastRow()-1, 3).sort(1).getValues();  // Get an alphabetically sorted list of members
   if ( memList.length == 0 ) return 1;
   for ( var i = 0; i<dbList.length; i++ ) {
@@ -114,14 +114,14 @@ function UpdateDatabase() {
     var rs = AddMemberToDB_(db);
     return rs;
   }
-  
+
   // Perform scoreboard update check / progress reset
   if ( LastRan >= nMembers ) {
     UpdateScoreboard();
-    PropertiesService.getPropertiesService().setProperty('LastRan', 0);        // Point the script back to the start
+    PropertiesService.getScriptProperties().setProperty('LastRan', 0);        // Point the script back to the start
     return 0;
   }
-  
+
   // Grab a subset of the alphabetized member record
   var lock = LockService.getPublicLock();
   lock.waitLock(30000);
@@ -132,7 +132,7 @@ function UpdateDatabase() {
       // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.  Use start/stop times to determine if multiple
       // batches can be run without reaching 50% usage
       var btime = new Date().getTime();
-      var dHunters = db.slice(LastRan,LastRan-0+BatchSize-0);  // Create a new array from LastRan to LastRan + BatchSize. 
+      var dHunters = db.slice(LastRan,LastRan-0+BatchSize-0);  // Create a new array from LastRan to LastRan + BatchSize.
       var sIDstring = dHunters[0][1]*1;            // Get the first ID for the string
       var i = 0;
       for ( i=1;i<dHunters.length;i++ ) {
@@ -152,11 +152,11 @@ function UpdateDatabase() {
         try {
           // The hunter's ID was found in the MostMice object, he is not "lost"
           // Thus, the update can be performed
-           
+
           var nWh = MM.hunters[j].mice['Whelpling'] || 0;
           var nDW = MM.hunters[j].mice['Draconic Warden'] || 0;
           var nD = MM.hunters[j].mice['Dragon'] || 0;
-          
+
           dHunters[i][3] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
           if ( dHunters[i][8] != nD || dHunters[i][7] != nDW || dHunters[i][6] != nWh ) dHunters[i][4] = new Date().getTime();
           dHunters[i][5] = new Date().getTime();  // Time of last update, the 'touched' value
@@ -173,15 +173,15 @@ function UpdateDatabase() {
           }
           if ( dHunters[i][3] >= (new Date().getTime() - 2000000000) ) dHunters[i][11] = 'Current';
           else dHunters[i][11] = 'Old';
-          
-        } 
+
+        }
         catch(e) {
           // The hunter is not found in the MM object, he is lost.  Set his status to "Lost"
           dHunters[i][11] = 'Lost';
           Logger.log(dHunters[i][0] + ' is lost');
         }
       }
-      // Have now completed the loop over the dHunters subset.  Rather than refresh the entire db each time this runs, 
+      // Have now completed the loop over the dHunters subset.  Rather than refresh the entire db each time this runs,
       // only the changed rows will be updated.
       saveMyDb_(dHunters,[2+LastRan-0,1,dHunters.length,dHunters[0].length]);
       LastRan = LastRan-0 + BatchSize-0; // Increment LastRan for next batch's usage
@@ -221,30 +221,30 @@ function UpdateStale() {
     lSS.getRange(2, 1, lSS.getLastRow()-1).setValue('');            // Clean out any previously 'Lost' hunters
     if (LostArray.length > 0 ) {
       lSS.getRange(2, 1, LostArray.length).setFormulas(LostArray);      // Add new 'Lost' hunters
-    } 
+    }
     lock.releaseLock();
   }
 }
 function UpdateScoreboard() {
   // This function is used to update the spreadsheet's values, and runs hourly
-  
+
   var start = new Date().getTime();
   // Check for stale & lost hunters
   start = new Date().getTime();
   UpdateStale();
   Logger.log((new Date().getTime() - start)/1000 + ' sec for Lost & Stale Hunters');
-  
+
   // Build scoreboard
   start = new Date().getTime();
   // Get the crown-count sorted memberlist
   var AllHunters = getMyDb_([{column:9,ascending:false},{column:8,ascending:false},{column:7,ascending:false}]);
-  var Scoreboard = [];var WardenBoard=[];var WhelpBoard=[]; 
+  var Scoreboard = [];var WardenBoard=[];var WhelpBoard=[];
   var i = 1;
   // Scoreboard format:   i UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
   while ( i <= AllHunters.length ) {
     Scoreboard.push([AllHunters[i-1][0],  // Name
-                     i, 
-                     AllHunters[i-1][8],  // #Dragons 
+                     i,
+                     AllHunters[i-1][8],  // #Dragons
                      AllHunters[i-1][9], // Title
                      Utilities.formatDate(new Date(AllHunters[i-1][4]), 'EST', 'yyyy-MM-dd'), // Last Change
                      Utilities.formatDate(new Date(AllHunters[i-1][3]), 'EST', 'yyyy-MM-dd'), // Last Seen
@@ -258,7 +258,7 @@ function UpdateScoreboard() {
   // Clear out old data
   var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Roll of Honour');
   SS.getRange(2, 1, SS.getLastRow(), Scoreboard[0].length).setValue('');
-  
+
   // Write new data
   SS.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);
 
@@ -269,16 +269,16 @@ function UpdateScoreboard() {
   SS.getRange(2, 2, SS.getLastRow(), WardenBoard[0].length-0+WhelpBoard[0].length-0).setValue('');
   SS.getRange(2, 2, WardenBoard.length, WardenBoard[0].length).setValues(WardenBoard).sort({column: 3, ascending: false});
   SS.getRange(2, 4, WhelpBoard.length, WhelpBoard[0].length).setValues(WhelpBoard).sort({column: 5, ascending: false});
-  
+
   Logger.log((new Date().getTime() - start)/1000 + ' sec for scoreboards');
-  
+
   // Force full write before returning
   SpreadsheetApp.flush();
   Logger.log((new Date().getTime() - start)/1000 + ' sec for scoreboard flush');
   SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members').getRange('H1').setValue(new Date());
 }
 function ReverseMemberFind() {
-  // Used to determine which members are on the scoreboard but not in the Member list 
+  // Used to determine which members are on the scoreboard but not in the Member list
   // ( e.g. deleted row but not removed from the database via ManualMemberRemoval )
   var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Alphabetical');
   var SBList = SS.getRange(2, 1, SS.getLastRow()-1, 7).getValues();  // [[Name1]...[Link1],[Name2]...[Link2]]
