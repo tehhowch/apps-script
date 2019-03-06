@@ -337,24 +337,23 @@ function ReverseMemberFind() {
     SS.getRange(43, 6, GoneNotYet.length, 2).setValues(GoneNotYet);
   }
 }
-function IsDupeMember() {
-  // Runs on form submit, checks their ID against all IDs in the DB
-  var SS = SpreadsheetApp.getActive().getSheetByName('JoinRequests');
-  var URL = '';
-  URL = SS.getRange(SS.getLastRow(), 8).getValue();
-  var newID = URL.toString().slice(URL.toString().search("=") + 1);
-  // Loop over existing strings to make superstring, then search it?
-  var db = getMyDb_(1);
-  if (db.length == 0) return 1;
-  var memIDstr = '';
-  memIDstr = db[0][1].toString();
-  for (var i = 1; i < db.length; i++) {
-    memIDstr = memIDstr + ',' + db[i][1];
-  }
-  memIDstr = memIDstr + ',';
-  if (memIDstr.indexOf(newID + ',') > 0) {
-    SS.getRange(SS.getLastRow(), 9).setValue('Duplicate');
-  } else {
-    SS.getRange(SS.getLastRow(), 9).setValue('Eligible ID');
-  }
+
+// Runs on form submit, checks their ID against all IDs in the DB
+function IsDupeMember(e) {
+  console.log(e);
+  const sheet = SpreadsheetApp.getActive().getSheetByName('JoinRequests');
+  const URL = sheet.getRange(sheet.getLastRow(), 8).getValue().toString();
+  const newId = URL.slice(URL.search("=") + 1);
+
+  // Create a mapping object of the existing member IDs.
+  const db = getMyDb_(1);
+  if (!db.length)
+    throw new Error("No database data found.");
+
+  const searchObj = db.reduce(function (acc, member) {
+    acc[member[1]] = member[0];
+    return acc;
+  }, {});
+
+  sheet.getRange(sheet.getLastRow(), 9).setValue(searchObj.hasOwnProperty(newId) ? "Duplicate" : "Eligible ID");
 }
