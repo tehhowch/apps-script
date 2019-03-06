@@ -26,35 +26,44 @@ ReverseMemberFind       Called by a time-based trigger, this function will itera
 
 */
 function getMyDb_(sortObj) {
-  var SS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
-  var db = SS.getRange(2, 1, SS.getLastRow() - 1, SS.getLastColumn()).sort(sortObj).getValues();
+  const sheet = SpreadsheetApp.getActive().getSheetByName('SheetDb');
+  const db = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
+      .sort(sortObj)
+      .getValues();
   return db;
 }
+
 function saveMyDb_(db, range) {
-  if (db == null) return 1;
-  var lock = LockService.getPublicLock();
-  lock.tryLock(30000);
-  if (lock.hasLock()) {
+  if (!db || !Array.isArray(db) || !db.length || !Array.isArray(db[0]))
+    return false;
+
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(30000)) {
     // Have a lock on the db, now save
-    var SS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
-    if (range == null) {
+    const sheet = SpreadsheetApp.getActive().getSheetByName('SheetDb');
+    if (!range) {
       // No position input -> full db write -> no sorting needed
-      if (db.length < SS.getLastRow() - 1) {
+      if (db.length < sheet.getLastRow() - 1) {
         // new db is smaller than old db, so clear it out
-        SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).setValue('');
+        sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
+        SpreadsheetApp.flush();
       }
-      SS.getRange(2, 1, db.length, db[0].length).setValues(db).sort(1);
+      sheet.getRange(2, 1, db.length, db[0].length)
+        .setValues(db)
+        .sort(1);
     } else {
       // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
-      SS.getRange(2, 1, SS.getLastRow(), SS.getLastColumn()).sort(1);
-      SS.getRange(range[0], range[1], range[2], range[3]).setValues(db);
+      sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).sort(1);
+      sheet.getRange(range[0], range[1], range[2], range[3]).setValues(db);
     }
     SpreadsheetApp.flush(); // Commit changes
     lock.releaseLock();
     return true;
   }
+  lock.releaseLock();
   return false;
 }
+
 function AddMemberToDB_(dbList) {
   // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
   if (dbList == null) return 1;
@@ -123,9 +132,8 @@ function UpdateDatabase() {
   }
 
   // Grab a subset of the alphabetized member record
-  var lock = LockService.getPublicLock();
-  lock.waitLock(30000);
-  if (lock.hasLock()) {
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(30000)) {
     var starttime = new Date().getTime();
     Logger.log('Started with ' + LastRan + ' completed rows');// Perform time-remaining check (operate for up to 10% of allowable time)
     while (((new Date().getTime()) - starttime) / 1000 < 140 && LastRan < nMembers) {
@@ -193,14 +201,14 @@ function UpdateDatabase() {
       Logger.log('Batch time of ' + ((new Date().getTime()) - btime) / 1000 + ' sec');
     }
     Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime()) - starttime) / 1000 + ' sec');
-    lock.releaseLock();
   }
+  lock.releaseLock();
 }
+
 function UpdateStale() {
   // This function is used to update the Lost Hunters page more frequently than the UpdateScoreboard can run
-  var lock = LockService.getPublicLock();
-  lock.waitLock(5000);
-  if (lock.hasLock()) {
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(5000)) {
     var dbSS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
     var db = getMyDb_(4); // Db, sorted by seen (ascending)
     var lSS = SpreadsheetApp.getActive().getSheetByName('RefreshLinks');
@@ -226,8 +234,8 @@ function UpdateStale() {
     if (LostArray.length > 0) {
       lSS.getRange(2, 1, LostArray.length).setFormulas(LostArray);      // Add new 'Lost' hunters
     }
-    lock.releaseLock();
   }
+  lock.releaseLock();
 }
 function UpdateScoreboard() {
   // This function is used to update the spreadsheet's values, and runs hourly
