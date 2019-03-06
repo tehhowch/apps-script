@@ -223,26 +223,29 @@ function UpdateDatabase() {
   lock.releaseLock();
 }
 
+/**
+ * Flag hunters with out-of-date data, or no API data at all.
+ */
 function UpdateStale() {
-  // This function is used to update the Lost Hunters page more frequently than the UpdateScoreboard can run
   const lock = LockService.getScriptLock();
   if (lock.tryLock(5000)) {
-    var dbSS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
-    var db = getMyDb_(4); // Db, sorted by seen (ascending)
-    var lSS = SpreadsheetApp.getActive().getSheetByName('RefreshLinks');
-    var StaleArray = [];
-    var LostArray = [];
-    for (var i = 0; i < db.length; i++) {
-      // Loop over the sorted db and construct Lost and Stale arrays
-      switch (db[i][11]) {
-        case 'Old':
-          StaleArray.push([db[i][0], Utilities.formatDate(new Date(db[i][3]), 'EST', 'yyyy-MM-dd'), db[i][2], db[i][2].replace('apps.facebook.com/mousehunt', 'www.mousehuntgame.com')]);
-          break;
-        case 'Lost':
-          LostArray.push(['=hyperlink("' + db[i][2] + '","' + db[i][0] + '")']);
-          break;
+    const db = getMyDb_(4); // Db, sorted by seen (ascending)
+    const lSS = SpreadsheetApp.getActive().getSheetByName('RefreshLinks');
+    const StaleArray = [];
+    const LostArray = [];
+    db.forEach(function (member) {
+      if (member[11] === "Old") {
+        StaleArray.push([
+          member[0],
+          Utilities.formatDate(new Date(member[3]), "EST", "yyyy-MM-dd"),
+          member[2],
+          member[2].replace("apps.facebook.com/mousehunt", "www.mousehuntgame.com")
+        ]);
+      } else if (member[11] === "Lost") {
+        LostArray.push(['=HYPERLINK("' + member[2] + '","' + member[0] + '")']);
       }
-    }
+    });
+
     // Write the new Stale Hunters to the sheet
     lSS.getRange(3, 3, Math.max(lSS.getLastRow() - 2, 1), 4).setValue('');  // Remove old Stale hunters
     if (StaleArray.length > 0) {
