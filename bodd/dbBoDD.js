@@ -64,47 +64,65 @@ function saveMyDb_(db, range) {
   return false;
 }
 
+/**
+ *
+ * @param {Array[]} dbList The existing array of member records
+ */
 function AddMemberToDB_(dbList) {
   // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
-  if (dbList == null) return 1;
+  if (!dbList)
+    return false;
+
   // MemberRange = [[Name, JoinDate, Profile Link],[Name2, JoinDate2, ProfLink2],...]
-  var memSS = SpreadsheetApp.getActive().getSheetByName('Members');
-  var memList = memSS.getRange(2, 1, memSS.getLastRow() - 1, 3).sort(1).getValues();  // Get an alphabetically sorted list of members
-  if (memList.length == 0) return 1;
-  for (var i = 0; i < dbList.length; i++) {
-    // Loop over all names on the database list
-    var dbID = dbList[i][1].toString();
-    // Check against an ever-shortening list (derived from the Members sheet)
-    for (var j = 0; j < memList.length; j++) {
-      var mplink = memList[j][2];
-      var mpID = mplink.slice(mplink.search("=") + 1).toString();
-      if (mpID === dbID) {
-        memList.splice(j, 1);
-        break;
-      }
+  const memberSheet = SpreadsheetApp.getActive().getSheetByName('Members');
+  // Get an alphabetically sorted list of members
+  const memList = memberSheet.getRange(2, 1, memberSheet.getLastRow() - 1, 3)
+      .sort(1)
+      .getValues();
+  if (!memList.length)
+    return false;
+
+  // Construct a name - id mapping of known members.
+  const dbMembers = dbList.reduce(function (acc, dbMember) {
+    var dbId = dbMember[1].toString();
+    if (acc[dbId] !== undefined) {
+      console.warn("Member '" + dbMember[0] + "' with id='" + dbId + "' already exists as '" + acc[dbId] + "'");
+    } else {
+      acc[dbId] = dbMember[0];
     }
-  }
-  // After memList is only the new items to add to SheetDb, this runs:
-  var UID = '';
-  for (i = 0; i < memList.length; i++) {
-    UID = memList[i][2].slice(memList[i][2].search("=") + 1).toString();
-    dbList.push([memList[i][0],
-      UID,
-      'https://apps.facebook.com/mousehunt/profile.php?snuid=' + UID,
+    return acc;
+  }, {});
+
+  // Filter the "Member" list to only those not in the database.
+  const toAdd = memList.filter(function (member) {
+    var link = member[2];
+    var id = link.slice(link.search("=") + 1).toString();
+    return dbMembers[id] === undefined;
+  });
+  const newRank = dbList.length + 1;
+  toAdd.forEach(function (member) {
+    var link = member[2];
+    var id = link.slice(link.search("=") + 1).toString();
+    dbList.push([
+      member[0],
+      id,
+      "https://www.mousehuntgame.com/profile.php?snuid=" + id,
       0, // LastSeen
       0, // LastChange
       0, // LastTouched
       0, // Whelps
       0, // Wardens
       0, // Dragons
-      'Entrant', // Title
-      dbList.length - 0 + 1, // Rank
-      'Old'  // Status
+      "Entrant", // Title
+      newRank,
+      "Old" // Record Status
     ]);
-  }
+  });
+
   saveMyDb_(dbList);  // write the new db
-  return 0;
+  return true;
 }
+
 function UpdateDatabase() {
   // This function is used to update the database's values, and runs frequently on small sets of data
   var BatchSize = 127;                                                               // Number of records to process on each execution
