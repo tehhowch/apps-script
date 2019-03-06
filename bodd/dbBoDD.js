@@ -125,100 +125,71 @@ function AddMemberToDB_(dbList) {
 
 function UpdateDatabase() {
   // This function is used to update the database's values, and runs frequently on small sets of data
-  var BatchSize = 127;                                                               // Number of records to process on each execution
-  var LastRan = 1 * PropertiesService.getScriptProperties().getProperty('LastRan');                           // Determine the last successfully processed record
-  var dbSS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
-  var db = [];
-  db = getMyDb_(1);             // Get the db, sort on col 1 (name)
-  var nMembers = db.length;               // Database records count
-  var SS = SpreadsheetApp.getActive().getSheetByName('Members');
-  var nRows = SS.getLastRow() - 1;                                                     // Spreadsheet records count
-  // Read in the tiers as a 21x3 array
-  // If the tiers are moved, this getRange MUST be updated!
-  var aRankTitle = SpreadsheetApp.getActive().getSheetByName('Ranks').getRange(2, 1, 21, 3).getValues();   // (row column numberrows numbercolumns)
-  // New Member check
-  if (nMembers < nRows) {
-    var rs = AddMemberToDB_(db);
-    return rs;
-  }
+  const props = PropertiesService.getScriptProperties();
+  var LastRan = parseInt(props.getProperty('LastRan'), 10); // Determine the last successfully processed record
+  const BatchSize = 127; // Number of records to process on each execution
+  const db = getMyDb_(1); // Get the alphabetized db.
+  const nMembers = db.length; // Database records count.
+  const wb = SpreadsheetApp.getActive();
+  const SS = wb.getSheetByName('Members');
+  // Read in the tiers as a 21x3 array (If the tiers are moved, this getRange MUST be updated!)
+  const aRankTitle = wb.getSheetByName('Ranks').getRange(2, 1, 21, 3).getValues();
 
-  // Perform scoreboard update check / progress reset
-  if (LastRan >= nMembers) {
+  if (nMembers < SS.getLastRow() - 1) {
+    // Add new members.
+    return AddMemberToDB_(db);
+  } else if (LastRan >= nMembers) {
+    // Perform scoreboard update.
     UpdateScoreboard();
-    PropertiesService.getScriptProperties().setProperty('LastRan', 0);        // Point the script back to the start
-    return 0;
+    props.setProperty('LastRan', 0);
+    return true;
   }
 
-  // Grab a subset of the alphabetized member record
   const lock = LockService.getScriptLock();
   if (lock.tryLock(30000)) {
-    var starttime = new Date().getTime();
-    Logger.log('Started with ' + LastRan + ' completed rows');// Perform time-remaining check (operate for up to 10% of allowable time)
-    while (((new Date().getTime()) - starttime) / 1000 < 140 && LastRan < nMembers) {
-      // Set up loop beginning at index LastRan (0-valued) and proceeding for BatchSize records.  Use start/stop times to determine if multiple
-      // batches can be run without reaching 50% usage
-      var btime = new Date().getTime();
-      var dHunters = db.slice(LastRan, LastRan - 0 + BatchSize - 0);  // Create a new array from LastRan to LastRan + BatchSize.
-      var sIDstring = dHunters[0][1].toString();            // Get the first ID for the string
-      var i = 0;
-      for (i = 1; i < dHunters.length; i++) {
-        if (dHunters[i][1] != '') {
-          sIDstring = sIDstring + ',' + dHunters[i][1];  //Concatenate all the remaining non-null IDs
-        }
-      }
-      // Have built the ID string, now query HT's MostMice.php
-      var MM = UrlFetchApp.fetch('http://horntracker.com/backend/mostmice.php?function=hunters&hunters=' + sIDstring).getContentText();
-      if (MM.indexOf('maintenance') >= 0) return 1;
-      MM = JSON.parse(MM); // Separate line for debug purposes
-      // Cannot requery the returned batch to ensure exact matching IDs, so have to requery the returned MM object
-      // by looping over our db subset dHunters
-      Logger.log(Object.keys(MM.hunters).length + ' returned hunters out of ' + BatchSize);
-      for (i = 0; i < dHunters.length; i++) {
-        var j = 'ht_' + dHunters[i][1];
-        try {
-          // The hunter's ID was found in the MostMice object, he is not "lost"
-          // Thus, the update can be performed
-
-          var nWh = MM.hunters[j].mice['Whelpling'] || 0;
-          var nDW = MM.hunters[j].mice['Draconic Warden'] || 0;
-          var nD = MM.hunters[j].mice['Dragon'] || 0;
-
-          dHunters[i][3] = Date.parse((MM.hunters[j].lst).replace(/-/g, "/"));
-          if (!(dHunters[i][4] > 0)) {
-            dHunters[i][4] = Date.parse((MM.hunters[j].lst).replace(/-/g, "/"));
-          } else {
-            if (dHunters[i][8] != nD || dHunters[i][7] != nDW || dHunters[i][6] != nWh) dHunters[i][4] = new Date().getTime();
+    const start = new Date().getTime();
+    do {
+      var batch = db.slice(LastRan, LastRan + BatchSize);
+      var idString = batch.map(function (member) { return member[1]; }).filter(function (id) { return !!id; }).join(",");
+      var response = UrlFetchApp.fetch("http://horntracker.com/backend/mostmice.php?function=hunters&hunters=" + idString).getContentText();
+      if (response.indexOf("maintenance") !== -1 || response.indexOf("Unexpected") === 0)
+        return false;
+      var mmData = JSON.parse(response).hunters;
+      batch.forEach(function (member) {
+        var htId = "ht_" + member[1];
+        var data = mmData[htId];
+        if (!data) {
+          // Hunter was queried for, but not found -> Lost
+          member[11] = "Lost";
+        } else {
+          var whelps = data.mice["Whelpling"] || 0;
+          var wardens = data.mice["Draconic Warden"] || 0;
+          var dragons = data.mice["Dragon"] || 0;
+          // Update the LastSeen timestamp.
+          member[3] = Date.parse(data.lst.replace(/-/g, "/"));
+          // Update the LastChange if needed.
+          if (member[4] === 0 || (whelps !== member[6] || wardens !== member[7] || dragons !== member[8])) {
+            member[4] = member[3];
           }
-          dHunters[i][5] = new Date().getTime();  // Time of last update, the 'touched' value
-          dHunters[i][6] = nWh; // Whelplings
-          dHunters[i][7] = nDW; // Wardens
-          dHunters[i][8] = nD; // Dragons
-          // Determine the BoDD of this hunter
-          for (var k = 0; k < aRankTitle.length; k++) {
-            if (nD <= aRankTitle[k][2]) {
-              // Dragon count does not exceed required crowns for this level
-              dHunters[i][9] = aRankTitle[k][0];
+          member[5] = new Date().getTime();
+          member[6] = whelps;
+          member[7] = wardens;
+          member[8] = dragons;
+          // Determine the member's title.
+          for (var k = 0; k < aRankTitle.length; ++k) {
+            if (dragons <= aRankTitle[k][2]) {
+              member[9] = aRankTitle[k][0];
               break;
             }
           }
-          if (dHunters[i][3] >= (new Date().getTime() - 2000000000)) dHunters[i][11] = 'Current';
-          else dHunters[i][11] = 'Old';
+          member[11] = (member[3] < new Date().getTime() - 20 * 86400 * 1000) ? "Old" : "Current";
+        }
+      });
 
-        }
-        catch (e) {
-          // The hunter is not found in the MM object, he is lost.  Set his status to "Lost"
-          dHunters[i][11] = 'Lost';
-          Logger.log(dHunters[i][0] + ' is lost');
-        }
-      }
-      // Have now completed the loop over the dHunters subset.  Rather than refresh the entire db each time this runs,
-      // only the changed rows will be updated.
-      saveMyDb_(dHunters, [2 + LastRan - 0, 1, dHunters.length, dHunters[0].length]);
-      LastRan = LastRan - 0 + BatchSize - 0; // Increment LastRan for next batch's usage
-      PropertiesService.getScriptProperties().setProperties({ 'LastRan': LastRan, 'AvgTime': (((new Date().getTime()) - starttime) / 1000 + PropertiesService.getScriptProperties().getProperty('AvgTime') * 1) / 2 });
-      Logger.log('Batch time of ' + ((new Date().getTime()) - btime) / 1000 + ' sec');
-    }
-    Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime()) - starttime) / 1000 + ' sec');
+      saveMyDb_(batch, [2 + LastRan, 1, batch.length, batch[0].length]);
+      LastRan += BatchSize;
+      props.setProperty("LastRan", LastRan);
+    } while (LastRan < nMembers && (new Date().getTime() - start) < 140000);
   }
   lock.releaseLock();
 }
