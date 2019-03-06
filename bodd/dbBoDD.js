@@ -307,34 +307,40 @@ function UpdateScoreboard() {
   Logger.log((new Date().getTime() - start) / 1000 + ' sec for scoreboard flush');
   SpreadsheetApp.getActive().getSheetByName('Members').getRange('H1').setValue(new Date());
 }
+
+/**
+ * Determine which members are on the scoreboard, but not listed as Members
+ * (i.e. those with no Member sheet row, but not deleted from the database.)
+ */
 function ReverseMemberFind() {
   // Used to determine which members are on the scoreboard but not in the Member list
   // ( e.g. deleted row but not removed from the database via ManualMemberRemoval )
-  var SS = SpreadsheetApp.getActive().getSheetByName('Alphabetical');
-  var SBList = SS.getRange(2, 1, SS.getLastRow() - 1, 7).getValues();  // [[Name1]...[Link1],[Name2]...[Link2]]
-  var GoneNotYet = [];
-  SS = SpreadsheetApp.getActive().getSheetByName('Members');
-  var MemberList = SS.getRange(2, 1, SS.getLastRow() - 1, 3).getValues(); // [[Name1, Join1, Link1],[Name2 ... ]]
-  for (var i = 0; i < SBList.length; i++) {
-    // Loop over all names on the scoreboard list
-    var splink = SBList[i][6];
-    var spID = splink.slice(splink.search("=") + 1).toString();
-    var hasmatch = false;
-    for (var j = 0; j < MemberList.length; j++) {
-      // Loop over all names on the member list
-      var mplink = MemberList[j][2];
-      var mpID = mplink.slice(mplink.search("=") + 1).toString();
-      if (mpID === spID) {
-        hasmatch = true;
-        MemberList.splice(j, 1);
-        break;
-      }
-    }
-    if (!hasmatch) GoneNotYet.push([SBList[i][0], SBList[i][6]]);
-  }
-  SS.getRange(43, 6, 100, 2).setValue('');
-  if (GoneNotYet.length > 0) {
-    SS.getRange(43, 6, GoneNotYet.length, 2).setValues(GoneNotYet);
+  const wb = SpreadsheetApp.getActive();
+  const memberSheet = wb.getSheetByName('Members');
+  const members = memberSheet.getRange(2, 1, memberSheet.getLastRow() - 1, 3)
+      .getValues() // [[Name1, Join1, Link1],[Name2 ... ]]
+      .reduce(function (acc, member) {
+        var link = member[2];
+        var id = link.slice(link.search("=") + 1).toString();
+        if (id) {
+          acc[id] = member[0];
+        }
+        return acc;
+      }, {});
+
+  const scoreboard = wb.getSheetByName("Alphabetical");
+  const scoreboardList = scoreboard.getRange(2, 1, scoreboard.getLastRow() - 1, 7).getValues();  // [[Name1]...[Link1],[Name2]...[Link2]]
+  const GoneNotYet = scoreboardList.filter(function (sbMember) {
+    var link = sbMember[6];
+    var id = link.slice(link.search("=") + 1).toString();
+    return members[id] === undefined;
+  }).map(function (memberToReport) {
+    return [memberToReport[0].toString(), memberToReport[6].toString()];
+  });
+
+  memberSheet.getRange(43, 6, 100, 2).setValue('');
+  if (GoneNotYet.length) {
+    SS.getRange(43, 6, GoneNotYet.length, GoneNotYet[0].length).setValues(GoneNotYet);
   }
 }
 
