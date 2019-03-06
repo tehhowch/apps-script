@@ -26,7 +26,7 @@ ReverseMemberFind       Called by a time-based trigger, this function will itera
 
 */
 function getMyDb_(sortObj) {
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SheetDb');
+  var SS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
   var db = SS.getRange(2, 1, SS.getLastRow()-1, SS.getLastColumn()).sort(sortObj).getValues();
   return db
 }
@@ -36,7 +36,7 @@ function saveMyDb_(db,range) {
   lock.tryLock(30000);
   if ( lock.hasLock() ) {
     // Have a lock on the db, now save
-    var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SheetDb');
+    var SS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
     if ( range == null) {
       // No position input -> full db write -> no sorting needed
       if ( db.length < SS.getLastRow()-1 ) {
@@ -59,7 +59,7 @@ function AddMemberToDB_(dbList) {
   // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
   if ( dbList == null ) return 1;
   // MemberRange = [[Name, JoinDate, Profile Link],[Name2, JoinDate2, ProfLink2],...]
-  var memSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members');
+  var memSS = SpreadsheetApp.getActive().getSheetByName('Members');
   var memList = memSS.getRange(2, 1, memSS.getLastRow()-1, 3).sort(1).getValues();  // Get an alphabetically sorted list of members
   if ( memList.length == 0 ) return 1;
   for ( var i = 0; i<dbList.length; i++ ) {
@@ -81,7 +81,7 @@ function AddMemberToDB_(dbList) {
     UID=memList[i][2].slice(memList[i][2].search("=")+1).toString();
     dbList.push([memList[i][0],
                  UID,
-                 'http://apps.facebook.com/mousehunt/profile.php?snuid='+UID,
+                 'https://apps.facebook.com/mousehunt/profile.php?snuid='+UID,
                  0, // LastSeen
                  0, // LastChange
                  0, // LastTouched
@@ -100,15 +100,15 @@ function UpdateDatabase() {
   // This function is used to update the database's values, and runs frequently on small sets of data
   var BatchSize = 127;                                                               // Number of records to process on each execution
   var LastRan = 1*PropertiesService.getScriptProperties().getProperty('LastRan');                           // Determine the last successfully processed record
-  var dbSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SheetDb');
+  var dbSS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
   var db = [];
   db = getMyDb_(1);             // Get the db, sort on col 1 (name)
   var nMembers = db.length               // Database records count
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members');
+  var SS = SpreadsheetApp.getActive().getSheetByName('Members');
   var nRows = SS.getLastRow()-1;                                                     // Spreadsheet records count
   // Read in the tiers as a 21x3 array
   // If the tiers are moved, this getRange MUST be updated!
-  var aRankTitle = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Ranks').getRange(2, 1, 21, 3).getValues();   // (row column numberrows numbercolumns)
+  var aRankTitle = SpreadsheetApp.getActive().getSheetByName('Ranks').getRange(2, 1, 21, 3).getValues();   // (row column numberrows numbercolumns)
   // New Member check
   if ( nMembers < nRows ) {
     var rs = AddMemberToDB_(db);
@@ -158,7 +158,11 @@ function UpdateDatabase() {
           var nD = MM.hunters[j].mice['Dragon'] || 0;
 
           dHunters[i][3] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
-          if ( dHunters[i][8] != nD || dHunters[i][7] != nDW || dHunters[i][6] != nWh ) dHunters[i][4] = new Date().getTime();
+          if ( !(dHunters[i][4] > 0) ) {
+            dHunters[i][4] = Date.parse((MM.hunters[j].lst).replace(/-/g,"/"));
+          } else {
+            if ( dHunters[i][8] != nD || dHunters[i][7] != nDW || dHunters[i][6] != nWh ) dHunters[i][4] = new Date().getTime();
+          }
           dHunters[i][5] = new Date().getTime();  // Time of last update, the 'touched' value
           dHunters[i][6] = nWh // Whelplings
           dHunters[i][7] = nDW // Wardens
@@ -197,9 +201,9 @@ function UpdateStale() {
   var lock = LockService.getPublicLock();
   lock.waitLock(5000);
   if ( lock.hasLock() ) {
-    var dbSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SheetDb');
+    var dbSS = SpreadsheetApp.getActive().getSheetByName('SheetDb');
     var db = getMyDb_(4); // Db, sorted by seen (ascending)
-    var lSS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('RefreshLinks');
+    var lSS = SpreadsheetApp.getActive().getSheetByName('RefreshLinks');
     var StaleArray = [];
     var LostArray = [];
     for (var i = 0;i<db.length;i++ ) {
@@ -256,16 +260,16 @@ function UpdateScoreboard() {
   }
   saveMyDb_(AllHunters);    // Store & alphabetize the new ranks
   // Clear out old data
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Roll of Honour');
+  var SS = SpreadsheetApp.getActive().getSheetByName('Roll of Honour');
   SS.getRange(2, 1, SS.getLastRow(), Scoreboard[0].length).setValue('');
 
   // Write new data
   SS.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);
 
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Alphabetical');
+  var SS = SpreadsheetApp.getActive().getSheetByName('Alphabetical');
   SS.getRange(2, 1, SS.getLastRow(), Scoreboard[0].length).setValue('');
   SS.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard).sort({column:1, ascending: true});
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Underlings');
+  var SS = SpreadsheetApp.getActive().getSheetByName('Underlings');
   SS.getRange(2, 2, SS.getLastRow(), WardenBoard[0].length-0+WhelpBoard[0].length-0).setValue('');
   SS.getRange(2, 2, WardenBoard.length, WardenBoard[0].length).setValues(WardenBoard).sort({column: 3, ascending: false});
   SS.getRange(2, 4, WhelpBoard.length, WhelpBoard[0].length).setValues(WhelpBoard).sort({column: 5, ascending: false});
@@ -275,15 +279,15 @@ function UpdateScoreboard() {
   // Force full write before returning
   SpreadsheetApp.flush();
   Logger.log((new Date().getTime() - start)/1000 + ' sec for scoreboard flush');
-  SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members').getRange('H1').setValue(new Date());
+  SpreadsheetApp.getActive().getSheetByName('Members').getRange('H1').setValue(new Date());
 }
 function ReverseMemberFind() {
   // Used to determine which members are on the scoreboard but not in the Member list
   // ( e.g. deleted row but not removed from the database via ManualMemberRemoval )
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Alphabetical');
+  var SS = SpreadsheetApp.getActive().getSheetByName('Alphabetical');
   var SBList = SS.getRange(2, 1, SS.getLastRow()-1, 7).getValues();  // [[Name1]...[Link1],[Name2]...[Link2]]
   var GoneNotYet = [];
-  SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Members');
+  SS = SpreadsheetApp.getActive().getSheetByName('Members');
   var MemberList = SS.getRange(2, 1, SS.getLastRow()-1, 3).getValues(); // [[Name1, Join1, Link1],[Name2 ... ]]
   for ( var i = 0; i<SBList.length; i++ ) {
     // Loop over all names on the scoreboard list
@@ -309,7 +313,7 @@ function ReverseMemberFind() {
 }
 function IsDupeMember() {
   // Runs on form submit, checks their ID against all IDs in the DB
-  var SS = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('JoinRequests');
+  var SS = SpreadsheetApp.getActive().getSheetByName('JoinRequests');
   var URL = '';
   URL = SS.getRange(SS.getLastRow(),8).getValue();
   var newID = URL.toString().slice(URL.toString().search("=")+1);
