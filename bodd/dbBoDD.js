@@ -255,57 +255,67 @@ function UpdateStale() {
   }
   lock.releaseLock();
 }
+
+/**
+ * Refresh the various scoreboards with the latest database values.
+ */
 function UpdateScoreboard() {
-  // This function is used to update the spreadsheet's values, and runs hourly
-
-  var start = new Date().getTime();
   // Check for stale & lost hunters
-  start = new Date().getTime();
   UpdateStale();
-  Logger.log((new Date().getTime() - start) / 1000 + ' sec for Lost & Stale Hunters');
 
-  // Build scoreboard
-  start = new Date().getTime();
+  // Build the scoreboards.
+  const Scoreboard = [];
+  const WardenBoard = [];
+  const WhelpBoard = [];
+
   // Get the crown-count sorted memberlist
-  var AllHunters = getMyDb_([{ column: 9, ascending: false }, { column: 8, ascending: false }, { column: 7, ascending: false }]);
-  var Scoreboard = []; var WardenBoard = []; var WhelpBoard = [];
-  var i = 1;
-  // Scoreboard format:   i UpdateDate CrownChangeDate Squirrel MHCCCrowns Name Profile
-  while (i <= AllHunters.length) {
-    Scoreboard.push([AllHunters[i - 1][0],  // Name
-      i,
-      AllHunters[i - 1][8],  // #Dragons
-      AllHunters[i - 1][9], // Title
-      Utilities.formatDate(new Date(AllHunters[i - 1][4]), 'EST', 'yyyy-MM-dd'), // Last Change
-      Utilities.formatDate(new Date(AllHunters[i - 1][3]), 'EST', 'yyyy-MM-dd'), // Last Seen
-      AllHunters[i - 1][2]   // Profile Link (fb)
+  const orderedHunters = getMyDb_([{ column: 9, ascending: false }, { column: 8, ascending: false }, { column: 7, ascending: false }]);
+  orderedHunters.forEach(function (member, i) {
+    var name = member[0].toString();
+    var rank = i + 1;
+    var dragons = parseInt(member[8], 10);
+    var wardens = parseInt(member[7], 10);
+    var whelps = parseInt(member[6], 10);
+    Scoreboard.push([
+      name, rank, dragons, member[9],
+      Utilities.formatDate(new Date(member[4]), "EST", "yyyy-MM-dd"), // LastChange
+      Utilities.formatDate(new Date(member[3]), "EST", "yyyy-MM-dd"), // LastSeen
+      member[2] // Profile Link
     ]);
-    WardenBoard.push([AllHunters[i - 1][0], AllHunters[i - 1][7]]);
-    WhelpBoard.push([AllHunters[i - 1][0], AllHunters[i - 1][6]]);
-    AllHunters[i - 1][10] = i++;  // Store the hunter's rank in the db listing, then increment it for next loop.
-  }
-  saveMyDb_(AllHunters);    // Store & alphabetize the new ranks
+    WardenBoard.push([name, wardens]);
+    WhelpBoard.push([name, whelps]);
+    // Store the member's overall ranking.
+    member[10] = rank;
+  });
+  // Write the new ranks to the database.
+  saveMyDb_(orderedHunters);
+
+  // Write the new scoreboards
+  const wb = SpreadsheetApp.getActive();
   // Clear out old data
-  var SS = SpreadsheetApp.getActive().getSheetByName('Roll of Honour');
-  SS.getRange(2, 1, SS.getLastRow(), Scoreboard[0].length).setValue('');
-
+  const rollSheet = wb.getSheetByName('Roll of Honour');
+  rollSheet.getRange(2, 1, rollSheet.getLastRow(), Scoreboard[0].length).setValue('');
   // Write new data
-  SS.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);
+  rollSheet.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);
 
-  var SS = SpreadsheetApp.getActive().getSheetByName('Alphabetical');
-  SS.getRange(2, 1, SS.getLastRow(), Scoreboard[0].length).setValue('');
-  SS.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard).sort({ column: 1, ascending: true });
-  var SS = SpreadsheetApp.getActive().getSheetByName('Underlings');
-  SS.getRange(2, 2, SS.getLastRow(), WardenBoard[0].length - 0 + WhelpBoard[0].length - 0).setValue('');
-  SS.getRange(2, 2, WardenBoard.length, WardenBoard[0].length).setValues(WardenBoard).sort({ column: 3, ascending: false });
-  SS.getRange(2, 4, WhelpBoard.length, WhelpBoard[0].length).setValues(WhelpBoard).sort({ column: 5, ascending: false });
+  const alpha = wb.getSheetByName('Alphabetical');
+  alpha.getRange(2, 1, alpha.getLastRow(), Scoreboard[0].length).setValue('');
+  alpha.getRange(2, 1, Scoreboard.length, Scoreboard[0].length)
+      .setValues(Scoreboard)
+      .sort({ column: 1, ascending: true });
 
-  Logger.log((new Date().getTime() - start) / 1000 + ' sec for scoreboards');
+  const others = wb.getSheetByName('Underlings');
+  others.getRange(2, 2, others.getLastRow(), WardenBoard[0].length - 0 + WhelpBoard[0].length - 0).setValue('');
+  others.getRange(2, 2, WardenBoard.length, WardenBoard[0].length)
+      .setValues(WardenBoard)
+      .sort({ column: 3, ascending: false });
+  others.getRange(2, 4, WhelpBoard.length, WhelpBoard[0].length)
+      .setValues(WhelpBoard)
+      .sort({ column: 5, ascending: false });
 
   // Force full write before returning
   SpreadsheetApp.flush();
-  Logger.log((new Date().getTime() - start) / 1000 + ' sec for scoreboard flush');
-  SpreadsheetApp.getActive().getSheetByName('Members').getRange('H1').setValue(new Date());
+  wb.getSheetByName('Members').getRange('H1').setValue(new Date());
 }
 
 /**
