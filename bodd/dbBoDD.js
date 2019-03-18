@@ -1,3 +1,4 @@
+//@ts-check
 /*
 
 function                Purpose
@@ -25,8 +26,10 @@ ReverseMemberFind       Called by a time-based trigger, this function will itera
                         restore the accidentally deleted row (if the member is supposed to exist)
 
 */
+//@OnlyCurrentDoc
+var wb = SpreadsheetApp.getActive();
 function getMyDb_(sortObj) {
-  const sheet = SpreadsheetApp.getActive().getSheetByName('SheetDb');
+  const sheet = wb.getSheetByName('SheetDb');
   const db = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
       .sort(sortObj)
       .getValues();
@@ -40,7 +43,7 @@ function saveMyDb_(db, range) {
   const lock = LockService.getScriptLock();
   if (lock.tryLock(30000)) {
     // Have a lock on the db, now save
-    const sheet = SpreadsheetApp.getActive().getSheetByName('SheetDb');
+    const sheet = wb.getSheetByName('SheetDb');
     if (!range) {
       // No position input -> full db write -> no sorting needed
       if (db.length < sheet.getLastRow() - 1) {
@@ -74,7 +77,7 @@ function AddMemberToDB_(dbList) {
     return false;
 
   // MemberRange = [[Name, JoinDate, Profile Link],[Name2, JoinDate2, ProfLink2],...]
-  const memberSheet = SpreadsheetApp.getActive().getSheetByName('Members');
+  const memberSheet = wb.getSheetByName('Members');
   // Get an alphabetically sorted list of members
   const memList = memberSheet.getRange(2, 1, memberSheet.getLastRow() - 1, 3)
       .sort(1)
@@ -95,13 +98,13 @@ function AddMemberToDB_(dbList) {
 
   // Filter the "Member" list to only those not in the database.
   const toAdd = memList.filter(function (member) {
-    var link = member[2];
+    var link = member[2].toString();
     var id = link.slice(link.search("=") + 1).toString();
     return dbMembers[id] === undefined;
   });
   const newRank = dbList.length + 1;
   toAdd.forEach(function (member) {
-    var link = member[2];
+    var link = member[2].toString();
     var id = link.slice(link.search("=") + 1).toString();
     dbList.push([
       member[0],
@@ -130,7 +133,6 @@ function UpdateDatabase() {
   const BatchSize = 127; // Number of records to process on each execution
   const db = getMyDb_(1); // Get the alphabetized db.
   const nMembers = db.length; // Database records count.
-  const wb = SpreadsheetApp.getActive();
   const SS = wb.getSheetByName('Members');
   // Read in the tiers as a 21x3 array (If the tiers are moved, this getRange MUST be updated!)
   const aRankTitle = wb.getSheetByName('Ranks').getRange(2, 1, 21, 3).getValues();
@@ -141,7 +143,7 @@ function UpdateDatabase() {
   } else if (LastRan >= nMembers) {
     // Perform scoreboard update.
     UpdateScoreboard();
-    props.setProperty('LastRan', 0);
+    props.setProperty("LastRan", "0");
     return true;
   }
 
@@ -201,7 +203,7 @@ function UpdateStale() {
   const lock = LockService.getScriptLock();
   if (lock.tryLock(5000)) {
     const db = getMyDb_(4); // Db, sorted by seen (ascending)
-    const lSS = SpreadsheetApp.getActive().getSheetByName('RefreshLinks');
+    const lSS = wb.getSheetByName('RefreshLinks');
     const StaleArray = [];
     const LostArray = [];
     db.forEach(function (member) {
@@ -265,7 +267,6 @@ function UpdateScoreboard() {
   saveMyDb_(orderedHunters);
 
   // Write the new scoreboards
-  const wb = SpreadsheetApp.getActive();
   // Clear out old data
   const rollSheet = wb.getSheetByName('Roll of Honour');
   rollSheet.getRange(2, 1, rollSheet.getLastRow(), Scoreboard[0].length).setValue('');
@@ -299,12 +300,11 @@ function UpdateScoreboard() {
 function ReverseMemberFind() {
   // Used to determine which members are on the scoreboard but not in the Member list
   // ( e.g. deleted row but not removed from the database via ManualMemberRemoval )
-  const wb = SpreadsheetApp.getActive();
   const memberSheet = wb.getSheetByName('Members');
   const members = memberSheet.getRange(2, 1, memberSheet.getLastRow() - 1, 3)
       .getValues() // [[Name1, Join1, Link1],[Name2 ... ]]
       .reduce(function (acc, member) {
-        var link = member[2];
+        var link = member[2].toString();
         var id = link.slice(link.search("=") + 1).toString();
         if (id) {
           acc[id] = member[0];
@@ -315,7 +315,7 @@ function ReverseMemberFind() {
   const scoreboard = wb.getSheetByName("Alphabetical");
   const scoreboardList = scoreboard.getRange(2, 1, scoreboard.getLastRow() - 1, 7).getValues();  // [[Name1]...[Link1],[Name2]...[Link2]]
   const GoneNotYet = scoreboardList.filter(function (sbMember) {
-    var link = sbMember[6];
+    var link = sbMember[6].toString();
     var id = link.slice(link.search("=") + 1).toString();
     return members[id] === undefined;
   }).map(function (memberToReport) {
@@ -324,14 +324,14 @@ function ReverseMemberFind() {
 
   memberSheet.getRange(43, 6, 100, 2).setValue('');
   if (GoneNotYet.length) {
-    SS.getRange(43, 6, GoneNotYet.length, GoneNotYet[0].length).setValues(GoneNotYet);
+    memberSheet.getRange(43, 6, GoneNotYet.length, GoneNotYet[0].length).setValues(GoneNotYet);
   }
 }
 
 // Runs on form submit, checks their ID against all IDs in the DB
 function IsDupeMember(e) {
   console.log(e);
-  const sheet = SpreadsheetApp.getActive().getSheetByName('JoinRequests');
+  const sheet = wb.getSheetByName('JoinRequests');
   const URL = sheet.getRange(sheet.getLastRow(), 8).getValue().toString();
   const newId = URL.slice(URL.search("=") + 1);
 
