@@ -1,6 +1,5 @@
 //@ts-check
 /*
-
 function                Purpose
 
 AddMemberToDB           Called by UpdateDatabase whenever the number of rows on 'Members' is more than the
@@ -28,6 +27,12 @@ ReverseMemberFind       Called by a time-based trigger, this function will itera
 */
 //@OnlyCurrentDoc
 var wb = SpreadsheetApp.getActive();
+
+/**
+ * Obtain the sorted database value array
+ * @param {number|Object <string, any>[]} sortObj Instructions on how to sort the database sheet prior to acquiring values.
+ * @returns {Array[]} The member's most recent record snapshots
+ */
 function getMyDb_(sortObj) {
   const sheet = wb.getSheetByName('SheetDb');
   const db = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
@@ -36,6 +41,12 @@ function getMyDb_(sortObj) {
   return db;
 }
 
+/**
+ * Write the sorted database value array (optionally to a subset of the database sheet)
+ * @param {Array[]} db The alphabetically sorted member database to save (possibly a subset)
+ * @param {number[]} [range] A range description highlighting where a subset of member data should be written
+ * @returns {boolean} Whether the save was completed without error
+ */
 function saveMyDb_(db, range) {
   if (!db || !Array.isArray(db) || !db.length || !Array.isArray(db[0]))
     return false;
@@ -68,11 +79,12 @@ function saveMyDb_(db, range) {
 }
 
 /**
- *
+ * Compare the list of members on the `Members` page to the received list of members (from the `SheetDb` page).
+ * Any members missing are added to `SheetDb`.
  * @param {Array[]} dbList The existing array of member records
+ * @returns {boolean} Whether any members were added
  */
 function AddMemberToDB_(dbList) {
-  // This function compares the list of members on the Members page to the received list of members (from the SheetDb page).  Any members missing are added.
   if (!dbList)
     return false;
 
@@ -126,6 +138,11 @@ function AddMemberToDB_(dbList) {
   return true;
 }
 
+/**
+ * Update the database of Dragon, Whelpling, and Draconic Warden catches with latest information from HornTracker.
+ * Calls sub-functions to add members to the database, if new members are awaiting import.
+ * Called via time-based trigger.
+ */
 function UpdateDatabase() {
   // This function is used to update the database's values, and runs frequently on small sets of data
   const props = PropertiesService.getScriptProperties();
@@ -298,8 +315,6 @@ function UpdateScoreboard() {
  * (i.e. those with no Member sheet row, but not deleted from the database.)
  */
 function ReverseMemberFind() {
-  // Used to determine which members are on the scoreboard but not in the Member list
-  // ( e.g. deleted row but not removed from the database via ManualMemberRemoval )
   const memberSheet = wb.getSheetByName('Members');
   const members = memberSheet.getRange(2, 1, memberSheet.getLastRow() - 1, 3)
       .getValues() // [[Name1, Join1, Link1],[Name2 ... ]]
@@ -328,7 +343,10 @@ function ReverseMemberFind() {
   }
 }
 
-// Runs on form submit, checks their ID against all IDs in the DB
+/**
+ * Runs on form submit, checks their ID against all IDs in the DB.
+ * @param {Object <string, any>} e A "Form Submit" event object
+ */
 function IsDupeMember(e) {
   console.log(e);
   const sheet = wb.getSheetByName('JoinRequests');
