@@ -6,7 +6,7 @@ function getSidebar() {
 function doSideBar_() {
   var filename = "adminPanel/UI.html";
   var sb = HtmlService.createHtmlOutputFromFile(filename);
-  sb.setTitle("MHCC Elite Admin Panel").setFaviconUrl("https://i.imgur.com/QMghA1l.png");
+  sb.setTitle("Elite MHCC Admin Panel").setFaviconUrl("https://i.imgur.com/I7n9iLA.png");
   return sb;
 }
 
@@ -21,15 +21,15 @@ function doSideBar_() {
  * @property {SidebarForm} form The form input that generated this object.
  * @property {boolean} isValid Whether or not the particular input was valid.
  * @property {string} name The validated name of the individual (whom may or may not be in MHCC).
- * @property {string} uid An identifier appropriate for use in the MHCC Elite Members table to refer to this individual.
+ * @property {string} uid An identifier appropriate for use in the Elite MHCC Members table to refer to this individual.
  * @property {Error} [error] Any error which occurred during the validation process.
  */
 
 /**
  * @typedef {Object} MemberQueryResult
- * @property {string} name The member's name, as found in the MHCC Elite Members FusionTable.
- * @property {string} rowid The rowid in the MHCC Elite Member's FusionTable that holds this member's record.
- * @property {string} uid The member's MHCC Elite identifier.
+ * @property {string} name The member's name, as found in the Elite MHCC Members FusionTable.
+ * @property {string} rowid The rowid in the Elite MHCC Member's FusionTable that holds this member's record.
+ * @property {string} uid The member's Elite MHCC identifier.
  * @property {Error} [error] Any error that occurred during a search of the Members table for this member.
  */
 
@@ -41,9 +41,9 @@ function doSideBar_() {
  * @property {string} log The log text to be displayed to the administrator (feedback).
  * @property {string} report The report text to be displayed to the administrator (feedback).
  * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
- * @property {string} [uid] The validated MHCC Elite identifier for the individual.
+ * @property {string} [uid] The validated Elite MHCC identifier for the individual.
  * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
- * @property {string} [rowid] The table rowid for the MHCC Elite member with the given identifier.
+ * @property {string} [rowid] The table rowid for the Elite MHCC member with the given identifier.
  * @property {number} [dataRows] The number of rows of data this member has in the Rank DB FusionTable.
  */
 
@@ -74,14 +74,15 @@ function validateSidebarInput_(form)
 }
 
 /**
- * Query the MHCC Elite Members FusionTable to acquire this member's information.
+ * Query the designated FusionTable to acquire this member's information.
  *
- * @param {string} uid The MHCC identifier for this particular individual.
+ * @param {string} tableId The FusionTable ID to query
+ * @param {string} uid The identifier for this particular individual.
  * @returns {MemberQueryResult} If found, the individual's known name and table row. Otherwise, an error.
  */
-function getMemberInfo(uid)
+function getMemberInfo_(tableId, uid)
 {
-  const query = "SELECT Member, UID, ROWID FROM " + eliteUserTable + " WHERE UID = '" + uid + "'";
+  const query = "SELECT Member, UID, ROWID FROM " + tableId + " WHERE UID = '" + uid + "'";
   // Get the member information from the user table.
   /** @type {{kind: string, rows: [string, string, string][], columns: string[]}} */
   const resp = FusionTables.Query.sqlGet(query);
@@ -110,8 +111,8 @@ function getMemberInfo(uid)
 }
 
 /**
- * Query the MHCC Elite Member table to determine if this member can be added.
- *
+ * Query the Elite and MHCC Members tables to determine if this member can be added.
+ * The member must belong to MHCC, but not yet to Elite, to be added.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationFeasibility} An object instructing the sidebar how to react.
  */
@@ -128,25 +129,35 @@ function canAdd(form)
   };
   if(input.isValid)
   {
-    const member = getMemberInfo(input.uid);
-    // If an error occurred (i.e. there is no member info), we can add this member.
-    if (member.error)
+    const eliteMember = getMemberInfo_(eliteUserTable, input.uid);
+    // If an error occurred (i.e. there is no member info), check if this is an MHCC member.
+    if (eliteMember.error)
     {
-      output.canDo = true;
-      output.log = "No existing member found, add away!";
+      const mhccMember = getMemberInfo_(mhccUserTable, input.uid);
+      if (mhccMember.error)
+      {
+        // Not a member of MHCC.
+        output.canDo = false;
+        output.log = input.name + " is not an MHCC Member. Only MHCC members can join Elite MHCC";
+      }
+      else
+      {
+        output.canDo = true;
+        output.log = "MHCC Member is not yet in Elite, add away!";
+      }
     }
     else
     {
-      // We found a member with this uid. If the name is different,
+      // We found an Elite member with this uid. If the name is different,
       // we can perform a name change operation. Otherwise, no operation is possible.
-      output.isNameChange = input.name !== member.name;
-      output.rowid = member.rowid;
-      output.currentName = member.name;
-      output.uid = member.uid;
+      output.isNameChange = input.name !== eliteMember.name;
+      output.rowid = eliteMember.rowid;
+      output.currentName = eliteMember.name;
+      output.uid = eliteMember.uid;
       if (output.isNameChange)
       {
         output.canDo = true;
-        output.log = "Member already exists as '" + member.name + "'.\n\tUpdate name?";
+        output.log = "Member already exists as '" + eliteMember.name + "'.\n\tUpdate name?";
       }
       else
         output.log = "'" + input.name + "' already exists with UID='" + input.uid + "'.";
@@ -176,7 +187,7 @@ function canDelete(form)
   };
   if(input.isValid)
   {
-    const member = getMemberInfo(input.uid);
+    const member = getMemberInfo_(eliteUserTable, input.uid);
     if (member.error)
     {
       // No member was found with this uid.
@@ -192,19 +203,16 @@ function canDelete(form)
       else
       {
         output.rowid = member.rowid;
-        // Get the count of rows in the Crown and Rank tables.
-        /** @type {{kind: string, rows: string[][]}[]} */
-        const resp = [
-          "SELECT COUNT(UID) FROM " + eliteRankTable + " WHERE UID = '" + input.uid + "'"
-        ].map(function (query) { return FusionTables.Query.sqlGet(query); });
-        try { output.dataRows = resp.reduce(function (acc, val) { return acc + ((val.rows && val.rows.length) ? val.rows[0][0] * 1 : 0); }, 0); }
+        // Get the count of rows in the Elite Rank table.
+        const query = "SELECT COUNT(UID) FROM " + eliteRankTable + " WHERE UID = '" + input.uid + "'";
+        try { output.dataRows = parseInt(FusionTables.Query.sqlGet(query).rows[0][0], 10); }
         catch (e)
         {
           console.warn(e);
           output.dataRows = 0;
         }
 
-        output.log = "Deleting '" + member.name + "' will also delete their " + (output.dataRows ? output.dataRows + " " : "") + "crown records.";
+        output.log = "Deleting '" + member.name + "' will also delete their " + (output.dataRows ? output.dataRows + " " : "") + "rank records.";
       }
     }
   }
@@ -247,7 +255,7 @@ function changeMemberName(form)
 }
 
 /**
- * Add the given individual to the MHCC Members FusionTable.
+ * Add the given individual to the Elite Members FusionTable.
  *
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
@@ -280,7 +288,7 @@ function addMemberToFusion(form)
 }
 
 /**
- * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB FusionTables.
+ * Delete the given individual from the Elite Members, and Elite Rank DB FusionTables.
  *
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
