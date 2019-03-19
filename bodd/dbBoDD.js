@@ -48,7 +48,7 @@ function saveMyDb_(db, range) {
       // No position input -> full db write -> no sorting needed
       if (db.length < sheet.getLastRow() - 1) {
         // new db is smaller than old db, so clear it out
-        sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
         SpreadsheetApp.flush();
       }
       sheet.getRange(2, 1, db.length, db[0].length)
@@ -56,7 +56,7 @@ function saveMyDb_(db, range) {
         .sort(1);
     } else {
       // supplied position to save to, e.g. minidb save -> alphabetical sort required before saving
-      sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).sort(1);
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).sort(1);
       sheet.getRange(range[0], range[1], range[2], range[3]).setValues(db);
     }
     SpreadsheetApp.flush(); // Commit changes
@@ -190,7 +190,7 @@ function UpdateDatabase() {
 
       saveMyDb_(batch, [2 + LastRan, 1, batch.length, batch[0].length]);
       LastRan += BatchSize;
-      props.setProperty("LastRan", LastRan);
+      props.setProperty("LastRan", LastRan.toString());
     } while (LastRan < nMembers && (new Date().getTime() - start) < 140000);
   }
   lock.releaseLock();
@@ -269,18 +269,18 @@ function UpdateScoreboard() {
   // Write the new scoreboards
   // Clear out old data
   const rollSheet = wb.getSheetByName('Roll of Honour');
-  rollSheet.getRange(2, 1, rollSheet.getLastRow(), Scoreboard[0].length).setValue('');
+  rollSheet.getRange(2, 1, rollSheet.getLastRow() - 1, Scoreboard[0].length).setValue('');
   // Write new data
   rollSheet.getRange(2, 1, Scoreboard.length, Scoreboard[0].length).setValues(Scoreboard);
 
   const alpha = wb.getSheetByName('Alphabetical');
-  alpha.getRange(2, 1, alpha.getLastRow(), Scoreboard[0].length).setValue('');
+  alpha.getRange(2, 1, alpha.getLastRow() - 1, Scoreboard[0].length).setValue('');
   alpha.getRange(2, 1, Scoreboard.length, Scoreboard[0].length)
       .setValues(Scoreboard)
       .sort({ column: 1, ascending: true });
 
   const others = wb.getSheetByName('Underlings');
-  others.getRange(2, 2, others.getLastRow(), WardenBoard[0].length - 0 + WhelpBoard[0].length - 0).setValue('');
+  others.getRange(2, 2, others.getLastRow() - 1, WardenBoard[0].length - 0 + WhelpBoard[0].length - 0).setValue('');
   others.getRange(2, 2, WardenBoard.length, WardenBoard[0].length)
       .setValues(WardenBoard)
       .sort({ column: 3, ascending: false });
