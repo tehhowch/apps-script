@@ -59,6 +59,17 @@ var dbSheetName = 'SheetDb';
 var SS = SpreadsheetApp.getActive();
 
 /**
+ * Create an administrative menu for spreadsheet editors.
+ */
+function onOpen()
+{
+  const menu = SpreadsheetApp.getUi().createMenu("Elite Admin");
+  menu.addItem("Add / Remove Members", "getSidebar");
+  menu.addItem("Update Scoreboard", "UpdateScoreboard");
+  menu.addToUi();
+}
+
+/**
  * Reads the contents of the designated database worksheet, under the assumption
  * that the first row is header information.
  * @param  {GoogleAppsScript.Spreadsheet.Spreadsheet} wb The workbook containing the worksheet named SheetDb
