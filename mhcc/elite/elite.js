@@ -287,7 +287,7 @@ function UpdateDatabase()
       saveLocalDb_(dHunters, { 'row': 2 + LastRan -0, 'col': 1, 'numRows': dHunters.length, 'numCols': dHunters[0].length });
       LastRan += BatchSize - 0; // Increment LastRan for next batch's usage
     } while (new Date().getTime() - start < 120000 && LastRan < memberCount);
-    Logger.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime() - start) / 1000) + ' sec');
+    console.log('Completed up to ' + LastRan + ' hunters, script time ' + ((new Date().getTime() - start) / 1000) + ' sec');
     store.setProperty('LastRan', LastRan.toString());
   }
   lock.releaseLock();
