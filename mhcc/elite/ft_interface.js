@@ -165,6 +165,7 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
   }
 
   // Sort by points, descending.
+  // TODO:  (Points, then Gold, then Silver, then Bronze)
   records.sort(function (a, b)
   {
     return b[7] - a[7];
