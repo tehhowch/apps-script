@@ -1,5 +1,4 @@
 // @ts-check
-// TODO: Update
 /**
  * This spreadsheet uses Google Apps Script, the Spreadsheet Service, and Google
  * Fusion Tables to maintain a record of all Elite MHCC members. All crown data
@@ -95,6 +94,4 @@ function UpdateScoreboard()
 
   // Write new data.
   sheet.getRange(6, 1, newData.length, newData[0].length).setValues(newData);
-  // Timestamp the update.
-  wb.getRange('Members!K1').setValue(new Date());
 }
