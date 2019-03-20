@@ -41,13 +41,13 @@ function getLatestMHCCRows_()
   // Query for each member's most recently modified record. LastTouched is assumed (& required to be) unique.
   /** @type Array <[string,number]> */
   const mostRecent = [];
-  const ltSQL = "select UID, MAXIMUM(LastTouched) from " + mhccCrownTable + " group by UID where UID IN (";
+  const ltSQL = "select UID, MAXIMUM(LastTouched) from " + mhccCrownTable + " where UID IN (";
   do {
     var queried = [];
     do {
       queried.push(uids.pop());
     } while (uids.length && (ltSQL + queried.join(",") + ")").length < 8000);
-    var mRbatch = FusionTables.Query.sqlGet(ltSQL + queried.join(",") + ")").rows;
+    var mRbatch = FusionTables.Query.sqlGet(ltSQL + queried.join(",") + ") group by UID").rows;
     if (mRbatch)
       Array.prototype.push.apply(mostRecent, mRbatch);
   } while (uids.length);
