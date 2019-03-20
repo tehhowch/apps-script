@@ -86,6 +86,9 @@ function getLatestMHCCRows_()
       Utilities.sleep(201 - elapsed);
   } while (mostRecent.length > 0);
 
+  // Replace MHCC group names with the members' preferred Elite MHCC names.
+  snapshots.forEach(function (record) { record[0] = valids[record[1]]; });
+
   // Log any current members who weren't included in the fetched data.
   if (snapshots.length !== Object.keys(valids).length)
   {
