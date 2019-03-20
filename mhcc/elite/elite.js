@@ -1,38 +1,27 @@
 // @ts-check
 // TODO: Update
 /**
- *  This spreadsheet uses Google Apps Script and the Spreadsheets API functionality to maintain a record of all Elite MHCC members placed on the
- *  'Members' sheet. Via the UpdateDatabase script and the external Horntracker.com website, the crowns of all members can be updated in an
- *  automated fashion. These members are processed in chunks of up to 127 at a time (higher batch sizes overload the maximum URL length), with
- *  an unspecified number of batches processed per execution. The script will update as many batches as it can without exceeding a specified execution
- *  time (default 30 seconds), in order to avoid triggering the "Maximum Execution Time Exceeded" error (at 300 seconds).
+ * This spreadsheet uses Google Apps Script, the Spreadsheet Service, and Google
+ * Fusion Tables to maintain a record of all Elite MHCC members. All crown data
+ * is updated by scripts associated with the MHCC Scoreboard - this workbook is
+ * a "listener" for a specific subset of members, with its own methodology for
+ * ranking its member subset.
+ *
+ * Adding / Deleting Members
+ *    To add or delete members, use the custom menu to open the administration
+ * panel, and select the appropriate prompts. You will be asked for the desired
+ * display name, and the member's MH Profile URL. When deleting a member, the
+ * given name must match the internal name exactly, as an extra step.
+ *   - All members must be members of MHCC in order to be added as Elite MHCC members
+ *   - Deleting a member from Elite MHCC will **not** delete the member from MHCC
+ *
+ * Updating Display Name
+ *    To change a member's display name, follow the procedure to add a member,
+ * and specify the desired display name. Confirm the change when prompted.
  *
  *
- * Adding Members
- *
- *  Place the member name and their profile link in the next row on the 'Members' worksheet. They will be automatically added on the next script execution
- *
- * Deleting Members
- *
- *  First delete the relevant row on the 'Members' worksheet.
- *  Second, delete the relevant row on the 'SheetDb' worksheet.
- *  Optionally, delete the relevant row on the Scoreboard worksheet. (This would be done automatically on next update)
- *
- * Tracking Progress
- *
- *  Whoever has set up the triggered events will likely receive daily emails about failed executions of the script, due likely to timeouts from Horntracker
- *  (during its maintenance period, or high load). If you wish to know the current status of the update, you can unhide the SheetDb worksheet, and scroll down
- *  the LastTouched column, which is the last time the UpdateDatabase script manipulated data in that row (measured in milliseconds). You can alternately view
- *  the LastRan parameter via File -> Project Properties -> Project Properties
- *
- * Forcing a Scoreboard Update
- *
- *  If you must update the scoreboard immediately, you can manually run the UpdateScoreboard function via "Run -> UpdateScoreboard". Doing so will commit
- *  the current state of the member list to the scoreboard sheet, and may generate a significant number of "Lost" hunters for the sole reason that they hadn't
- *  been updated yet this cycle. This will not reset the current progress of the database update script.
- *
- *  UpdateScoreboard:  This function manages the updates for the Scoreboard. After generating the scoreboard, it will then write the current rank of each member
- *                     to the SheetDb page.
+ * Setting up triggers
+ *    The only function that should be triggered is the "UpdateScoreboard" function
  */
 // @OnlyCurrentDoc
 var wb = SpreadsheetApp.getActive();
@@ -42,24 +31,27 @@ var wb = SpreadsheetApp.getActive();
  */
 function onOpen()
 {
-  const menu = SpreadsheetApp.getUi().createMenu("Elite Admin");
-  menu.addItem("Add / Remove Members", "getSidebar");
+  const ui = SpreadsheetApp.getUi();
+  const menu = ui.createMenu("Elite Admin");
+  menu.addItem("Update Member Info", "getSidebar");
   menu.addItem("Update Scoreboard", "UpdateScoreboard");
-  menu.addItem("Revoke Authorization", "revokeAuth");
-  menu.addItem("Delete My Triggers", "removeTriggers");
+  menu.addSeparator();
+  const subMenu = ui.createMenu("Auth");
+  subMenu.addItem("Delete My Triggers", "removeTriggers");
+  subMenu.addItem("Revoke My Authorization", "revokeAuth");
+  menu.addSubMenu(subMenu);
   menu.addToUi();
 }
 
 /**
- * Remove the invoking user's triggers for this Script.
+ * Remove the invoking user's triggers for this Script Project.
  */
 function removeTriggers()
 {
   const userTriggers = ScriptApp.getUserTriggers(wb);
-  userTriggers.forEach(function (t) {
-    ScriptApp.deleteTrigger(t);
-  });
-  console.warn({message: "User triggers deleted", count: userTriggers.length, functions: userTriggers.map(function (t) { return t.getHandlerFunction(); }), userKey: Session.getTemporaryActiveUserKey() });
+  console.warn({ message: "User triggers deleted", count: userTriggers.length,
+      functions: userTriggers.map(function (t) { return t.getHandlerFunction(); }), userKey: Session.getTemporaryActiveUserKey() });
+  userTriggers.forEach(function (t) { ScriptApp.deleteTrigger(t); });
   wb.toast("Deleted " + userTriggers.length + " project triggers.");
 }
 
@@ -68,8 +60,8 @@ function removeTriggers()
  */
 function revokeAuth()
 {
-  console.warn({message: "User authorization revoked", userKey: Session.getTemporaryActiveUserKey() });
-  wb.toast("Script authorization revoked. You will need to reauthorize this project.");
+  console.warn({ message: "User authorization revoked", userKey: Session.getTemporaryActiveUserKey() });
+  wb.toast("Script authorization revoked. You will need to reauthorize this project (by attempting to run a function).");
   ScriptApp.invalidateAuth();
 }
 
