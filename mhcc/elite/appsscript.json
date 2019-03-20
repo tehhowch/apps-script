@@ -1,0 +1,22 @@
+{
+  "timeZone": "America/New_York",
+  "dependencies": {
+    "enabledAdvancedServices": [{
+      "userSymbol": "FusionTables",
+      "serviceId": "fusiontables",
+      "version": "v2"
+    }, {
+      "userSymbol": "BigQuery",
+      "serviceId": "bigquery",
+      "version": "v2"
+    }]
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/fusiontables"
+  ],
+  "exceptionLogging": "STACKDRIVER"
+}
