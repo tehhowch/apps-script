@@ -150,6 +150,7 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
   });
 
   // Create & format the scoreboard records.
+  // TODO: Add hyperlink to Point/Rank history
   const records = recordData.map(function (data) {
     return [
       0,
@@ -186,7 +187,6 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
   // Assign the member ranking.
   var rank = 0;
   records.forEach(function (record) { record[0] = ++rank; });
-  console.log({ message: "First place", record: records[0] });
 
   try
   {
