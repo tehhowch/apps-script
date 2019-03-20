@@ -36,10 +36,31 @@ function onOpen()
   menu.addItem("Update Scoreboard", "UpdateScoreboard");
   menu.addSeparator();
   const subMenu = ui.createMenu("Auth");
+  subMenu.addItem("Create Scoreboard Trigger", "createTrigger");
   subMenu.addItem("Delete My Triggers", "removeTriggers");
   subMenu.addItem("Revoke My Authorization", "revokeAuth");
   menu.addSubMenu(subMenu);
   menu.addToUi();
+}
+
+/**
+ * Create a scoreboard update trigger for the given document
+ */
+function createTrigger() {
+  const fnToTrigger = "UpdateScoreboard";
+  const allTriggers = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  const propTriggers = PropertiesService.getScriptProperties().getProperty("triggers");
+  const knownTriggers = (propTriggers ? JSON.parse(propTriggers) : []);
+  if (allTriggers.filter(function (fn) { return fn === fnToTrigger; }).length ||
+      knownTriggers.filter(function (fn) { return fn === fnToTrigger; }).length)
+    wb.toast("Trigger already configured, thanks.");
+  else
+  {
+    var t = ScriptApp.newTrigger(fnToTrigger).timeBased().everyHours(4).create();
+    knownTriggers.push(t.getHandlerFunction());
+    PropertiesService.getScriptProperties().setProperty("triggers", JSON.stringify(knownTriggers));
+    wb.toast("Trigger configured successfully, thanks.");
+  }
 }
 
 /**
@@ -48,9 +69,17 @@ function onOpen()
 function removeTriggers()
 {
   const userTriggers = ScriptApp.getUserTriggers(wb);
+  const propTriggers = PropertiesService.getScriptProperties().getProperty("triggers");
+  const knownTriggers = (propTriggers ? JSON.parse(propTriggers) : []);
   console.warn({ message: "User triggers deleted", count: userTriggers.length,
       functions: userTriggers.map(function (t) { return t.getHandlerFunction(); }), userKey: Session.getTemporaryActiveUserKey() });
-  userTriggers.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  userTriggers.forEach(function (t) {
+    var index = knownTriggers.indexOf(t.getHandlerFunction());
+    if (index !== -1)
+      knownTriggers.splice(index);
+    ScriptApp.deleteTrigger(t);
+  });
+  PropertiesService.getScriptProperties().setProperty("triggers", JSON.stringify(knownTriggers));
   wb.toast("Deleted " + userTriggers.length + " project triggers.");
 }
 
