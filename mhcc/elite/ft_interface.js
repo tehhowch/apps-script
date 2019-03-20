@@ -100,7 +100,7 @@ function getLatestMHCCRows_()
  * Compute the latest scoreboard rows using the most up-to-date information from the MHCC database.
  * Submits the computed rows to the Elite Rank DB FusionTable for archiving.
  * @param {{bronze: number, silver: number, gold: number}} scoreFor The number of points earned for a crown of each type
- * @param {{bronze: number, silver: number, gold: number}} minimum The minimum crown counts needed of each type.
+ * @param {{gold: number, gs: number, total: number}} minimum The minimum crown counts needed of each type.
  * @returns {Array[]} The ordered scoreboard rows, for spreadsheet serialization.
  */
 function getLatestEliteScoreboardRows_(scoreFor, minimum)
@@ -129,14 +129,14 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
       comment = "Need " + (minimum.gold - data.gold) + " more Gold";
       points = data.gold;
     }
-    else if (data.gs < minimum.silver)
+    else if (data.gs < minimum.gs)
     {
-      comment = "Need " + (minimum.silver - data.gs) + " more Silver";
+      comment = "Need " + (minimum.gs - data.gs) + " more Silver";
       points = data.gold * 2;
     }
-    else if (data.total < minimum.bronze)
+    else if (data.total < minimum.total)
     {
-      comment = "Need " + (minimum.bronze - data.total) + " more Bronze";
+      comment = "Need " + (minimum.total - data.total) + " more Bronze";
       points = data.gold * 3 + data.silver;
     }
     else
@@ -165,10 +165,16 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
   }
 
   // Sort by points, descending.
-  // TODO:  (Points, then Gold, then Silver, then Bronze)
   records.sort(function (a, b)
   {
-    return b[7] - a[7];
+    var pointDiff = b[7] - a[7];
+    if (pointDiff)
+      return pointDiff;
+    var goldDiff = b[4] - a[4];
+    if (goldDiff)
+      return goldDiff;
+    var gsDiff = b[5] - a[5];
+    return (gsDiff ? gsDiff : b[6] - a[6]);
   });
   var rank = 0;
   records.forEach(function (record) { record[0] = ++rank; });

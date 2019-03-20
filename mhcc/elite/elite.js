@@ -70,14 +70,20 @@ function revokeAuth()
  */
 function UpdateScoreboard()
 {
-  const aScoring = wb.getSheetByName('Scoring').getSheetValues(2, 1, 3, 2);
-  const scoring = "TODO";
-  const minimumCounts = wb.getRangeByName('Minimums').getValues().reduce(function (acc, row, i) {
-    var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
-    if (key)
-      acc[key] = row[0];
-    return acc;
-  }, { 'gold': 0, 'silver': 0, 'bronze': 0 });
+  const scoring = wb.getRangeByName('Scoring').getValues()
+    .reduce(function (acc, row, i) {
+      var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
+      if (key)
+        acc[key] = row[0];
+      return acc;
+    }, { "gold": 0, "silver": 0, "bronze": 0 });
+  const minimumCounts = wb.getRangeByName('Minimums').getValues()
+    .reduce(function (acc, row, i) {
+      var key = i === 0 ? "gold" : (i === 1 ? "gs" : (i === 2 ? "total" : ""));
+      if (key)
+        acc[key] = row[0];
+      return acc;
+    }, { "gold": 0, "gs": 0, "total": 0 });
 
   // Get the points- & crown-sorted memberlist.
   const newData = getLatestEliteScoreboardRows_(scoring, minimumCounts);
