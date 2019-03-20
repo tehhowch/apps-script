@@ -108,20 +108,19 @@ function getLatestMHCCRows_()
  */
 function getLatestEliteScoreboardRows_(scoreFor, minimum)
 {
-  const now = new Date().getTime();
-  const records = getLatestMHCCRows_().map(function (mhcc)
+  // Create an array of object data from the Fusion Tables row data.
+  const recordData = getLatestMHCCRows_().map(function (mhcc)
   {
-    // Transform from MHCC format to Elite MHCC Scoreboard format, including a point calculation.
     // MHCC: [Name, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel]
-    // Elite Scoreboard: [Rank, Name, Profile Link, Hyperlink, Gold, G+S, G+S+B, Points, Comment, LastSeen, LastCrown]
     var data = {
       name: mhcc[0],
+      uid: mhcc[1].toString(),
       link: ("https://www.mousehuntgame.com/profile.php?snuid=" + mhcc[1]),
-      seen: mhcc[2],
-      lastCrown: mhcc[3],
-      bronze: mhcc[5],
-      silver: mhcc[6],
-      gold: mhcc[7]
+      seen: parseInt(mhcc[2], 10),
+      lastCrown: parseInt(mhcc[3], 10),
+      bronze: parseInt(mhcc[5], 10),
+      silver: parseInt(mhcc[6], 10),
+      gold: parseInt(mhcc[7], 10)
     };
     data.gs = data.gold + data.silver;
     data.total = data.gs + data.bronze;
@@ -145,7 +144,14 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
     else
       points = data.gold * scoreFor.gold + data.silver * scoreFor.silver + data.bronze * scoreFor.bronze;
 
-    var elite = [
+    data.points = points;
+    data.comment = comment;
+    return data;
+  });
+
+  // Create & format the scoreboard records.
+  const records = recordData.map(function (data) {
+    return [
       0,
       data.name,
       data.link,
@@ -153,13 +159,11 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
       data.gold,
       data.gs,
       data.total,
-      points,
-      comment,
+      data.points,
+      data.comment,
       Utilities.formatDate(new Date(data.seen), "EST", "yyyy-MM-dd"),
       Utilities.formatDate(new Date(data.lastCrown), "EST", "yyyy-MM-dd")
     ];
-
-    return elite;
   });
   if (!records.length)
   {
@@ -167,7 +171,7 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
     return;
   }
 
-  // Sort by points, descending.
+  // Sort scoreboard records by points, descending.
   records.sort(function (a, b)
   {
     var pointDiff = b[7] - a[7];
@@ -179,24 +183,32 @@ function getLatestEliteScoreboardRows_(scoreFor, minimum)
     var gsDiff = b[5] - a[5];
     return (gsDiff ? gsDiff : b[6] - a[6]);
   });
+  // Assign the member ranking.
   var rank = 0;
   records.forEach(function (record) { record[0] = ++rank; });
   console.log({ message: "First place", record: records[0] });
 
   try
   {
-    // Create the Rank DB submissions
+    // Create the Rank DB submissions using the ranked records, and the non-formatted
+    // record data.
+    const rankTime = new Date().getTime();
+    const recordsObj = recordData.reduce(function (obj, data) {
+      obj[data.uid] = data;
+      return obj;
+    }, {});
     const submissions = records.map(function (record) {
       // [Name, UID, LastSeen, RankTime, Rank, Points, Comment]
-      var link = record[2];
+      var uid = record[2].slice(record[2].search("=") + 1).toString();
+      var obj = recordsObj[uid];
       return [
-        record[1],
-        link.slice(link.search("=") + 1).toString(),
-        record[9],
-        now,
+        obj.name,
+        uid,
+        obj.seen,
+        rankTime,
         record[0],
-        record[7],
-        record[8]
+        obj.points,
+        obj.comment
       ];
     });
     ftBatchWrite_(submissions, eliteRankTable);
