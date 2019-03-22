@@ -17,6 +17,25 @@ function getUserBatch_(start, limit)
 }
 
 /**
+ * Obtain the most recent ranking time for the given Fusion Table.
+ * @param {string} tableId The ___ Rank Fusion Table to query
+ */
+function getLatestRankTime(tableId)
+{
+  const sql = 'select maximum(RankTime) from ' + tableId;
+  var resp;
+  try
+  {
+    resp = FusionTables.Query.sqlGet(sql);
+  }
+  catch (err)
+  {
+    console.warn({message: "RankTime query failed", sql: sql, error: err, stack: err.stack});
+  }
+  return (resp && resp.rows && resp.rows.length) ? resp.rows[0][0] : 0;
+}
+
+/**
  * Returns the MHCC record associated with the most recently touched snapshot for each current member.
  * Returns a single record per member, so long as every record has a different LastTouched value.
  * First finds each member UID's maximum `LastTouched` value, then gets the associated row.

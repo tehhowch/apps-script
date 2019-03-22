@@ -98,6 +98,15 @@ function revokeAuth()
  */
 function UpdateScoreboard()
 {
+  function CanUpdateScoreboard()
+  {
+    var latestMHCC = getLatestRankTime(mhccRankTable);
+    var latestElite = getLatestRankTime(eliteRankTable);
+    return latestElite < latestMHCC;
+  }
+  if (!CanUpdateScoreboard())
+    return;
+
   const scoring = wb.getRangeByName('Scoring').getValues()
     .reduce(function (acc, row, i) {
       var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
