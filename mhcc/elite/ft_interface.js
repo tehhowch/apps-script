@@ -20,7 +20,7 @@ function getUserBatch_(start, limit)
  * Obtain the most recent ranking time for the given Fusion Table.
  * @param {string} tableId The ___ Rank Fusion Table to query
  */
-function getLatestRankTime(tableId)
+function getLatestRankTime_(tableId)
 {
   const sql = 'select maximum(RankTime) from ' + tableId;
   var resp;

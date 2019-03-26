@@ -85,12 +85,13 @@ function getMemberInfo_(tableId, uid)
   const query = "SELECT Member, UID, ROWID FROM " + tableId + " WHERE UID = '" + uid + "'";
   // Get the member information from the user table.
   /** @type {{kind: string, rows: [string, string, string][], columns: string[]}} */
-  const resp = FusionTables.Query.sqlGet(query);
-  if (resp.kind !== "fusiontables#sqlresponse" || !resp.columns || !resp.columns.length)
+  var resp;
+  try { resp = FusionTables.Query.sqlGet(query); }
+  catch (err)
   {
-    const e = TypeError("Invalid response received");
-    e.inputData = { "sql": query, "response": resp };
-    throw e;
+    console.warn({ "message": "Failed GetMemberInfo(" + uid + ")", "errMsg": err, "stack": err.stack.trim().split("\n"),
+        "query": query, "tableId": tableId, "userKey": Session.getTemporaryActiveUserKey() });
+    throw err;
   }
   console.log({ "message": "GetMemberInfo(" + uid + ")", "ftResponse": resp, "ftQuery": query });
   // Received a well-formed response.
@@ -208,7 +209,7 @@ function canDelete(form)
         try { output.dataRows = parseInt(FusionTables.Query.sqlGet(query).rows[0][0], 10); }
         catch (e)
         {
-          console.warn(e);
+          console.warn({ "message": "Failed to count Elite Rank DB rows for UID=" + input.uid, "tableId": eliteRankTable, "error": e });
           output.dataRows = 0;
         }
 
@@ -244,7 +245,11 @@ function changeMemberName(form)
   {
     const sql = "UPDATE " + eliteUserTable + " SET Member = '" + input.request.name + "' WHERE ROWID = '" + input.rowid + "'";
     try { FusionTables.Query.sql(sql); }
-    catch (e) {throw e;}
+    catch (e)
+    {
+      console.warn({ "message": "Failed name change for UID=" + input.request.uid, "userKey": Session.getTemporaryActiveUserKey(), "error": e });
+      throw e;
+    }
     output.report = "Name for uid='" + input.request.uid + "' is now '" + input.request.name + "'";
     output.reset = true;
   }
@@ -275,7 +280,12 @@ function addMemberToFusion(form)
   {
     const memCsv = [[input.request.name, input.request.uid]];
     const uUpload = Utilities.newBlob(array2CSV_(memCsv), "application/octet-stream");
-    const resp = FusionTables.Table.importRows(eliteUserTable, uUpload).numRowsReceived;
+    try { FusionTables.Table.importRows(eliteUserTable, uUpload); }
+    catch (e)
+    {
+      console.warn({ "message": "Failed to add member to Elite Member DB", "tableId": eliteUserTable, "error": e });
+      throw e;
+    }
 
     output.report = "Added '" + input.request.name + "' to the database.";
     output.reset = true;

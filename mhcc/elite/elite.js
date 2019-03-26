@@ -98,10 +98,11 @@ function revokeAuth()
  */
 function UpdateScoreboard()
 {
+  const startTime = new Date().getTime();
   function CanUpdateScoreboard()
   {
-    var latestMHCC = getLatestRankTime(mhccRankTable);
-    var latestElite = getLatestRankTime(eliteRankTable);
+    var latestMHCC = getLatestRankTime_(mhccRankTable);
+    var latestElite = getLatestRankTime_(eliteRankTable);
     return latestElite < latestMHCC;
   }
   if (!CanUpdateScoreboard())
@@ -132,4 +133,6 @@ function UpdateScoreboard()
 
   // Write new data.
   sheet.getRange(6, 1, newData.length, newData[0].length).setValues(newData);
+
+  console.log({message: "Scoreboard updated (" + newData.length + " rows)", elapsed: new Date().getTime() - startTime});
 }
