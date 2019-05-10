@@ -320,9 +320,12 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         return f'table_{tableId}{method}.csv'
 
     # Generic data fetch methods
-    def verify_ft_service(self):
+    def verify_ft_service(self, export=False):
         """Check for read access to FusionTables.
     Requests and prints list of the user's FusionTables via the tables().list() method.
+
+    @params:
+        export: bool, whether to write a new 'tables.txt' with known table info.
         """
         all_tables = []
         request = self.table.list(fields="items(name,tableId,columns/name)")
@@ -335,6 +338,11 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         for table in all_tables:
             table['Columns'] = ', '.join(t['name'] for t in table['columns'])
             print('id: "{tableId}"\tName: "{name}"\nColumns: [{Columns}]\n'.format_map(table))
+
+        if export and all_tables:
+            tables_to_write = [[table['name'], table['tableId']] for table in all_tables]
+            with open('tables.txt', 'w', newline='') as f:
+                csv.writer(f, quoting=csv.QUOTE_ALL).writerows(tables_to_write)
 
 
     def count_rows(self, tableId: str) -> int:
