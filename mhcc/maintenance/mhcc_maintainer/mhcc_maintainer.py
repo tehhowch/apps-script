@@ -80,7 +80,7 @@ def authorize(local_keys: dict) -> 'Dict[str, GoogleService]':
 
     fusiontables = FusionTableHandler(creds)
     print('\nVerifying FusionTables access by requesting tables you\'ve accessed.')
-    fusiontables.verify_ft_service()
+    fusiontables.verify_ft_service(export=True)
 
     print('Authorization & service verification completed successfully.')
     return {'FusionTables': fusiontables, 'Drive': drive}
