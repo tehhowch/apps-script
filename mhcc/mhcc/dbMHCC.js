@@ -589,7 +589,7 @@ function UpdateDatabase()
   {
     // Jack provides a queryable FusionTable which may or may not have data for the users in question.
     // His fusiontable is unique on snuid - each person has only one record.
-    // snuid | timestamp (seconds UTC) | bronze | silver | gold
+    // snuid | timestamp (seconds UTC) | bronze | silver | gold | platinum | diamond
     const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
     try { var resp = FusionTables.Query.sqlGet(sql); }
@@ -617,13 +617,23 @@ function UpdateDatabase()
       });
       return jkData;
     }
+    // Temporary handling for platinum and diamond crowns.
+    ["platinum", "diamond"].forEach(function (optColumn) {
+      indices[optColumn] = headers.indexOf(optColumn);
+    });
+
     resp.rows.forEach(function (record) {
-      jkData[record[0].toString()] = {
+      var id = record[0].toString();
+      jkData[id] = {
         bronze: record[indices.bronze] * 1,
         silver: record[indices.silver] * 1,
         gold: record[indices.gold] * 1,
         seen: record[indices.timestamp] * 1000
       };
+
+      // Add platinum and diamond crowns to the gold tally.
+      if (indices.platinum !== -1) jkData[id].gold += (record[indices.platinum] * 1);
+      if (indices.diamond !== -1) jkData[id].gold += (record[indices.diamond] * 1);
     });
     return jkData;
   }
