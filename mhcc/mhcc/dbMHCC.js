@@ -122,7 +122,7 @@ function UpdateDatabase()
   const wb = SpreadsheetApp.getActive(), store = PropertiesService.getScriptProperties();
   const props = store.getProperties();
   // Database records count (may be larger than the written db on SheetDb)
-  var numMembers = props.numMembers * 1;
+  var numMembers = getTotalRowCount_(utbl);
   // The last queried member number indicates where to begin new update queries.
   var lastRan = props.lastRan * 1 || 0;
 
@@ -718,9 +718,6 @@ function UpdateScoreboard()
   const startTime = new Date(), wb = SpreadsheetApp.getActive();
   try { const aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
   catch (e) { throw new Error("'Members' sheet was renamed or deleted - cannot locate crown-title relationship data."); }
-
-  // Update script metadata.
-  PropertiesService.getScriptProperties().setProperty("numMembers", String(getTotalRowCount_(utbl)));
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000))
