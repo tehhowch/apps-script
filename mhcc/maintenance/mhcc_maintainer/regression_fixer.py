@@ -166,16 +166,16 @@ def get_first_correct(records: list, key: str, start: int):
                 return i
     return None
 
-def get_prune_range(sorted_records: list):
+def get_prune_range(sorted_records: list, based_on_col: str='LastSeen'):
     '''Return a tuple with the range of the bad data in the input list.
     Implicitly assumes the input records are sorted.
     '''
-    # Find the first record where LastSeen decreases
-    first_bad = get_first_decrease(sorted_records, 'LastSeen')
+    # Find the first record where the column decreases
+    first_bad = get_first_decrease(sorted_records, based_on_col)
     if first_bad is None:
         return None
-    # Find the next record that restores the required "LastSeen increasing" property
-    first_good = get_first_correct(sorted_records, 'LastSeen', first_bad)
+    # Find the next record that restores the required "<column> is increasing" property
+    first_good = get_first_correct(sorted_records, based_on_col, first_bad)
     if first_good is None:
         print(f'All records after {first_bad} are bad ({len(sorted_records)} total records).')
     else:
@@ -242,6 +242,45 @@ def clean_rank_regression(service: FusionTableHandler, uids: list, start: str, e
             print('Skipped rank data deletion due to failed backup')
     else:
         print('No detected regressions')
+
+def compute_count_regression_dates(service: FusionTableHandler, start: str, end: str, filename='bad_count_data.csv', tableId=''):
+    '''Inspects the given table's data to determine the first instance of a crown total count decreasing, within the window provided.
+    Also reports the first spike in totals that corresponds to a restoration of valid data.
+    '''
+    global ft
+    ft = service
+    print(f'Collecting crown data in range {start} - {end}')
+    crowns = get_table_data(service, tableId,
+                            get_sql(headers=('UID', 'LastSeen', 'LastCrown', 'LastTouched', 'Bronze', 'Silver', 'Gold'),
+                                    tableId=tableId, order='UID ASC, LastTouched ASC',
+                                    criteria_key='LastTouched', start=start, end=end))
+    print(f'Indexing {len(crowns)} by UID')
+    indexed_counts=defaultdict(list)
+    for record in crowns:
+        total_crowns = record['Bronze'] + record['Silver'] + record['Gold']
+        indexed_counts[record['UID']].append({ 'UID': record['UID'], 'LastSeen': record['LastSeen'], 'LastCrown': record['LastCrown'], 'LastTouched': record['LastTouched'], 'total': total_crowns })
+
+    start_list = []
+    for uid in indexed_counts:
+        member_rows: list = indexed_counts[uid]
+        member_rows.sort(key=sort_by_lasttouched)
+        first_bad = get_first_decrease(member_rows, 'total')
+        if first_bad is not None:
+            start_list.append(member_rows[first_bad])
+
+    print(f'{len(start_list)} members affected')
+    first_report = min(x["LastTouched"] for x in start_list)
+    print(f'First occurrence: {first_report}\nLast occurrence: {max(x["LastTouched"] for x in start_list)}')
+
+    # Write this data to disk (allow avoiding an expensive requery of the table)
+    with open(filename, 'w', encoding='utf-8', newline='') as file:
+        dw = csv.DictWriter(file, fieldnames=list(start_list[0].keys()), quoting=csv.QUOTE_NONNUMERIC)
+        dw.writeheader()
+        dw.writerows(start_list)
+
+    # Report how many rows each member has after the start
+    affected_row_count = service.query.sqlGet(sql=f'SELECT COUNT() FROM {tableId} WHERE LastTouched >= {first_report}').execute()
+    print(affected_row_count)
 
 def clean_crown_regression(service: FusionTableHandler, uids: list, start: str, end: str, filename='bad_crown_data.csv', tableId=''):
     '''Bad data may have additionally accumulated in the Crowns DB that does not quite correspond to that visible via the Rank DB
