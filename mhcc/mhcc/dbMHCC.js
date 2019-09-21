@@ -605,7 +605,7 @@ function UpdateDatabase()
 
     // Check that the SQL response has the data we want.
     const headers = resp.columns.map(function (col) { return col.toLowerCase(); });
-    const indices = ["bronze", "silver", "gold", "timestamp"].reduce(function (acc, label) {
+    const indices = ["bronze", "silver", "gold", "platinum", "diamond", "timestamp"].reduce(function (acc, label) {
       acc[label] = headers.indexOf(label);
       return acc;
     }, {});
@@ -617,10 +617,6 @@ function UpdateDatabase()
       });
       return jkData;
     }
-    // Temporary handling for platinum and diamond crowns.
-    ["platinum", "diamond"].forEach(function (optColumn) {
-      indices[optColumn] = headers.indexOf(optColumn);
-    });
 
     resp.rows.forEach(function (record) {
       var id = record[0].toString();
@@ -631,9 +627,11 @@ function UpdateDatabase()
         seen: record[indices.timestamp] * 1000
       };
 
-      // Add platinum and diamond crowns to the gold tally.
-      if (indices.platinum !== -1) jkData[id].gold += (record[indices.platinum] * 1);
-      if (indices.diamond !== -1) jkData[id].gold += (record[indices.diamond] * 1);
+      // Since not all FusionTable records have values for these columns, we need to coerce them to a valid number.
+      var platCount = parseInt(record[indices.platinum], 10);
+      var diamondCount = parseInt(record[indices.diamond], 10);
+      // Add platinum and diamond crowns to the gold tally. TODO: record these separately.
+      jkData[id].gold += (isNaN(platCount) ? 0 : platCount) + (isNaN(diamondCount) ? 0 : diamondCount);
     });
     return jkData;
   }
