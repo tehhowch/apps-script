@@ -768,6 +768,16 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         return True
 
 
+    def delete_records_where(self, tableId: str, clause: str, dryRun: bool=True):
+        '''Delete the given records according to the given WHERE clause. By default, returns the data that would be deleted.'''
+        raw_sql = ('SELECT *' if dryRun else 'DELETE')
+        raw_sql += ' FROM ' + tableId + ' WHERE ' + clause
+        if not tableId or not clause:
+            print('Missing args "tableId" and/or "clause"')
+        method =  self.query.sqlGet if dryRun else self.query.sql
+        return method(sql=raw_sql).execute()
+
+
     def delete_records_by_rowid(self, tableId: str, rowids: list):
         '''Delete the given records from the given FusionTable. Does not back up the table
         first. Does not require all input rowids to be present in the target table.
