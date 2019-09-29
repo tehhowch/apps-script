@@ -8,7 +8,7 @@ This PR addresses issue #<insert number>
 <attach a save file that can be used to verify your bugfix. It MUST have no plugin requirements>
 
 -----------------------
-(delete above section, or below section, depending on the type of PR this is)
+(delete above section, or below section, depending on the type of PR this is. Fill out the remaining section!)
 
 -----------------------
 
