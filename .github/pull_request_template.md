@@ -1,25 +1,44 @@
-# Bugfix
-This PR addresses issue #<insert number>
+NOTICE: Delete the sections that do not apply to your PR, and fill out the section that does.
+(You can open a PR to add or improve a section, if you find them lacking!) 
 
-## Fix Details
-<add details>
+----------------------
+# Content
+
+## Summary
+{{summarize your content! Include links to related issues}}
 
 ## Save File
-<attach a save file that can be used to verify your bugfix. It MUST have no plugin requirements>
+This save file can be used to play through the new content:
+{{attach a save file that allows people to easily test your added content}}
 
+## PR Checklist
+ - [ ] I updated the copyright attributions, or decline to claim copyright of any assets produced or modified
+ - [ ] I uploaded the necessary image, blend, and texture assets here: {{insert link to assets}}
+  
 -----------------------
-(delete above section, or below section, depending on the type of PR this is. Fill out the remaining section!)
+# Bugfix
+This PR addresses issue #{{insert number}}
+
+## Fix Details
+{{add details}}
+
+## Save File
+This save file can be used to verify the bugfix. The bug will occur when using {{insert commit hash / version}}, and will not occur when using this branch's build.
+{{attach a save file that can be used to verify your bugfix. It MUST have no plugin requirements}}
 
 -----------------------
 
 # Feature
-This PR implements the feature request detailed and discussed in issue #<insert number>
+This PR implements the feature request detailed and discussed in issue #{{insert number}}
 
 ## Feature Details
-<add details about the feature you implemented>
+{{add details about the feature you implemented}}
 
 ## UI Screenshots
-<attach screenshots of any changes to UI>
+{{attach before + after screenshots of any changes to UI, or replace this line with "N/A"}}
 
 ## Usage Examples
-<if this feature is used in the data files, provide examples!>
+{{if this feature is used in the data files, provide examples!}}
+
+
+
