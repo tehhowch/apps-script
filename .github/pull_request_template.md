@@ -2,7 +2,7 @@ NOTICE: Delete the sections that do not apply to your PR, and fill out the secti
 (You can open a PR to add or improve a section, if you find them lacking!) 
 
 ----------------------
-# Content
+**Content**
 
 ## Summary
 {{summarize your content! Include links to related issues}}
@@ -15,9 +15,9 @@ This save file can be used to play through the new content:
  - [ ] I updated the copyright attributions, or decline to claim copyright of any assets produced or modified
  - [ ] I uploaded the necessary image, blend, and texture assets here: {{insert link to assets}}
   
+  
 -----------------------
-# Bugfix
-This PR addresses issue #{{insert number}}
+**Bugfix:** This PR addresses issue #{{insert number}}
 
 ## Fix Details
 {{add details}}
@@ -26,10 +26,9 @@ This PR addresses issue #{{insert number}}
 This save file can be used to verify the bugfix. The bug will occur when using {{insert commit hash / version}}, and will not occur when using this branch's build.
 {{attach a save file that can be used to verify your bugfix. It MUST have no plugin requirements}}
 
------------------------
 
-# Feature
-This PR implements the feature request detailed and discussed in issue #{{insert number}}
+-----------------------
+**Feature:** This PR implements the feature request detailed and discussed in issue #{{insert number}}
 
 ## Feature Details
 {{add details about the feature you implemented}}
@@ -39,6 +38,3 @@ This PR implements the feature request detailed and discussed in issue #{{insert
 
 ## Usage Examples
 {{if this feature is used in the data files, provide examples!}}
-
-
-
