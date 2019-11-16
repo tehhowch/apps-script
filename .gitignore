@@ -16,6 +16,7 @@ Pipfile*
 # General-purpose ignores
 .clasp*.json
 client_secret_*
+creds.json
 [Tt]humbs.db
 *.DS_Store
 
