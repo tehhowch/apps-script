@@ -13,6 +13,8 @@ from googleapiclient.http import HttpRequest
 from googleapiclient.http import MediaFileUpload
 from httplib2 import HttpLib2Error
 
+from google.cloud import bigquery
+
 def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=100, fill='█'):
     """Call in a loop to create terminal progress bar
 @params:
@@ -968,5 +970,53 @@ https://developers.google.com/resources/api-libraries/documentation/fusiontables
         return values_from_disk
 
 
+class GCloudService:
+    """Basic authenticated Google Cloud API"""
+
+    def __init__(self, API_NAME: str, API_VERSION: str, project: str, credentials: 'google.auth.credentials.Credentials'):
+        self.__client: bigquery.Client = bigquery.Client(project=project, credentials=credentials)
+        self.__API_NAME: str = API_NAME
+        self.__API_VERSION: str = API_VERSION
+        self.__credentials: google.auth.credentials.Credentials = credentials
+        self.__scopes: list = credentials.scopes
+
+    def get_client(self) -> bigquery.Client:
+        return self.__client
+
+    def get_credentials(self):
+        return self.__credentials
+
+    def get_scopes(self) -> list:
+        return self.__scopes
+
+    def get_api_summary(self):
+        return f'{self.__API_NAME}{self.__API_VERSION}'
 
 
+class BigQueryHandler(GCloudService):
+    """Authenticated BigQuery service instance with table data ingestion methods for my personal use.
+
+    Required scopes for this particular class:
+        'https://www.googleapis.com/auth/bigquery'
+
+    Full documentation of the actual service available here:
+    https://googleapis.dev/python/bigquery/latest/index.html
+    """
+
+    def __init__(self, project: str, credentials: 'google.auth.credentials.Credentials'):
+            super().__init__('bigquery', 'v2', project, credentials)
+# TODO
+    #need dataset accessor
+    def datasets(self):
+        '''Consume the dataset iterator and get all datasets for the current client project'''
+        return list(self.get_client().list_datasets())
+
+    #need table accessor
+    def tables(self, datasetId: str) -> list:
+        pass
+
+    #need job factory
+    def makeJob(self, job_type: str) -> bigquery.job.UnknownJob:
+        pass
+
+    #need mediafile uploader
