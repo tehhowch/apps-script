@@ -2,26 +2,20 @@
  * Interface for communicating with Google BigQuery resources associated with the MHCC project
  */
 
-(function () {
-  function getUserBatch_() {
-  }
-  function getLatestRows_() { }
-  function bqBatchWrite_() { }
-  function getNewLastRanValue_() { }
-  function getByteCount_() { }
-  function array2CSV_() { }
-  function getDbSize() { }
-  function getDbSizeData_() { }
-  function doBackupTable_() { }
-  function getTotalRowCount_() { }
-})(this);
-
-
+// #region read
+/**
+ * Return a list of all datasets associated with the given project.
+ * @param {string} projectId BigQuery Project ID
+ */
 function getProjectData(projectId) {
   var data = Bigquery.Datasets.list(projectId || bqKey);
   return data.datasets;
 }
 
+/**
+ * Return a list of all tables for all datasets in the given project.
+ * @param {string} projectId BigQuery Project ID
+ */
 function getTables(projectId) {
   var datasets = getProjectData(projectId);
   return datasets.map(function (ds) {
@@ -33,26 +27,64 @@ function getTables(projectId) {
     return tables.tables;
   });
 }
+// #endregion
 
+// #region query
+function bq_getLatestRows_() {
+  var job = Bigquery.newJob();
+  var configuration = Bigquery.newJobConfigurationQuery()
+  // configuration
+  // access the query results via getQueryResults
+  // query caching means we can reliably perform calls to get the user batch and it will only
+  // bill once a day unless new members were added.
+}
+// #endregion
+
+// #region upload
+/**
+ * Populates the BigQuery table associated with MHCC Members with the current rows of the respective FusionTable
+ */
 function populateUserTable() {
   var config = {
     projectId: bqKey,
-    datasetId: "Members",
-    tableId: "Members"
+    datasetId: 'Core',
+    tableId: 'Members'
   };
-  console.log({message: "initial table", table: Bigquery.Tables.get(config.projectId, config.datasetId, config.tableId) });
-  var insertJob = insertTableData(undefined, config);
-  console.log({
-    message: "post-insert-job-create",
-    table: Bigquery.Tables.get(config.projectId, config.datasetId, config.tableId),
-    jobs: Bigquery.Jobs.list(config.projectId).jobs,
-    insertJob: insertJob
-  });
+
+  var insertJob = insertTableData_(getUserBatch_(0, 100000), config);
   return insertJob;
 }
 
-function insertTableData(data, config) {
-  var dataAsCSV = array2CSV_(data || getUserBatch_(0, 100000));
+function addCrownSnapshots_(newCrownData) {
+  var config = {
+    projectId: bqKey,
+    datasetId: 'Core',
+    tableId: 'Crowns',
+  };
+
+  var insertJob = insertTableData_(newCrownData, config);
+  return insertJob;
+}
+
+function addRankSnapshots_(newRankData) {
+  var config = {
+    projectId: bqKey,
+    datasetId: 'Core',
+    tableId: 'Ranks',
+  };
+
+  var insertJob = insertTableData_(newRankData, config);
+  return insertJob;
+}
+
+/**
+ * Upload the given data into the given BigQuery table (table must exist).
+ * Returns the associated LoadJob
+ * @param {(string|number)[][]} data FusionTable data as a 2D javascript array
+ * @param {{projectId: string, datasetId: string, tableId: string}} config Description of the target table
+ */
+function insertTableData_(data, config) {
+  var dataAsCSV = array2CSV_(data);
   var dataAsBlob = Utilities.newBlob(dataAsCSV, "application/octet-stream");
 
   // ripped from https://developers.google.com/apps-script/advanced/bigquery
@@ -66,9 +98,9 @@ function insertTableData(data, config) {
           tableId: config.tableId
         },
         // Never create this table via the job.
-        createDisposition: "CREATE_NEVER",
-        // Always overwrite this table's contents.
-        writeDisposition: "WRITE_TRUNCATE"
+        createDisposition: 'CREATE_NEVER',
+        // Overwrite this table's contents. (default = WRITE_APPEND)
+        // writeDisposition: "WRITE_TRUNCATE"
       },
     }
   };
@@ -76,3 +108,4 @@ function insertTableData(data, config) {
   console.log({message: "Created job " + job.id, jobData: job });
   return job;
 }
+// #endregion
