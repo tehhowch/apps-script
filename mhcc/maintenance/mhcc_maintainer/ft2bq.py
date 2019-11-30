@@ -27,7 +27,7 @@ def decode_fusionTable_schema(tables: list) -> dict:
     def _map_col(col: dict) -> dict:
         col_schema = {k: col.get(k, '') for k in ('name', 'columnId', 'description')}
         if col['name'] != 'Comment':
-            col_schema['MODE'] = 'REQUIRED'
+            col_schema['mode'] = 'REQUIRED'
         # We can actually use int/float now!
         col_type: str = col['type']
         if col_type == 'NUMBER':
@@ -81,18 +81,33 @@ def upload_table_data(client: bigquery.Client, tableRef: bigquery.Table, fusionF
         job = client.load_table_from_file(file, tableRef)
     return job
 
-def download_table_data(ft: FusionTableHandler, tableId: str, schema: dict) -> list:
+def download_table_data(ft: FusionTableHandler, tableId: str, table: bigquery.Table) -> list:
     """Download the data from the given FusionTable and process it to match the given schema"""
     data: dict = ft.get_query_result(f'select * from {tableId}')
     if 'rows' in data:
-        transform_table_data(data['rows'], schema)
+        transform_table_data(data['rows'], table)
         return data['rows']
 
-def transform_table_data(tableRows: list, colSchema: list):
+def transform_table_data(tableRows: list, table: bigquery.Table):
     """Convert floats to ints where required prior to uploading. Convert NaN to 0 for numeric types"""
-    return
+    colSchema: list = table.schema
+    assert len(tableRows[0]) <= len(colSchema), f'table should have at most as many columns as its schema: {len(tableRows[0])} ! <= {len(colSchema)}'
+    formatter = []
+    for schemaField in colSchema:
+        fn = None
+        if schemaField.field_type in ('INT64', 'INTEGER'):
+            fn = get_as_int
+        elif schemaField.field_type == ('FLOAT64', 'FLOAT'):
+            fn = float
+        elif schemaField.field_type != 'STRING': print(schemaField.field_type)
+        formatter.append(fn)
+
     for row in tableRows:
-        # if int, use get_as_int and if result == None, set = 0
+        for (idx, val) in enumerate(row):
+            fn = formatter[idx]
+            if fn is not None:
+                result = fn(val)
+                row[idx] = result if result is not None else 0
     return
 
 def write_table_data(tableId: str, tableRows: list):
@@ -121,9 +136,9 @@ def export(ft: FusionTableHandler, client: bigquery.Client, allTables=True, tabl
 
     jobs = []
     for (tableId, tableRef) in create_tables(client, schemas).items():
-        rows = download_table_data(ft, tableId, schemas.get(tableId))
+        rows = download_table_data(ft, tableId, tableRef)
         job: bigquery.LoadJob = upload_table_data(client, tableRef, write_table_data(tableId, rows))
-        job.add_done_callback(lambda tableId, job: print(f'Load job {"finished" if not job.error_result() else "failed"} for {tableId}'))
+        job.add_done_callback(lambda job, ftId=tableId: print(f'Load job {"finished" if not job.error_result else "failed"} for FT {ftId}'))
         jobs.append(job)
 
     while True:
