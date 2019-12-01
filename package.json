@@ -1,8 +1,7 @@
 {
   "requires": true,
   "devDependencies": {
-    "@types/google-apps-script": "*",
-    "@google/clasp": "*"
+    "@types/google-apps-script": "^1.0.7"
   },
   "license": "GPL-3.0",
   "private": true,
