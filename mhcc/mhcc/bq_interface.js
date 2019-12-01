@@ -2,43 +2,90 @@
  * Interface for communicating with Google BigQuery resources associated with the MHCC project
  */
 
-// #region read
+// #region query
 /**
- * Return a list of all datasets associated with the given project.
- * @param {string} projectId BigQuery Project ID
+ *
+ * @param {string} sql The query to execute on a table in this project
+ * @param {string} dataset the dataset name containing the table to query
+ * @param {string} table the table to query against
+ * @returns {GoogleAppsScript.Bigquery.Schema.TableRow[]} Query results, as Table Rows
  */
-function getProjectData(projectId) {
-  var data = Bigquery.Datasets.list(projectId || bqKey);
-  return data.datasets;
+function bq_querySync_(sql, dataset, table)
+{
+  var job = Bigquery.newJob();
+  var configuration = Bigquery.newJobConfigurationQuery()
+  configuration.query = sql;
+  job.configuration = configuration;
+  var queryJob = Bigquery.Jobs.insert(job, bqKey);
+  var results = [];
+  var queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob);
+  while (!queryResult.jobComplete)
+  {
+    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob);
+  }
+  var pages = 1;
+  console.log({
+    message: 'Query Completed',
+    sql: sql,
+    cacheHit: queryResult.cacheHit,
+    resultSize: queryResult.totalRows,
+    querySize: queryResult.totalBytesProcessed,
+    hasPages: !!queryResult.pageToken,
+    firstResult: queryResult.rows ? queryResult.rows[0] : null
+  });
+  Array.prototype.push.apply(results, queryResult.rows);
+  while (queryResult.pageToken)
+  {
+    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob, { pageToken: queryResult.pageToken });
+    Array.prototype.push.apply(results, queryResult.rows);
+    ++pages;
+  }
+  if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
+  return results;
+}
+
+function bq_getMemberBatch_(start, limit)
+{
+  const sql = 'SELECT Member, UID FROM `' + bqKey + '.Core.Members` ORDER BY Member ASC';
+  const members = bq_querySync_(sql, 'Core', 'Members');
+  if (start === undefined && limit === undefined)
+    return members;
+
+  start = abs(parseInt(start || 0, 10));
+  if (limit <= 0) limit = 1;
+  limit = parseInt(limit || 100000, 10);
+  return members.slice(start, start + limit);
 }
 
 /**
- * Return a list of all tables for all datasets in the given project.
- * @param {string} projectId BigQuery Project ID
+ * @param {string} dataset
+ * @param {string} table
  */
-function getTables(projectId) {
-  var datasets = getProjectData(projectId);
-  return datasets.map(function (ds) {
-    var dsRef = ds.datasetReference;
-    var tables = Bigquery.Tables.list(dsRef.projectId, dsRef.datasetId);
-    if (tables.tables && tables.tables.length) {
-      console.log({message: "Project Tables: " + dsRef.datasetId, tables: tables.tables });
-    }
-    return tables.tables;
+function bq_getLatestTouchTimes_(dataset, table) {
+  var query = 'SELECT UID, MAX(LastTouched) FROM `' + bqKey + '.' + dataset + '.' + table + '` GROUP BY UID';
+  return bq_querySync_(query, dataset, table);
+}
+
+function bq_getLatestRows_(dataset, table) {
+  // Use BQ to do the per-member UID-LastTouched limiting via an INNER JOIN:
+  const tableId = bqkey + '.' + dataset + '.' + table;
+  const sql = 'SELECT * FROM `' + tableId + '` JOIN (SELECT UID, MAX(LastTouched) AS `LastTouched` FROM `' + tableId + '` GROUP BY UID ) USING (LastTouched, UID)'
+
+  const latestRows = bq_querySync_(sql, dataset, table);
+  if (!latestRows || !latestRows.length)
+  {
+    console.error({ 'message': 'Unable to retrieve latest records for all users' });
+    return [];
+  }
+
+  return latestRows.map(function (row) {
+    return row.f.map(function (col) {
+      return col.v;
+    });
   });
 }
 // #endregion
 
-// #region query
-function bq_getLatestRows_() {
-  var job = Bigquery.newJob();
-  var configuration = Bigquery.newJobConfigurationQuery()
-  // configuration
-  // access the query results via getQueryResults
-  // query caching means we can reliably perform calls to get the user batch and it will only
-  // bill once a day unless new members were added.
-}
-// #endregion
 
 // #region upload
 /**
