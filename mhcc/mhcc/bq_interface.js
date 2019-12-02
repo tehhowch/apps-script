@@ -8,17 +8,18 @@
  * @param {string} sql The query to execute on a table in this project
  * @param {string} dataset the dataset name containing the table to query
  * @param {string} table the table to query against
- * returns {GoogleAppsScript.Bigquery.Schema.TableRow[]} Query results, as Table Rows
- * @returns {object[][]} Query results
+ * @returns {{ rows: Array<(string|number)[]>, columns: string[] }} Query results (rows) and labels (cols)
  */
 function bq_querySync_(sql, dataset, table)
 {
   const job = Bigquery.newJob();
   const configuration = Bigquery.newJobConfigurationQuery()
   configuration.query = sql;
+  configuration.useLegacySql = false;
   job.configuration = configuration;
   const queryJob = Bigquery.Jobs.insert(job, bqKey);
   const results = [];
+  const headers = [];
   var queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob);
   while (!queryResult.jobComplete)
   {
@@ -34,6 +35,8 @@ function bq_querySync_(sql, dataset, table)
     hasPages: !!queryResult.pageToken,
     firstResult: queryResult.rows ? queryResult.rows[0] : null
   });
+  Array.prototype.push.apply(headers, queryResult.schema.fields
+    .map(function (schemaField) { return schemaField.name; }));
   Array.prototype.push.apply(results, queryResult.rows);
   while (queryResult.pageToken)
   {
@@ -42,13 +45,16 @@ function bq_querySync_(sql, dataset, table)
     ++pages;
   }
   if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
-  return results.map(function (row) { return row.f.map(function (col) { return col.v; })});
+  return {
+    rows: results.map(function (row) { return row.f.map(function (col) { return col.v; })}),
+    columns: headers,
+  };
 }
 
 function bq_getMemberBatch_(start, limit)
 {
   const sql = 'SELECT Member, UID FROM `' + bqKey + '.Core.Members` ORDER BY Member ASC';
-  const members = bq_querySync_(sql, 'Core', 'Members');
+  const members = bq_querySync_(sql, 'Core', 'Members').rows;
   if (start === undefined && limit === undefined)
     return members;
 
@@ -58,20 +64,14 @@ function bq_getMemberBatch_(start, limit)
   return members.slice(start, start + limit);
 }
 
+/**
+ * Read the MHCT Dataset table for extension-reported crown counts.
+ * @param {string} uidStr UIDs to query, joined by commas
+ */
 function bq_readMHCTCrowns_(uidStr)
 {
   const sql = 'SELECT * FROM `' + bqKey + '.MHCT.CrownCounts` WHERE snuid IN (' + uidStr + ')';
   return bq_querySync_(sql, 'MHCT', 'CrownCounts');
-}
-
-/**
- * @param {string} dataset
- * @param {string} table
- */
-function bq_getLatestTouchTimes_(dataset, table)
-{
-  const query = 'SELECT UID, MAX(LastTouched) FROM `' + bqKey + '.' + dataset + '.' + table + '` GROUP BY UID';
-  return bq_querySync_(query, dataset, table);
 }
 
 function bq_getLatestRows_(dataset, table)
@@ -81,10 +81,10 @@ function bq_getLatestRows_(dataset, table)
   const sql = 'SELECT * FROM `' + tableId + '` JOIN (SELECT UID, MAX(LastTouched) AS `LastTouched` FROM `' + tableId + '` GROUP BY UID ) USING (LastTouched, UID)'
 
   const latestRows = bq_querySync_(sql, dataset, table);
-  if (!latestRows || !latestRows.length)
+  if (!latestRows || !latestRows.rows.length)
   {
     console.error({ 'message': 'Unable to retrieve latest records for all users' });
-    return [];
+    return { rows: [], columns: [] };
   }
 
   return latestRows;
@@ -95,9 +95,14 @@ function bq_getLatestBatch_(dataset, table, uidStr)
   const tableId = bqKey + '.' + dataset + '.' + table;
   const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '`'
       + ' WHERE UID IN (' + uidStr + ') GROUP BY UID';
-  return bq_querySync_(sql, dataset, table);
+  return bq_querySync_(sql, dataset, table).rows;
 }
 
+/**
+ * @param {string} dataset
+ * @param {string} table
+ * @returns {string[]}
+ */
 function bq_getTableColumns_(dataset, table)
 {
   const metadata = Bigquery.Tables.get(bqKey, dataset, table);

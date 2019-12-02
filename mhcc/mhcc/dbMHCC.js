@@ -220,11 +220,11 @@ function UpdateDatabase()
     if (!partials || !Object.keys(partials).length)
       return null;
 
-    // Use getLatestRows_() instead of/in this function.
-    const records = bq_getLatestRows_('Core', 'Crowns');
+    const resp = bq_getLatestRows_('Core', 'Crowns');
+    const records = resp.rows;
     // TODO: use columns to set indices appropriately
     // Collect the full records into a UID-indexed Object (for rapid accessing).
-    const headers = bq_getTableColumns_('Core', 'Crowns').map(function (name) { return name.toLowerCase(); });
+    const headers = resp.columns.map(function (column) { return column.toLowerCase(); });
     const labels = ["uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
     /** @type {Object <string, (string|number)[]} */
     const storedRecords = {};
@@ -552,10 +552,11 @@ function UpdateDatabase()
     // snuid | timestamp (seconds UTC) | bronze | silver | gold | platinum | diamond
     const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
-    const records = bq_readMHCTCrowns_(uids);
+    const resp = bq_readMHCTCrowns_(uids);
+    const records = resp.rows;
 
     // Check that the SQL response has the data we want.
-    const headers = bq_getTableColumns_('MHCT', 'CrownCounts').map(function (col) { return col.toLowerCase(); });
+    const headers = resp.columns.map(function (col) { return col.toLowerCase(); });
     const indices = ["bronze", "silver", "gold", "platinum", "diamond", "timestamp"].reduce(function (acc, label) {
       acc[label] = headers.indexOf(label);
       return acc;
