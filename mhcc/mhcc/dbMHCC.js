@@ -229,8 +229,8 @@ function UpdateDatabase()
     /** @type {Object <string, (string|number)[]} */
     const storedRecords = {};
     const indices = labels.reduce(function (map, colName) {
-      map[colTitle] = headers.indexOf(colTitle);
-      if (map[colTitle] === -1) throw new Error("Missing column name '" + colTitle + "'");
+      map[colName] = headers.indexOf(colName);
+      if (map[colName] === -1) throw new Error("Missing column name '" + colName + "'");
       return map;
     }, {});
     records.forEach(function (record) { storedRecords[record[indices.uid]] = record; });
@@ -374,7 +374,7 @@ function UpdateDatabase()
 
     // Obtain the lastSeen and lastTouched timestamps for the users in this batch.
     var uidString = urlIDs.join(",");
-    const batchRows = bq_getLatestBatch_('Core', 'Crowns', uidString);
+    const batchRows = bq_getLatestBatch_('Core', 'Crowns', urlIDs);
     // While unlikely, this entire batch of requested members may have no existing Crown DB records.
     if (batchRows)
       batchRows.forEach(function (memberRow) {
@@ -552,7 +552,7 @@ function UpdateDatabase()
     // snuid | timestamp (seconds UTC) | bronze | silver | gold | platinum | diamond
     const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
-    const resp = bq_readMHCTCrowns_(uids);
+    const resp = bq_readMHCTCrowns_(uids.split(','));
     const records = resp.rows;
 
     // Check that the SQL response has the data we want.

@@ -12,18 +12,20 @@
  */
 function bq_querySync_(sql, dataset, table)
 {
-  const job = Bigquery.newJob();
-  const configuration = Bigquery.newJobConfigurationQuery()
-  configuration.query = sql;
-  configuration.useLegacySql = false;
-  job.configuration = configuration;
+  var job = Bigquery.newJob();
+  job = {
+    configuration: {
+      query: {
+        query: sql,
+        useLegacySql: false,
+      }
+    }
+  };
   const queryJob = Bigquery.Jobs.insert(job, bqKey);
-  const results = [];
-  const headers = [];
-  var queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob);
+  var queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob.jobReference.jobId);
   while (!queryResult.jobComplete)
   {
-    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob);
+    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob.jobReference.jobId);
   }
   var pages = 1;
   console.log({
@@ -35,12 +37,14 @@ function bq_querySync_(sql, dataset, table)
     hasPages: !!queryResult.pageToken,
     firstResult: queryResult.rows ? queryResult.rows[0] : null
   });
+  const headers = [];
   Array.prototype.push.apply(headers, queryResult.schema.fields
     .map(function (schemaField) { return schemaField.name; }));
+  const results = [];
   Array.prototype.push.apply(results, queryResult.rows);
   while (queryResult.pageToken)
   {
-    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob, { pageToken: queryResult.pageToken });
+    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob.jobReference.jobId, { pageToken: queryResult.pageToken });
     Array.prototype.push.apply(results, queryResult.rows);
     ++pages;
   }
@@ -58,7 +62,7 @@ function bq_getMemberBatch_(start, limit)
   if (start === undefined && limit === undefined)
     return members;
 
-  start = abs(parseInt(start || 0, 10));
+  start = Math.abs(parseInt(start || 0, 10));
   if (limit <= 0) limit = 1;
   limit = parseInt(limit || 100000, 10);
   return members.slice(start, start + limit);
@@ -66,18 +70,18 @@ function bq_getMemberBatch_(start, limit)
 
 /**
  * Read the MHCT Dataset table for extension-reported crown counts.
- * @param {string} uidStr UIDs to query, joined by commas
+ * @param {string[]} uids UIDs to query
  */
-function bq_readMHCTCrowns_(uidStr)
+function bq_readMHCTCrowns_(uids)
 {
-  const sql = 'SELECT * FROM `' + bqKey + '.MHCT.CrownCounts` WHERE snuid IN (' + uidStr + ')';
+  const sql = 'SELECT * FROM `' + bqKey + '.MHCT.CrownCounts` WHERE snuid IN ("' + uids.join('","') + '")';
   return bq_querySync_(sql, 'MHCT', 'CrownCounts');
 }
 
 function bq_getLatestRows_(dataset, table)
 {
   // Use BQ to do the per-member UID-LastTouched limiting via an INNER JOIN:
-  const tableId = bqkey + '.' + dataset + '.' + table;
+  const tableId = bqKey + '.' + dataset + '.' + table;
   const sql = 'SELECT * FROM `' + tableId + '` JOIN (SELECT UID, MAX(LastTouched) AS `LastTouched` FROM `' + tableId + '` GROUP BY UID ) USING (LastTouched, UID)'
 
   const latestRows = bq_querySync_(sql, dataset, table);
@@ -90,11 +94,11 @@ function bq_getLatestRows_(dataset, table)
   return latestRows;
 }
 
-function bq_getLatestBatch_(dataset, table, uidStr)
+function bq_getLatestBatch_(dataset, table, uids)
 {
   const tableId = bqKey + '.' + dataset + '.' + table;
   const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '`'
-      + ' WHERE UID IN (' + uidStr + ') GROUP BY UID';
+      + ' WHERE UID IN ("' + uids.join('","') + '") GROUP BY UID';
   return bq_querySync_(sql, dataset, table).rows;
 }
 
