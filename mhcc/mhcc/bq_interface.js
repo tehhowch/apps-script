@@ -8,16 +8,17 @@
  * @param {string} sql The query to execute on a table in this project
  * @param {string} dataset the dataset name containing the table to query
  * @param {string} table the table to query against
- * @returns {GoogleAppsScript.Bigquery.Schema.TableRow[]} Query results, as Table Rows
+ * returns {GoogleAppsScript.Bigquery.Schema.TableRow[]} Query results, as Table Rows
+ * @returns {object[][]} Query results
  */
 function bq_querySync_(sql, dataset, table)
 {
-  var job = Bigquery.newJob();
-  var configuration = Bigquery.newJobConfigurationQuery()
+  const job = Bigquery.newJob();
+  const configuration = Bigquery.newJobConfigurationQuery()
   configuration.query = sql;
   job.configuration = configuration;
-  var queryJob = Bigquery.Jobs.insert(job, bqKey);
-  var results = [];
+  const queryJob = Bigquery.Jobs.insert(job, bqKey);
+  const results = [];
   var queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob);
   while (!queryResult.jobComplete)
   {
@@ -26,7 +27,7 @@ function bq_querySync_(sql, dataset, table)
   var pages = 1;
   console.log({
     message: 'Query Completed',
-    sql: sql,
+    job: job,
     cacheHit: queryResult.cacheHit,
     resultSize: queryResult.totalRows,
     querySize: queryResult.totalBytesProcessed,
@@ -41,7 +42,7 @@ function bq_querySync_(sql, dataset, table)
     ++pages;
   }
   if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
-  return results;
+  return results.map(function (row) { return row.f.map(function (col) { return col.v; })});
 }
 
 function bq_getMemberBatch_(start, limit)
@@ -57,16 +58,24 @@ function bq_getMemberBatch_(start, limit)
   return members.slice(start, start + limit);
 }
 
+function bq_readMHCTCrowns_(uidStr)
+{
+  const sql = 'SELECT * FROM `' + bqKey + '.MHCT.CrownCounts` WHERE snuid IN (' + uidStr + ')';
+  return bq_querySync_(sql, 'MHCT', 'CrownCounts');
+}
+
 /**
  * @param {string} dataset
  * @param {string} table
  */
-function bq_getLatestTouchTimes_(dataset, table) {
-  var query = 'SELECT UID, MAX(LastTouched) FROM `' + bqKey + '.' + dataset + '.' + table + '` GROUP BY UID';
+function bq_getLatestTouchTimes_(dataset, table)
+{
+  const query = 'SELECT UID, MAX(LastTouched) FROM `' + bqKey + '.' + dataset + '.' + table + '` GROUP BY UID';
   return bq_querySync_(query, dataset, table);
 }
 
-function bq_getLatestRows_(dataset, table) {
+function bq_getLatestRows_(dataset, table)
+{
   // Use BQ to do the per-member UID-LastTouched limiting via an INNER JOIN:
   const tableId = bqkey + '.' + dataset + '.' + table;
   const sql = 'SELECT * FROM `' + tableId + '` JOIN (SELECT UID, MAX(LastTouched) AS `LastTouched` FROM `' + tableId + '` GROUP BY UID ) USING (LastTouched, UID)'
@@ -78,10 +87,22 @@ function bq_getLatestRows_(dataset, table) {
     return [];
   }
 
-  return latestRows.map(function (row) {
-    return row.f.map(function (col) {
-      return col.v;
-    });
+  return latestRows;
+}
+
+function bq_getLatestBatch_(dataset, table, uidStr)
+{
+  const tableId = bqKey + '.' + dataset + '.' + table;
+  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '`'
+      + ' WHERE UID IN (' + uidStr + ') GROUP BY UID';
+  return bq_querySync_(sql, dataset, table);
+}
+
+function bq_getTableColumns_(dataset, table)
+{
+  const metadata = Bigquery.Tables.get(bqKey, dataset, table);
+  return metadata.schema.fields.map(function (colSchema) {
+    return colSchema.name;
   });
 }
 // #endregion
@@ -91,36 +112,39 @@ function bq_getLatestRows_(dataset, table) {
 /**
  * Populates the BigQuery table associated with MHCC Members with the current rows of the respective FusionTable
  */
-function populateUserTable() {
-  var config = {
+function populateUserTable()
+{
+  const config = {
     projectId: bqKey,
     datasetId: 'Core',
     tableId: 'Members'
   };
 
-  var insertJob = insertTableData_(getUserBatch_(0, 100000), config);
+  const insertJob = insertTableData_(getUserBatch_(0, 100000), config);
   return insertJob;
 }
 
-function addCrownSnapshots_(newCrownData) {
-  var config = {
+function addCrownSnapshots_(newCrownData)
+{
+  const config = {
     projectId: bqKey,
     datasetId: 'Core',
     tableId: 'Crowns',
   };
 
-  var insertJob = insertTableData_(newCrownData, config);
+  const insertJob = insertTableData_(newCrownData, config);
   return insertJob;
 }
 
-function addRankSnapshots_(newRankData) {
-  var config = {
+function addRankSnapshots_(newRankData)
+{
+  const config = {
     projectId: bqKey,
     datasetId: 'Core',
     tableId: 'Ranks',
   };
 
-  var insertJob = insertTableData_(newRankData, config);
+  const insertJob = insertTableData_(newRankData, config);
   return insertJob;
 }
 
@@ -130,9 +154,10 @@ function addRankSnapshots_(newRankData) {
  * @param {(string|number)[][]} data FusionTable data as a 2D javascript array
  * @param {{projectId: string, datasetId: string, tableId: string}} config Description of the target table
  */
-function insertTableData_(data, config) {
-  var dataAsCSV = array2CSV_(data);
-  var dataAsBlob = Utilities.newBlob(dataAsCSV, "application/octet-stream");
+function insertTableData_(data, config)
+{
+  const dataAsCSV = array2CSV_(data);
+  const dataAsBlob = Utilities.newBlob(dataAsCSV, "application/octet-stream");
 
   // ripped from https://developers.google.com/apps-script/advanced/bigquery
   var job = Bigquery.newJob()

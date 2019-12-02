@@ -220,56 +220,21 @@ function UpdateDatabase()
     if (!partials || !Object.keys(partials).length)
       return null;
 
-    // TODO: evaluate if getLatestRows_() should be used instead of/in this function.
-
-    // Collect the UIDs which need to be queried in the FusionTable.
-    const sqlParts = [
-      "SELECT * FROM " + ftid + " WHERE UID IN (",
-      "",
-      ") AND LastTouched IN (",
-      "",
-      ")"
-    ];
-
-    const criteriaList = [];
-    for (var uid in partials)
-      criteriaList.push({ uid: uid, lt: partials[uid].storedInfo.lastTouched });
-    if (!criteriaList.length)
-      return null;
-
+    // Use getLatestRows_() instead of/in this function.
+    const records = bq_getLatestRows_('Core', 'Crowns');
+    // TODO: use columns to set indices appropriately
     // Collect the full records into a UID-indexed Object (for rapid accessing).
-    const indices = {}, labels = ["uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
+    const headers = bq_getTableColumns_('Core', 'Crowns').map(function (name) { return name.toLowerCase(); });
+    const labels = ["uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
     /** @type {Object <string, (string|number)[]} */
     const storedRecords = {};
-    do {
-      // Construct a maximal query (8000 characters or less) from the given criteria.
-      var queryUIDs = [], queryLT = [], sql = "";
-      do {
-        var cl = criteriaList.pop();
-        if (cl.uid && cl.lt)
-        {
-          queryUIDs.push(cl.uid);
-          queryLT.push(cl.lt);
-        }
-        sql = sqlParts[0] + queryUIDs.join(",") + sqlParts[2] + queryLT.join(",") + sqlParts[4];
-      } while (sql.length < 8000 && criteriaList.length);
+    const indices = labels.reduce(function (map, colName) {
+      map[colTitle] = headers.indexOf(colTitle);
+      if (map[colTitle] === -1) throw new Error("Missing column name '" + colTitle + "'");
+      return map;
+    }, {});
+    records.forEach(function (record) { storedRecords[record[indices.uid]] = record; });
 
-      // Execute the query to obtain the members' full records (and thus their previous crown count and crown change date).
-      var resp = FusionTables.Query.sqlGet(sql, { quotaUser: queryUIDs[0] });
-      if (!resp || !resp.columns)
-        return [];
-      if (!Object.keys(indices).length)
-      {
-        var headers = resp.columns.map(function (col) { return String(col).toLowerCase(); });
-        labels.forEach(function (colTitle) {
-          indices[colTitle] = headers.indexOf(colTitle);
-          if (indices[colTitle] === -1) throw new Error("Missing column name '" + colTitle + "'");
-        });
-      }
-      // While unlikely, this particular batch of requested members may not have any existing rows.
-      if (resp.rows)
-        resp.rows.forEach(function (record) { storedRecords[record[indices.uid]] = record; });
-    } while (criteriaList.length);
     return { records: storedRecords, indices: indices };
   }
   /**
@@ -409,15 +374,10 @@ function UpdateDatabase()
 
     // Obtain the lastSeen and lastTouched timestamps for the users in this batch.
     var uidString = urlIDs.join(",");
-    var sql = 'SELECT UID, MAXIMUM(LastSeen), MAXIMUM(LastCrown), MAXIMUM(LastTouched) FROM ' + ftid;
-    sql += ' WHERE UID IN (' + uidString + ') GROUP BY UID';
-    /** @type {{rows:[string, number, number, number][]}} */
-    var resp = FusionTables.Query.sqlGet(sql);
-    if (!resp || !resp.columns)
-      return null;
+    const batchRows = bq_getLatestBatch_('Core', 'Crowns', uidString);
     // While unlikely, this entire batch of requested members may have no existing Crown DB records.
-    if (resp.rows)
-      resp.rows.forEach(function (memberRow) {
+    if (batchRows)
+      batchRows.forEach(function (memberRow) {
         var uid = memberRow[0];
         data[uid].storedInfo.lastSeen = memberRow[1] * 1;
         data[uid].storedInfo.lastCrown = memberRow[2] * 1;
@@ -592,19 +552,10 @@ function UpdateDatabase()
     // snuid | timestamp (seconds UTC) | bronze | silver | gold | platinum | diamond
     const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
-    try { var resp = FusionTables.Query.sqlGet(sql); }
-    catch (e)
-    {
-      e.message = "Failed to query Jack's 'MH Crowns' FusionTable: " + e.message;
-      console.error({ message: e.message, query: sql, response: resp });
-      throw e;
-    }
-    // Ensure well-formed data was obtained.
-    if (!resp || !resp.rows || !resp.rows.length || !resp.rows[0].length || !resp.columns)
-      return jkData;
+    const records = bq_readMHCTCrowns_(uids);
 
     // Check that the SQL response has the data we want.
-    const headers = resp.columns.map(function (col) { return col.toLowerCase(); });
+    const headers = bq_getTableColumns_('MHCT', 'CrownCounts').map(function (col) { return col.toLowerCase(); });
     const indices = ["bronze", "silver", "gold", "platinum", "diamond", "timestamp"].reduce(function (acc, label) {
       acc[label] = headers.indexOf(label);
       return acc;
@@ -612,13 +563,13 @@ function UpdateDatabase()
     if (!Object.keys(indices).every(function (val) { return indices[val] > -1; }))
     {
       console.error({
-        "message": "Unable to find required column headers in Jack's FusionTable.",
-        "response": resp, "headers": headers, "indices": indices
+        "message": "Unable to find required column headers in MHCT's BQ Table.",
+        "response": records, "headers": headers, "indices": indices
       });
       return jkData;
     }
 
-    resp.rows.forEach(function (record) {
+    records.forEach(function (record) {
       var id = record[0].toString();
       jkData[id] = {
         bronze: record[indices.bronze] * 1,
