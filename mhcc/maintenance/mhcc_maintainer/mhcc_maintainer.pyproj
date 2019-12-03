@@ -25,6 +25,7 @@
     <Compile Include="deprecated_code.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="ft2bq.py" />
     <Compile Include="regression_fixer.py">
       <SubType>Code</SubType>
     </Compile>

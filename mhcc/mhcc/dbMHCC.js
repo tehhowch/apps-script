@@ -225,7 +225,7 @@ function UpdateDatabase()
     // TODO: use columns to set indices appropriately
     // Collect the full records into a UID-indexed Object (for rapid accessing).
     const headers = resp.columns.map(function (column) { return column.toLowerCase(); });
-    const labels = ["uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
+    const labels = ["member", "uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
     /** @type {Object <string, (string|number)[]} */
     const storedRecords = {};
     const indices = labels.reduce(function (map, colName) {

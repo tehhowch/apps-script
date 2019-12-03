@@ -60,7 +60,7 @@ function bq_querySync_(sql, dataset, table)
  */
 function bq_getMemberBatch_(start, limit)
 {
-  const sql = 'SELECT Member, UID FROM `' + bqKey + '.Core.Members` ORDER BY Member ASC';
+  const sql = 'SELECT Member, UID FROM Core.Members ORDER BY Member ASC';
   const members = bq_querySync_(sql, 'Core', 'Members').rows;
   if (start === undefined && limit === undefined)
     return members;
@@ -77,23 +77,21 @@ function bq_getMemberBatch_(start, limit)
  */
 function bq_readMHCTCrowns_(uids)
 {
-  const sql = 'SELECT * FROM `' + bqKey + '.MHCT.CrownCounts` WHERE snuid IN ("' + uids.join('","') + '")';
+  const sql = 'SELECT * FROM MHCT.CrownCounts WHERE snuid IN ("' + uids.join('","') + '")';
   return bq_querySync_(sql, 'MHCT', 'CrownCounts');
 }
 
 function bq_getLatestRows_(dataset, table)
 {
   // Use BQ to do the per-member UID-LastTouched limiting via an INNER JOIN:
-  const tableId = bqKey + '.' + dataset + '.' + table;
-  const sql = 'SELECT * FROM `' + tableId + '` JOIN (SELECT UID, MAX(LastTouched) AS `LastTouched` FROM `' + tableId + '` GROUP BY UID ) USING (LastTouched, UID)'
+  const tableId = dataset + '.' + table;
+  // Require the order of returned columns to be the same as that needed to upload
+  // to this table.
+  const columns = bq_getTableColumns_(dataset, table).join(", ");
+  const sql = 'SELECT ' + columns + ' FROM ' + tableId + ' JOIN (SELECT UID, MAX(LastTouched) AS LastTouched FROM ' + tableId + ' GROUP BY UID ) USING (LastTouched, UID)'
 
   const latestRows = bq_querySync_(sql, dataset, table);
-  if (!latestRows || !latestRows.rows.length)
-  {
-    console.error({ 'message': 'Unable to retrieve latest records for all users' });
-    return { rows: [], columns: [] };
-  }
-
+  if (!latestRows || !latestRows.rows.length) throw new Error('Unable to retrieve latest records for all users');
   return latestRows;
 }
 
@@ -105,8 +103,8 @@ function bq_getLatestRows_(dataset, table)
  */
 function bq_getLatestTimes_(dataset, table)
 {
-  const tableId = bqKey + '.' + dataset + '.' + table;
-  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '` GROUP BY UID';
+  const tableId = dataset + '.' + table;
+  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM ' + tableId + ' GROUP BY UID';
   return bq_querySync_(sql, dataset, table).rows;
 }
 
@@ -215,7 +213,13 @@ function _insertTableData_(data, config)
     }
   };
   job = Bigquery.Jobs.insert(job, config.projectId, dataAsBlob);
-  console.log({message: "Created job " + job.id, jobData: job });
+  console.log({
+    message: "Created job " + job.id,
+    jobData: job,
+    inputRowCount: data.length,
+    firstTenRows: data.slice(0, 10),
+  });
+  // TODO: add a check for job error, throw if errored.
   return job;
 }
 // #endregion

@@ -487,4 +487,4 @@ if __name__ == "__main__":
     #prune_crowns(TABLE_LIST['MHCC Crown DB'], handlers['FusionTables'])
     # print('waiting for you to do stuff')
     from ft2bq import export
-    export(handlers['FusionTables'], handlers['BigQuery'].get_client())
+    export(handlers['FusionTables'], client)
