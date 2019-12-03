@@ -1,5 +1,5 @@
 /**
- *  This spreadsheet uses Google Apps Script, Spreadsheets, and the "experimental" FusionTables API
+ *  This spreadsheet uses Google Apps Script, Spreadsheets, and the BigQuery API
  *  to maintain a record of all MHCC members that opted into crown tracking. Via UpdateDatabase()
  *  and HornTracker.com's "MostMice", the arduous task of tracking all members' crowns is be reduced
  *  to simply clicking a profile.
@@ -7,9 +7,9 @@
  *  members (higher batch sizes overload the maximum URL length). This fetch is performed until all
  *  member data has been fetched, or a specified execution duration is met, in order to avoid the
  *  "Maximum Execution Time Exceeded" Google Apps Script error (at 300 seconds).
- *  The time-basis Trigger frequency should not be set too high, as unless member data is constantly
- *  updated, this results in sending essentially duplicated data to the FusionTable. A member rank's
- *  Rank is only updated at the end of an update cycle, when the Scoreboard is written.
+ *  The time-basis Trigger frequency should not be set too high, to avoid consuming the available
+ *  free query quota.
+ *  A member rank's Rank is only updated at the end of a cycle, when the Scoreboard is written.
  *
  *
  * Tracking Progress of Updates
@@ -49,14 +49,14 @@ var crownDBnumColumns = 10;
 var numCustomTitles = 16;
 /**
  * function onOpen()      Sets up the admin's menu from the spreadsheet interface.
- * @param {Object <string, any>} e The "spreadsheet open" event object, provided by Google.
+ * @param {GoogleAppsScript.Events.SheetsOnOpen} e The "spreadsheet open" event object, provided by Google.
  */
 function onOpen(e)
 {
   e.source.addMenu('Administration', [
-    { name: "Manage Members", functionName: "getSidebar" },
+    // { name: "Manage Members", functionName: "getSidebar" },
     { name: "Perform Crown Update", functionName: "UpdateDatabase" },
-    { name: "Check Database Size", functionName: "getDbSize" }]);
+  ]);
 }
 /**
  * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling
@@ -128,16 +128,14 @@ function UpdateDatabase()
 
   // Read in the MHCC tiers as an array.
   // (If the MHCC tiers are moved, this getRange target MUST be updated!)
-  try { const aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
+  try { var aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
   catch (e) { throw new Error("'Members' sheet was renamed or deleted - cannot locate crown-title relationship data."); }
 
-  // After each Scoreboard operation, a backup of the FusionTable databases should be attempted.
   if (lastRan >= numMembers)
   {
     UpdateScoreboard();
     store.setProperty("lastRan", 0);
-    doBackupTable_(ftid);
-    doBackupTable_(rankTableId);
+    // TODO: create a backup of the Crown & Rank tables?
     if (Math.random() < 0.4)
       doWebhookPost_(props["mhDiscord"]);
   }
@@ -170,7 +168,7 @@ function UpdateDatabase()
     } while ((new Date() - startTime) < maxRuntime * 1000 && lastRan < numMembers);
 
     // Convert partial records into insertable MHCC records. This involves querying the
-    // FusionTable database to determine each member's last crown counts.
+    // BigQuery table to determine each member's last crown counts.
     const newRecords = [];
     if (Object.keys(newMemberData).length)
     {
@@ -316,14 +314,14 @@ function UpdateDatabase()
    * Nested function which handles requesting crown info for a given set of members from the various data
    * sources available:
    *    1. HornTracker MostMice
-   *    2. Jack's MH Crowns FusionTable
+   *    2. MHCT CrownCounts BigQuery DB
    *
    *  Each unique instance of data is imported, provided
    *    A) It has a different "Last Seen" than the member's existing "Last Seen" data.
    *      or
    *    B) It has been a week since the last time the member had a new record entered.
    *
-   *  Returns null only if memberSet has no IDs, or all of the IDs have no associated record data in the MHCC Crowns DB FusionTable.
+   *  Returns null only if memberSet has no IDs, or all of the IDs have no associated record data in the various tables.
    *  otherwise, returns a uid-indexed Object with the database's maximum values for seen, touched, and crown data, and at least 1
    *  crown snapshot for which a full record needs to be constructed.
    *
@@ -537,16 +535,17 @@ function UpdateDatabase()
     }
     return htData;
   }
-  /** Nested function which handles querying @devjacksmith's "MH Latest Crowns" FusionTable and constructing the expected data object.
+  /**
+   * Nested function which handles querying crown counts collected by the MHCT extension and constructing the expected data object.
+   * Now with more BigQuery!
    * @param {string} uids  A comma-joined string of member identifiers for whom to request catch totals.
    * @return {Object <string, CrownSnapshot>} A UID-indexed object with the latest known crown counts for the input members.
    */
   function QueryJacksData_(uids)
   {
-    // Jack provides a queryable FusionTable which may or may not have data for the users in question.
-    // His fusiontable is unique on snuid - each person has only one record.
+    // MHCT provides a BigQuery table which may or may not have data for the users in question.
+    // The table *should* be unique on `snuid`, but this is not a guarantee.
     // snuid | timestamp (seconds UTC) | bronze | silver | gold | platinum | diamond
-    const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
     const resp = bq_readMHCTCrowns_(uids.split(','));
     const records = resp.rows;
@@ -575,7 +574,7 @@ function UpdateDatabase()
         seen: record[indices.timestamp] * 1000
       };
 
-      // Since not all FusionTable records have values for these columns, we need to coerce them to a valid number.
+      // Coerce possibly-missing diamond and platinum values to a valid number.
       var platCount = parseInt(record[indices.platinum], 10);
       var diamondCount = parseInt(record[indices.diamond], 10);
       // Add platinum and diamond crowns to the gold tally. TODO: record these separately.
