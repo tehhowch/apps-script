@@ -174,7 +174,7 @@ function UpdateDatabase()
     const newRecords = [];
     if (Object.keys(newMemberData).length)
     {
-      const existing = _fetchExistingRecords_(newMemberData);
+      const existing = _fetchExistingRecords_();
       if (!existing || !existing.records || !existing.indices)
         throw new Error("Failed to obtain stored records");
       _addRecords_(newMemberData, existing.records, existing.indices, newRecords);
@@ -209,20 +209,16 @@ function UpdateDatabase()
    * @property {CrownSnapshot[]} newData Crown snapshots that should be formed into records and uploaded.
    */
   /**
-   * Nested function which handles obtaining the previously known data for the given partial records.
-   * Returns an object with the full record referenced for a given member in the partial records, indexed by UID.
+   * Nested function which handles obtaining the previously known data for all members, and
+   * packages the full record into a UID-indexed object for easy retrieval.
    *
-   * @param {Object <string, MemberUpload>} partials UID-indexed object with the timestamps needed to query for the previous stored record.
    * @return {{records: Object <string, (string|number)[]>, indices: Object <string, number>}} Object containing UID-indexed full records, and the indices needed to order values in a new record.
    */
-  function _fetchExistingRecords_(partials)
+  function _fetchExistingRecords_()
   {
-    if (!partials || !Object.keys(partials).length)
-      return null;
-
     const resp = bq_getLatestRows_('Core', 'Crowns');
     const records = resp.rows;
-    // TODO: use columns to set indices appropriately
+
     // Collect the full records into a UID-indexed Object (for rapid accessing).
     const headers = resp.columns.map(function (column) { return column.toLowerCase(); });
     const labels = ["member", "uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
@@ -295,7 +291,7 @@ function UpdateDatabase()
         else
           newRecord[indices.lastcrown] = (i > 0)
             ? fullRecords[fullRecords.length - 1][indices.lastcrown]
-            : dbr[indices.lastcrown];
+            : parseInt(dbr[indices.lastcrown], 10);
 
         // Compute a new "Squirrel" rating (the ratings may have changed even if the member's crowns did not).
         for (var k = 0; k < aRankTitle.length; ++k)
