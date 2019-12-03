@@ -671,7 +671,7 @@ function UpdateScoreboard()
 
   // To build the scoreboard....
   // 1) Store the most recent snapshots of all members on SheetDb
-  if (!saveMyDb_(wb, bq_getLatestRows_().rows))
+  if (!saveMyDb_(wb, bq_getLatestRows_('Core', 'Crowns').rows))
     throw new Error('Unable to save snapshots retrieved from crown database');
 
   // 2) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
