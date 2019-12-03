@@ -4,10 +4,8 @@
 
 // #region query
 /**
- *
+ * Workhorse function for performing a fully-formed StandardSQL query
  * @param {string} sql The query to execute on a table in this project
- * @param {string} dataset the dataset name containing the table to query
- * @param {string} table the table to query against
  * @returns {{ rows: Array<(string|number)[]>, columns: string[] }} Query results (rows) and labels (cols)
  */
 function bq_querySync_(sql, dataset, table)
@@ -30,10 +28,11 @@ function bq_querySync_(sql, dataset, table)
   var pages = 1;
   console.log({
     message: 'Query Completed',
-    job: job,
+    submitted: job,
+    received: queryJob,
     cacheHit: queryResult.cacheHit,
-    resultSize: queryResult.totalRows,
-    querySize: queryResult.totalBytesProcessed,
+    resultCount: queryResult.totalRows,
+    queryBytes: queryResult.totalBytesProcessed,
     hasPages: !!queryResult.pageToken,
     firstResult: queryResult.rows ? queryResult.rows[0] : null
   });
@@ -50,11 +49,15 @@ function bq_querySync_(sql, dataset, table)
   }
   if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
   return {
-    rows: results.map(function (row) { return row.f.map(function (col) { return col.v; })}),
     columns: headers,
+    rows: results.map(function (row) { return row.f.map(function (col) { return col.v; })}),
   };
 }
 
+/**
+ * @param {number} [start] The offset into the member list to retreive
+ * @param {number} [limit] The maximum number of members to retrieve
+ */
 function bq_getMemberBatch_(start, limit)
 {
   const sql = 'SELECT Member, UID FROM `' + bqKey + '.Core.Members` ORDER BY Member ASC';
@@ -94,14 +97,38 @@ function bq_getLatestRows_(dataset, table)
   return latestRows;
 }
 
-function bq_getLatestBatch_(dataset, table, uids)
+/**
+ * Query the given table for the per-uid max values of the LastSeen, LastCrown, and LastTouched columns
+ * @param {string} dataset
+ * @param {string} table
+ * @returns {[string, number, number, number][]}
+ */
+function bq_getLatestTimes_(dataset, table)
 {
   const tableId = bqKey + '.' + dataset + '.' + table;
-  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '`'
-      + ' WHERE UID IN ("' + uids.join('","') + '") GROUP BY UID';
+  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '` GROUP BY UID';
   return bq_querySync_(sql, dataset, table).rows;
 }
 
+/**
+ * Get the per-uid max values of LastSeen, LastCrown, and LastTouched columns for the given users only.
+ * @param {string} dataset
+ * @param {string} table
+ * @param {string[]} uids
+ */
+function bq_getLatestBatch_(dataset, table, uids)
+{
+  const batchHash = uids.reduce(function (hash, uid) {
+    hash[uid] = true;
+    return hash;
+  }, {});
+  // To maximize query cache usage, just query everything and filter locally.
+  const allMemberTimes = bq_getLatestTimes_(dataset, table);
+  return allMemberTimes.filter(function (row) { return batchHash[row[0]]; });
+}
+// #endregion
+
+// #region metadata
 /**
  * @param {string} dataset
  * @param {string} table
@@ -114,6 +141,12 @@ function bq_getTableColumns_(dataset, table)
     return colSchema.name;
   });
 }
+
+function bq_getTableRowCount_(dataset, table)
+{
+  const metadata = Bigquery.Tables.get(bqKey, dataset, table);
+  return parseInt(metadata.numRows, 10);
+}
 // #endregion
 
 
@@ -121,7 +154,7 @@ function bq_getTableColumns_(dataset, table)
 /**
  * Populates the BigQuery table associated with MHCC Members with the current rows of the respective FusionTable
  */
-function populateUserTable()
+function bq_populateUserTable()
 {
   const config = {
     projectId: bqKey,
@@ -129,11 +162,11 @@ function populateUserTable()
     tableId: 'Members'
   };
 
-  const insertJob = insertTableData_(getUserBatch_(0, 100000), config);
+  const insertJob = _insertTableData_(getUserBatch_(0, 100000), config);
   return insertJob;
 }
 
-function addCrownSnapshots_(newCrownData)
+function bq_addCrownSnapshots_(newCrownData)
 {
   const config = {
     projectId: bqKey,
@@ -141,11 +174,11 @@ function addCrownSnapshots_(newCrownData)
     tableId: 'Crowns',
   };
 
-  const insertJob = insertTableData_(newCrownData, config);
+  const insertJob = _insertTableData_(newCrownData, config);
   return insertJob;
 }
 
-function addRankSnapshots_(newRankData)
+function bq_addRankSnapshots_(newRankData)
 {
   const config = {
     projectId: bqKey,
@@ -153,7 +186,7 @@ function addRankSnapshots_(newRankData)
     tableId: 'Ranks',
   };
 
-  const insertJob = insertTableData_(newRankData, config);
+  const insertJob = _insertTableData_(newRankData, config);
   return insertJob;
 }
 
@@ -163,7 +196,7 @@ function addRankSnapshots_(newRankData)
  * @param {(string|number)[][]} data FusionTable data as a 2D javascript array
  * @param {{projectId: string, datasetId: string, tableId: string}} config Description of the target table
  */
-function insertTableData_(data, config)
+function _insertTableData_(data, config)
 {
   const dataAsCSV = array2CSV_(data);
   const dataAsBlob = Utilities.newBlob(dataAsCSV, "application/octet-stream");
@@ -173,11 +206,7 @@ function insertTableData_(data, config)
   job = {
     configuration: {
       load: {
-        destinationTable: {
-          projectId: config.projectId,
-          datasetId: config.datasetId,
-          tableId: config.tableId
-        },
+        destinationTable: config,
         // Never create this table via the job.
         createDisposition: 'CREATE_NEVER',
         // Overwrite this table's contents. (default = WRITE_APPEND)
@@ -188,5 +217,37 @@ function insertTableData_(data, config)
   job = Bigquery.Jobs.insert(job, config.projectId, dataAsBlob);
   console.log({message: "Created job " + job.id, jobData: job });
   return job;
+}
+// #endregion
+
+// #region utility
+/**
+ * Construct a CSV representation of an array. Adds quoting and escaping as needed.
+ * @param  {Array[]} myArr A 2D array to be converted into a CSV string
+ * @return {string} A string representing the rows of the input array, joined by CRLF.
+ */
+function array2CSV_(myArr)
+{
+  return myArr.map(_row4CSV_).join("\r\n");
+
+  /**
+ * Ensure the given value is CSV-compatible, by escaping special characters and adding double-quotes if needed.
+ * @param  {any} value An array element to be encapsulated into a CSV string.
+ * @return {string} A string that will interpreted as a single element by a CSV reader.
+ */
+  function _val4CSV_(value)
+  {
+    const str = (typeof value === 'string') ? value : value.toString();
+    if (str.indexOf(',') !== -1 || str.indexOf("\n") !== -1 || str.indexOf('"') !== -1)
+      return '"' + str.replace(/"/g, '""') + '"';
+    else
+      return str;
+  }
+  /**
+ * Construct a CSV representation of in the input array.
+ * @param  {Array} row A 1-D array of elements which may be strings or other types which support toString().
+ * @return {string} A string that will be interpreted as a single row by a CSV reader.
+ */
+  function _row4CSV_(row) { return row.map(_val4CSV_).join(","); }
 }
 // #endregion

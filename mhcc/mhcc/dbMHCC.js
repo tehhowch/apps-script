@@ -122,7 +122,7 @@ function UpdateDatabase()
   const wb = SpreadsheetApp.getActive(), store = PropertiesService.getScriptProperties();
   const props = store.getProperties();
   // Database records count (may be larger than the written db on SheetDb)
-  var numMembers = getTotalRowCount_(utbl);
+  var numMembers = bq_getTableRowCount_('Core', 'Members');
   // The last queried member number indicates where to begin new update queries.
   var lastRan = props.lastRan * 1 || 0;
 
@@ -149,7 +149,7 @@ function UpdateDatabase()
       return;
 
     // allMembers is an array of [Name, UID]
-    const allMembers = getUserBatch_(0, numMembers),
+    const allMembers = bq_getMemberBatch_(),
       newMemberData = {};
     var updateLastRan = false;
 
@@ -179,7 +179,7 @@ function UpdateDatabase()
         throw new Error("Failed to obtain stored records");
       _addRecords_(newMemberData, existing.records, existing.indices, newRecords);
       if (newRecords.length > 0)
-        ftBatchWrite_(newRecords, ftid);
+        bq_addCrownSnapshots_(newRecords);
     }
 
     if (updateLastRan)
@@ -675,7 +675,7 @@ function UpdateScoreboard()
 
   // To build the scoreboard....
   // 1) Store the most recent snapshots of all members on SheetDb
-  if (!saveMyDb_(wb, getLatestRows_()))
+  if (!saveMyDb_(wb, bq_getLatestRows_().rows))
     throw new Error('Unable to save snapshots retrieved from crown database');
 
   // 2) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
@@ -723,7 +723,7 @@ function UpdateScoreboard()
     return [record[0], String(record[1]), record[2], record[10], record[11], record[8]];
   });
   if (rankUpload.length && rankUpload[0].length === 6)
-    ftBatchWrite_(rankUpload, rankTableId);
+    bq_addRankSnapshots_(rankUpload);
 
   // Provide estimate of the next new scoreboard posting and the time this one was posted.
   _estimateNextScoreboard('Members', 'I23', 'H23', startTime);
