@@ -8,7 +8,7 @@
  * @param {string} sql The query to execute on a table in this project
  * @returns {{ rows: Array<(string|number)[]>, columns: string[] }} Query results (rows) and labels (cols)
  */
-function bq_querySync_(sql, dataset, table)
+function bq_querySync_(sql)
 {
   var job = Bigquery.newJob();
   job = {
@@ -19,11 +19,11 @@ function bq_querySync_(sql, dataset, table)
       }
     }
   };
-  const queryJob = Bigquery.Jobs.insert(job, bqKey);
-  var queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob.jobReference.jobId);
+  const queryJob = Bigquery.Jobs.insert(job, projectKey);
+  var queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
   while (!queryResult.jobComplete)
   {
-    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob.jobReference.jobId);
+    queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
   }
   var pages = 1;
   console.log({
@@ -43,7 +43,7 @@ function bq_querySync_(sql, dataset, table)
   Array.prototype.push.apply(results, queryResult.rows);
   while (queryResult.pageToken)
   {
-    queryResult = Bigquery.Jobs.getQueryResults(bqKey, queryJob.jobReference.jobId, { pageToken: queryResult.pageToken });
+    queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId, { pageToken: queryResult.pageToken });
     Array.prototype.push.apply(results, queryResult.rows);
     ++pages;
   }
@@ -60,8 +60,9 @@ function bq_querySync_(sql, dataset, table)
  */
 function bq_getMemberBatch_(start, limit)
 {
-  const sql = 'SELECT Member, UID FROM Core.Members ORDER BY Member ASC';
-  const members = bq_querySync_(sql, 'Core', 'Members').rows;
+  const tableId = dataProject + '.Core.Members';
+  const sql = 'SELECT Member, UID FROM `' + tableId + '` ORDER BY Member ASC';
+  const members = bq_querySync_(sql).rows;
   if (start === undefined && limit === undefined)
     return members;
 
@@ -77,20 +78,28 @@ function bq_getMemberBatch_(start, limit)
  */
 function bq_readMHCTCrowns_(uids)
 {
-  const sql = 'SELECT * FROM MHCT.CrownCounts WHERE snuid IN ("' + uids.join('","') + '")';
-  return bq_querySync_(sql, 'MHCT', 'CrownCounts');
+  // const tableId = dataProject + '.MHCT.CrownCounts';
+  const tableId = mhctTable;
+  const sql = 'SELECT * FROM `' + tableId + '` WHERE snuid IN ("' + uids.join('","') + '")';
+  return bq_querySync_(sql);
 }
 
+/**
+ * Obtain the latest modified rows from the given table. The table MUST have keys UID, LastTouched
+ * MAYBE: pass in the 2nd required column, to allow use on other tables.
+ * @param {string} dataset The dataProject's dataset to query
+ * @param {string} table the table name to query in the given dataset
+ */
 function bq_getLatestRows_(dataset, table)
 {
   // Use BQ to do the per-member UID-LastTouched limiting via an INNER JOIN:
-  const tableId = dataset + '.' + table;
+  const tableId = [dataProject, dataset, table].join('.');
   // Require the order of returned columns to be the same as that needed to upload
   // to this table.
-  const columns = bq_getTableColumns_(dataset, table).join(", ");
-  const sql = 'SELECT ' + columns + ' FROM ' + tableId + ' JOIN (SELECT UID, MAX(LastTouched) AS LastTouched FROM ' + tableId + ' GROUP BY UID ) USING (LastTouched, UID)'
+  const columns = bq_getTableColumns_(dataProject, dataset, table).join(', ');
+  const sql = 'SELECT ' + columns + ' FROM `' + tableId + '` JOIN (SELECT UID, MAX(LastTouched) AS LastTouched FROM `' + tableId + '` GROUP BY UID ) USING (LastTouched, UID)'
 
-  const latestRows = bq_querySync_(sql, dataset, table);
+  const latestRows = bq_querySync_(sql);
   if (!latestRows || !latestRows.rows.length) throw new Error('Unable to retrieve latest records for all users');
   return latestRows;
 }
@@ -103,9 +112,9 @@ function bq_getLatestRows_(dataset, table)
  */
 function bq_getLatestTimes_(dataset, table)
 {
-  const tableId = dataset + '.' + table;
-  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM ' + tableId + ' GROUP BY UID';
-  return bq_querySync_(sql, dataset, table).rows;
+  const tableId = [dataProject, dataset, table].join('.');
+  const sql = 'SELECT UID, MAX(LastSeen), MAX(LastCrown), MAX(LastTouched) FROM `' + tableId + '` GROUP BY UID';
+  return bq_querySync_(sql).rows;
 }
 
 /**
@@ -128,21 +137,28 @@ function bq_getLatestBatch_(dataset, table, uids)
 
 // #region metadata
 /**
- * @param {string} dataset
- * @param {string} table
+ * @param {string} project Google Cloud Project in which the dataset and table reside
+ * @param {string} dataset Dataset in which the table resides
+ * @param {string} table Table name to request all column names for
  * @returns {string[]}
  */
-function bq_getTableColumns_(dataset, table)
+function bq_getTableColumns_(project, dataset, table)
 {
-  const metadata = Bigquery.Tables.get(bqKey, dataset, table);
+  const metadata = Bigquery.Tables.get(project, dataset, table);
   return metadata.schema.fields.map(function (colSchema) {
     return colSchema.name;
   });
 }
 
-function bq_getTableRowCount_(dataset, table)
+/**
+ *
+ * @param {string} project Google Cloud Project in which the dataset and table reside
+ * @param {string} dataset Name of the dataset that contains the table.
+ * @param {string} table Table name to query row count for
+ */
+function bq_getTableRowCount_(project, dataset, table)
 {
-  const metadata = Bigquery.Tables.get(bqKey, dataset, table);
+  const metadata = Bigquery.Tables.get(project, dataset, table);
   return parseInt(metadata.numRows, 10);
 }
 // #endregion
@@ -150,24 +166,13 @@ function bq_getTableRowCount_(dataset, table)
 
 // #region upload
 /**
- * Populates the BigQuery table associated with MHCC Members with the current rows of the respective FusionTable
+ * Upload the given records to the Crown Records table.
+ * @param {(string|number)[][]} newCrownData array of crown snapshot records to upload
  */
-function bq_populateUserTable()
-{
-  const config = {
-    projectId: bqKey,
-    datasetId: 'Core',
-    tableId: 'Members'
-  };
-
-  const insertJob = _insertTableData_(getUserBatch_(0, 100000), config);
-  return insertJob;
-}
-
 function bq_addCrownSnapshots_(newCrownData)
 {
   const config = {
-    projectId: bqKey,
+    projectId: dataProject,
     datasetId: 'Core',
     tableId: 'Crowns',
   };
@@ -176,10 +181,14 @@ function bq_addCrownSnapshots_(newCrownData)
   return insertJob;
 }
 
+/**
+ * Upload the given Rank data to the Rank Records table.
+ * @param {(string|number)[][])} newRankData array of rank data to upload
+ */
 function bq_addRankSnapshots_(newRankData)
 {
   const config = {
-    projectId: bqKey,
+    projectId: dataProject,
     datasetId: 'Core',
     tableId: 'Ranks',
   };
@@ -212,7 +221,7 @@ function _insertTableData_(data, config)
       },
     }
   };
-  job = Bigquery.Jobs.insert(job, config.projectId, dataAsBlob);
+  job = Bigquery.Jobs.insert(job, projectKey, dataAsBlob);
   console.log({
     message: "Created job " + job.id,
     jobData: job,
@@ -235,10 +244,10 @@ function array2CSV_(myArr)
   return myArr.map(_row4CSV_).join("\r\n");
 
   /**
- * Ensure the given value is CSV-compatible, by escaping special characters and adding double-quotes if needed.
- * @param  {any} value An array element to be encapsulated into a CSV string.
- * @return {string} A string that will interpreted as a single element by a CSV reader.
- */
+   * Ensure the given value is CSV-compatible, by escaping special characters and adding double-quotes if needed.
+   * @param  {any} value An array element to be encapsulated into a CSV string.
+   * @return {string} A string that will interpreted as a single element by a CSV reader.
+   */
   function _val4CSV_(value)
   {
     const str = (typeof value === 'string') ? value : value.toString();
@@ -248,10 +257,10 @@ function array2CSV_(myArr)
       return str;
   }
   /**
- * Construct a CSV representation of in the input array.
- * @param  {Array} row A 1-D array of elements which may be strings or other types which support toString().
- * @return {string} A string that will be interpreted as a single row by a CSV reader.
- */
+   * Construct a CSV representation of in the input array.
+   * @param  {Array} row A 1-D array of elements which may be strings or other types which support toString().
+   * @return {string} A string that will be interpreted as a single row by a CSV reader.
+   */
   function _row4CSV_(row) { return row.map(_val4CSV_).join(","); }
 }
 // #endregion

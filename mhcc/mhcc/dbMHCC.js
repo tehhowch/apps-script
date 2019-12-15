@@ -122,7 +122,7 @@ function UpdateDatabase()
   const wb = SpreadsheetApp.getActive(), store = PropertiesService.getScriptProperties();
   const props = store.getProperties();
   // Database records count (may be larger than the written db on SheetDb)
-  var numMembers = bq_getTableRowCount_('Core', 'Members');
+  var numMembers = bq_getTableRowCount_(dataProject, 'Core', 'Members');
   // The last queried member number indicates where to begin new update queries.
   var lastRan = props.lastRan * 1 || 0;
 
