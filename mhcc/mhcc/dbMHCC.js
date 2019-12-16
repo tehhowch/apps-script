@@ -393,7 +393,7 @@ function UpdateDatabase()
       // If this member's records as held by the datasources are different than the stored data, stage them.
       var last_stored = data[uid].storedInfo.lastSeen || 0;
       var elapsed_since_storage = (now - (data[uid].storedInfo.lastTouched || 0)) / (1000 * 86400);
-      var insert_anyway = elapsed_since_storage > 7;
+      var insert_anyway = elapsed_since_storage > 30;
       for (var ds = 0; ds < datasourceData.length; ++ds)
       {
         var dsr = datasourceData[ds][uid];
@@ -401,7 +401,7 @@ function UpdateDatabase()
           continue;
         // Is this a new record, relative to what we have stored? Or has it been a
         // long time since we stored a record for this member (new or otherwise)?
-        if (dsr.seen > last_stored || insert_anyway)
+        if (dsr.seen > last_stored || (insert_anyway && dsr.seen === last_stored))
           data[uid].collected.push(dsr);
       }
       // If this member is currently absent from all datasources (i.e. the one with the data is

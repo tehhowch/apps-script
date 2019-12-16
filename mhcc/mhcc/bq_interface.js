@@ -36,9 +36,22 @@ function bq_querySync_(sql)
     hasPages: !!queryResult.pageToken,
     firstResult: queryResult.rows ? queryResult.rows[0] : null
   });
+  // Return the headers to the caller.
   const headers = [];
   Array.prototype.push.apply(headers, queryResult.schema.fields
     .map(function (schemaField) { return schemaField.name; }));
+
+  // Compute type-coercion functions from the column schema.
+  const formatters = queryResult.schema.fields.map(function (colSchema) {
+    var type = colSchema.type.toLowerCase();
+    if (type === 'float' || type === 'float64') {
+      return { fn: function (value) { return parseFloat(value); } };
+    } else if (type === 'numeric' || type === 'integer' || type === 'int64' || type === 'integer64') {
+      return { fn: function (value) { return parseInt(value, 10); } };
+    } else {
+      return { fn: function (value) { return value; } };
+    }
+  });
   const results = [];
   Array.prototype.push.apply(results, queryResult.rows);
   while (queryResult.pageToken)
@@ -50,7 +63,11 @@ function bq_querySync_(sql)
   if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
   return {
     columns: headers,
-    rows: results.map(function (row) { return row.f.map(function (col) { return col.v; })}),
+    rows: results.map(function (row) { return row.f.map(
+      function (col, idx) {
+        return formatters[idx].fn(col.v);
+      });
+    }),
   };
 }
 
@@ -80,7 +97,7 @@ function bq_readMHCTCrowns_(uids)
 {
   // const tableId = dataProject + '.MHCT.CrownCounts';
   const tableId = mhctTable;
-  const sql = 'SELECT * FROM `' + tableId + '` WHERE snuid IN ("' + uids.join('","') + '")';
+  const sql = 'SELECT * FROM `' + tableId + '` WHERE snuid IN ("' + uids.join('","') + '") ORDER BY timestamp ASC';
   return bq_querySync_(sql);
 }
 
