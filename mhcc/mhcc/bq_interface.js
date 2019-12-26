@@ -28,7 +28,6 @@ function bq_querySync_(sql)
   var pages = 1;
   console.log({
     message: 'Query Completed',
-    submitted: job,
     received: queryJob,
     cacheHit: queryResult.cacheHit,
     resultCount: queryResult.totalRows,
@@ -95,10 +94,20 @@ function bq_getMemberBatch_(start, limit)
  */
 function bq_readMHCTCrowns_(uids)
 {
-  // const tableId = dataProject + '.MHCT.CrownCounts';
-  const tableId = mhctTable;
-  const sql = 'SELECT * FROM `' + tableId + '` WHERE snuid IN ("' + uids.join('","') + '") ORDER BY timestamp ASC';
-  return bq_querySync_(sql);
+  const tableId = dataProject + '.MHCT.CrownCounts';
+  const sql = 'SELECT * FROM `' + tableId + '` ORDER BY timestamp ASC';
+  const allResults = bq_querySync_(sql);
+
+  // Locally filter results, to maximize query cache usage.
+  const batchHash = uids.reduce(function (hash, uid) {
+    hash[uid] = true;
+    return hash;
+  }, {});
+  const snuidCol = allResults.columns.indexOf('snuid');
+  return {
+    rows: allResults.rows.filter(function (row) { return batchHash[row[snuidCol]]; }),
+    columns: allResults.columns,
+  };
 }
 
 /**
