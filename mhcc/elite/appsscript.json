@@ -6,12 +6,13 @@
       "serviceId": "fusiontables",
       "version": "v2"
     }, {
-      "userSymbol": "BigQuery",
+      "userSymbol": "Bigquery",
       "serviceId": "bigquery",
       "version": "v2"
     }]
   },
   "oauthScopes": [
+    "https://www.googleapis.com/auth/bigquery",
     "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/spreadsheets.currentonly",
     "https://www.googleapis.com/auth/script.scriptapp",
