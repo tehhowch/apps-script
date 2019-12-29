@@ -23,8 +23,6 @@
  *    The only function that should be triggered is the "UpdateScoreboard" function
  */
 // @OnlyCurrentDoc
-var wb = SpreadsheetApp.getActive();
-
 /**
  * Create an administrative menu for spreadsheet editors.
  */
@@ -32,7 +30,7 @@ function onOpen()
 {
   const ui = SpreadsheetApp.getUi();
   const menu = ui.createMenu("Elite Admin");
-  menu.addItem("Update Member Info", "getSidebar");
+  // menu.addItem("Update Member Info", "getSidebar");
   menu.addItem("Update Scoreboard", "UpdateScoreboard");
   menu.addSeparator();
   const subMenu = ui.createMenu("Auth");
@@ -46,7 +44,9 @@ function onOpen()
 /**
  * Create a scoreboard update trigger for the given document
  */
-function createTrigger() {
+function createTrigger()
+{
+  const wb = SpreadsheetApp.getActive();
   const fnToTrigger = "UpdateScoreboard";
   const allTriggers = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
   const propTriggers = PropertiesService.getScriptProperties().getProperty("triggers");
@@ -68,6 +68,7 @@ function createTrigger() {
  */
 function removeTriggers()
 {
+  const wb = SpreadsheetApp.getActive();
   const userTriggers = ScriptApp.getUserTriggers(wb);
   const propTriggers = PropertiesService.getScriptProperties().getProperty("triggers");
   const knownTriggers = (propTriggers ? JSON.parse(propTriggers) : []);
@@ -88,6 +89,7 @@ function removeTriggers()
  */
 function revokeAuth()
 {
+  const wb = SpreadsheetApp.getActive();
   console.warn({ message: "User authorization revoked", userKey: Session.getTemporaryActiveUserKey() });
   wb.toast("Script authorization revoked. You will need to reauthorize this project (by attempting to run a function).");
   ScriptApp.invalidateAuth();
@@ -101,13 +103,14 @@ function UpdateScoreboard()
   const startTime = new Date().getTime();
   function CanUpdateScoreboard()
   {
-    var latestMHCC = getLatestRankTime_(mhccRankTable);
-    var latestElite = getLatestRankTime_(eliteRankTable);
+    var latestMHCC = bq_getLatestRankTime_('Core');
+    var latestElite = bq_getLatestRankTime_('Elite');
     return latestElite < latestMHCC;
   }
   if (!CanUpdateScoreboard())
     return;
 
+  const wb = SpreadsheetApp.getActive();
   const scoring = wb.getRangeByName('Scoring').getValues()
     .reduce(function (acc, row, i) {
       var key = i === 0 ? "gold" : (i === 1 ? "silver" : (i === 2 ? "bronze" : ""));
@@ -135,4 +138,122 @@ function UpdateScoreboard()
   sheet.getRange(6, 1, newData.length, newData[0].length).setValues(newData);
 
   console.log({message: "Scoreboard updated (" + newData.length + " rows)", elapsed: new Date().getTime() - startTime});
+}
+
+/**
+ * Compute the latest scoreboard rows using the most up-to-date information from the MHCC database.
+ * Submits the computed rows to the Elite Rank DB FusionTable for archiving.
+ * @param {{bronze: number, silver: number, gold: number}} scoreFor The number of points earned for a crown of each type
+ * @param {{gold: number, gs: number, total: number}} minimum The minimum crown counts needed of each type.
+ * @returns {Array[]} The ordered scoreboard rows, for spreadsheet serialization.
+ */
+function getLatestEliteScoreboardRows_(scoreFor, minimum)
+{
+  // Create an array of object data from the Fusion Tables row data.
+  const recordData = bq_getLatestMHCCRows_().map(function (mhcc)
+  {
+    // MHCC: [Name, UID, LastSeen, LastCrown, LastTouched, Bronze, Silver, Gold, MHCC, Squirrel]
+    var data = {
+      name: mhcc[0].toString(),
+      uid: mhcc[1].toString(),
+      link: ("https://www.mousehuntgame.com/profile.php?snuid=" + mhcc[1]),
+      seen: parseInt(mhcc[2], 10),
+      lastCrown: parseInt(mhcc[3], 10),
+      bronze: parseInt(mhcc[5], 10),
+      silver: parseInt(mhcc[6], 10),
+      gold: parseInt(mhcc[7], 10),
+      gs: 0,
+      total: 0,
+      points: 0,
+      comment: '',
+    };
+    data.gs = data.gold + data.silver;
+    data.total = data.gs + data.bronze;
+
+    if (data.gold < minimum.gold) {
+      data.comment = "Need " + (minimum.gold - data.gold) + " more Gold";
+      data.points = data.gold;
+    }
+    else if (data.gs < minimum.gs) {
+      data.comment = "Need " + (minimum.gs - data.gs) + " more Silver";
+      data.points = data.gold * 2;
+    }
+    else if (data.total < minimum.total) {
+      data.comment = "Need " + (minimum.total - data.total) + " more Bronze";
+      data.points = data.gold * 3 + data.silver;
+    }
+    else
+      data.points = data.gold * scoreFor.gold + data.silver * scoreFor.silver + data.bronze * scoreFor.bronze;
+
+    return data;
+  });
+  if (!recordData.length) throw new Error("Aborting Scoreboard update due to no retrieved MHCC records");
+
+  // Sort record objects by points, descending.
+  recordData.sort(function (a, b)
+  {
+    var pointDiff = b.points - a.points;
+    if (pointDiff) return pointDiff;
+
+    var goldDiff = b.gold - a.gold;
+    if (goldDiff) return goldDiff;
+
+    var gsDiff = b.gs - a.gs;
+    return (gsDiff ? gsDiff : b.total - a.total);
+  });
+
+  // Create & format the scoreboard records.
+  // TODO: Add hyperlink to Point/Rank history
+  const records = recordData.map(function (data)
+  {
+    return [
+      0,
+      data.name,
+      data.link,
+      '=HYPERLINK("' + data.link + '", "' + data.name.replace(/"/g, '""') + '")',
+      data.gold,
+      data.gs,
+      data.total,
+      data.points,
+      data.comment,
+      Utilities.formatDate(new Date(data.seen), "EST", "yyyy-MM-dd"),
+      Utilities.formatDate(new Date(data.lastCrown), "EST", "yyyy-MM-dd")
+    ];
+  });
+
+  // Assign the member ranking.
+  var rank = 0;
+  records.forEach(function (record) { record[0] = ++rank; });
+
+  try {
+    // Create the Rank DB submissions using the ranked records, and the non-formatted
+    // record data.
+    const rankTime = new Date().getTime();
+    const recordsObj = recordData.reduce(function (obj, data)
+    {
+      obj[data.uid] = data;
+      return obj;
+    }, {});
+    const submissions = records.map(function (record)
+    {
+      // [Name, UID, LastSeen, RankTime, Rank, Points, Comment]
+      var uid = record[2].slice(record[2].search("=") + 1).toString();
+      var obj = recordsObj[uid];
+      return [
+        obj.name,
+        uid,
+        obj.seen,
+        rankTime,
+        record[0],
+        obj.points,
+        obj.comment
+      ];
+    });
+    bq_addRankSnapshots_(submissions);
+  }
+  catch (err) {
+    console.warn({ message: "Unable to write to Elite Ranks table",
+        error: {msg: err.message, stack: err.stack.split("\n")} });
+  }
+  return records;
 }
