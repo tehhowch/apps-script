@@ -54,7 +54,7 @@ var numCustomTitles = 16;
 function onOpen(e)
 {
   e.source.addMenu('Administration', [
-    // { name: "Manage Members", functionName: "getSidebar" },
+    { name: "Manage Members", functionName: "getSidebar" },
     { name: "Perform Crown Update", functionName: "UpdateDatabase" },
   ]);
 }

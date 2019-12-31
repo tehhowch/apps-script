@@ -16,7 +16,7 @@
       <div id="linkdiv" class="row item">
         <label for="memberLink">Profile:</label>
         <input id="memberLink" name="memberLink" placeholder="https://www.mousehuntgame.com/profile.php?snuid=123"
-               type="url" class="data" onchange="requireValidation(this)" pattern=".*\/(hunter)?profile\.php\?snuid=\d+" required
+               type="url" class="data" onchange="requireValidation(this)" pattern=".*\/(hunter)?profile\.php\?snuid=\w+" required
                title="Enter a link to the person's profile">
       </div>
     </form>
@@ -111,7 +111,6 @@
 
   /**
    * Called by the onchange event for the name and link input elements.
-   * 
    * @param {HTMLInputElement} input The element needing validation.
    */
   function requireValidation(input) {
@@ -140,7 +139,6 @@
 
   /**
    * Validate the current inputs and then call Apps Script to check for that member's existence.
-   * 
    * @param {HTMLButtonElement} btn The button which called this validation routine.
    */
   function validateInput(btn) {
@@ -180,7 +178,6 @@
 
   /**
    * Onclick action which parses the memberLink form input, constructs the profile link, and opens it (for the administrator to doubly-validate).
-   * 
    * @param {HTMLButtonElement} btn The button which was clicked to call this routine.
    */
   function openProfileLink(btn) {
@@ -229,7 +226,6 @@
 
   /**
    * Configure common DOM elements, defaulting to reset the page.
-   * 
    * @param {boolean} [onTask] Control switch that indicates how the page should behave (e.g. load a particular menu based on STATUS).
    * @param {Object <string, string>} [strings] An object mapping between an element and the text it should display.
    */
@@ -260,31 +256,9 @@
       Array.from(document.getElementsByTagName("form")).forEach(function (form) { form.reset() });
     }
   }
-  /**
-   * @typedef {Object} OperationFeasibility
-   * @property {boolean} canDo Whether or not this operation is possible.
-   * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
-   * @property {ValidatedInput} request The validated form input sent to the operation checker.
-   * @property {string} log The log text to be displayed to the administrator (feedback).
-   * @property {string} report The report text to be displayed to the administrator (feedback).
-   * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
-   * @property {string} [uid] The validated MHCC identifier for the individual.
-   * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
-   * @property {string} [rowid] The table rowid for the MHCC member with the given MHCC identifier.
-   * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB FusionTables.
-   */
-
-  /**
-   * @typedef {Object} OperationReport
-   * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
-   * @property {OperationFeasibility} request Analysis of whether the requested operation is possible.
-   * @property {string} log The log text to be displayed to the administrator (feedback).
-   * @property {string} report The report text to be displayed to the administrator (feedback).
-   */
 
   /**
    * Success Handler for the validation queries.
-   * 
    * @param {OperationFeasibility} event The server's ruling on the request regarding a possible operation.
    * @param {HTMLButtonElement} btn The button or div that should be altered based on the operation feasibility.
    */
@@ -307,9 +281,9 @@
         if (STATUS.isAdd === true && event.isNameChange === true)
           OP.changeMemberName(document.forms["memberInfo"]);
         else if (STATUS.isAdd === true)
-          OP.addMemberToFusion(document.forms["memberInfo"]);
+          OP.addMemberToTable(document.forms["memberInfo"]);
         else if (STATUS.isRemove === true)
-          OP.delMemberFromFusion(document.forms["memberInfo"]);
+          OP.delMemberFromTable(document.forms["memberInfo"]);
         else
           console.log("Unknown status");
       }
@@ -326,7 +300,6 @@
   /**
    * Success Handler for the task queries. If the FusionTable request went well, then there is typically
    * no expected actions other than logging the output and clearing the form inputs.
-   * 
    * @param {OperationReport} event The server's feedback about the request to perform an operation.
    */
   function completedOperation(event) {
@@ -352,7 +325,6 @@
 
   /**
    * Failure Handler for generic failures. Only used if an exception was thrown and not handled.
-   * 
    * @param {Error} err An unhandled exception thrown by the Apps Script server code.
    * @param {HTMLButtonElement} btn The user object associated with the requested operation.
    */
@@ -366,7 +338,6 @@
 
   /**
    * Write the given object's log and/or report strings to the respective page elements.
-   * 
    * @param {{log?: string, report?: string}} event An object that has a "log" key or a "report" key, with an associated string to write.
    */
   function handlerLogging(event) {
@@ -397,12 +368,12 @@
     document.getElementById("log").textContent = STATUS.logs.join("\n");
   }
   /**
-   * Attempt to extract the MHCC identifier from the given link.
+   * Attempt to extract the MHCC identifier from the given link. (either digits or hg_<some_hash>)
    * @param {string} link A profile link to be parsed for a member identifier.
    * @returns {string} The parsed identifier from the link (or null if no valid identifier).
    */
   function getIdFromLink(link) {
-    const linkPattern = /(?:snuid=)(\d+)/;
+    const linkPattern = /(?:snuid=)(\w+)/;
     const match = linkPattern.exec(link);
     if (!match || match.length !== 2 || match[1].length < 5)
       return null;
