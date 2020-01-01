@@ -1,6 +1,3 @@
-var ftid = "";
-var rankTableId = "";
-
 /**
  * @typedef {Object} PlotData
  * @property {string[]} headers Headers for the column data.
@@ -15,7 +12,7 @@ var rankTableId = "";
  */
 /**
  * Server-side function which queries the various FusionTables to acquire the input users' crown and rank history.
- * 
+ *
  * @param  {string} uids The (comma-separated) UID string with specific members for whom the data snapshots are returned.
  * @param  {boolean} [blGroup] Optional parameter controlling GROUP BY or "return all" behavior. Generally true.
  * @return {UserData[]}  An array of user data objects, each containing at minimum "user", "crown", and "rank".
@@ -40,7 +37,7 @@ function getUserHistory_(uids, blGroup)
     "ORDER BY UID ASC, LastSeen ASC",
     "ORDER BY UID ASC, RankTime ASC"
   ];
-  
+
   const sqls = [];
   if (blGroup && selects.length === groups.length && groups.length === orders.length)
   {
@@ -77,6 +74,6 @@ function getUserHistory_(uids, blGroup)
     memberOutput.user = memberOutput["crown"].dataset.slice(-1)[0][0];
     output.push(memberOutput);
   });
-  
+
   return output;
 }

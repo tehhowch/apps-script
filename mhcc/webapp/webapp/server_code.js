@@ -1,8 +1,7 @@
 /**
  * Apps Script code to handle the webapp.
- * devlink (v):
- * publink (v):
  */
+
 /**
  * @typedef {Object} PostData
  * @property {number} length Length of the POST body (same as `contentLength`)
@@ -11,9 +10,9 @@
  */
 /**
  * Reference: https://developers.google.com/apps-script/guides/web#request_parameters
- * 
+ *
  * @typedef {Object} WebApp_HTTP_Object
- * @property {Object <string, string>} parameter An object of key/value pairs that correspond to the request parameters. Only the first value 
+ * @property {Object <string, string>} parameter An object of key/value pairs that correspond to the request parameters. Only the first value
  * is returned for parameters that have multiple values. (e.g. `{"name": "alice", "n": "1"}`)
  * @property {number} contentLength The length of the request body for POST requests, or -1 for GET requests
  * @property {string} queryString The value of the query string portion of the URL, or null if no query string is specified. (e.g. `name=alice&n=1&n=2`)
@@ -30,7 +29,7 @@
  */
 /**
  * Runs when the script's app link is clicked
- * 
+ *
  * @param {WebApp_HTTP_Object} e Object containing various properties. Each link will have at least one parameter labeled "uid", stored in e.parameter
  * @returns {HtmlOutput}  Returns a webpage described by assembling the various .html files
  */
@@ -44,7 +43,7 @@ function doGet(e)
 /**
  * Get the crown and rank data from FusionTables for use by the webapp's plotters.
  * Due to limitations on transferable data, date values are sent as millisecond timestamps
- * 
+ *
  * @param {string} uids The UID of the member(s) to query crown and rank history for.
  * @returns {string} JSON-stringified data object.
  */
@@ -52,7 +51,7 @@ function loadUserData(uids)
 {
   /**
    * Nested function which handles parsing the data for a given user into the properly-formatted webapp code.
-   * 
+   *
    * @param {Object <string, UserHistory>} outputToModify Data which will be stringified and sent to the webapp for display.
    * @param {UserData} userData Data received from the FusionTable which needs to be formatted for the webapp.
    */
@@ -102,7 +101,7 @@ function loadUserData(uids)
 
   if (!uids || uids === "" || uids === "undefined")
     throw new Error("No UID provided/loaded");
-  
+
   if (uids.split(",").length > 5)
     throw new Error("UI for comparing that many members at once is not available.");
 

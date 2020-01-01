@@ -1,0 +1,22 @@
+{
+  "timeZone": "America/Chicago",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "FusionTables",
+        "serviceId": "fusiontables",
+        "version": "v2"
+      },
+      {
+        "userSymbol": "Bigquery",
+        "serviceId": "bigquery",
+        "version": "v2"
+      }
+    ]
+  },
+  "webapp": {
+    "access": "ANYONE_ANONYMOUS",
+    "executeAs": "USER_DEPLOYING"
+  },
+  "exceptionLogging": "STACKDRIVER"
+}
