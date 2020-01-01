@@ -16,7 +16,7 @@
       <div id="linkdiv" class="row item">
         <label for="memberLink">Profile:</label>
         <input id="memberLink" name="memberLink" placeholder="https://www.mousehuntgame.com/profile.php?snuid=123"
-               type="url" class="data" onchange="requireValidation(this)" pattern=".*\/(hunter)?profile\.php\?snuid=\d+" required
+               type="url" class="data" onchange="requireValidation(this)" pattern=".*\/(hunter)?profile\.php\?snuid=\w+" required
                title="Enter a link to the person's profile">
       </div>
     </form>
@@ -26,7 +26,9 @@
         <input id="snuid" name="snuid" class="hidden">
       </form>
       <button id="validateButton" class="item" onclick="validateInput(this)">Validate Info</button>
-      <button id="taskButton" class="item" disabled></button>
+      <button id="taskButton" class="item" disabled>
+        <image id="executing" class="spinner hidden" src="https://i.imgur.com/jPjmb6A.gif"/>
+      </button>
       <br>
       <div><button id="clearAll" class="item" onclick="resetForms()">Reset</button></div>
     </div>
@@ -98,9 +100,21 @@
   input:invalid {
     background-color: pink;
   }
+
+  button {
+    position: relative;
+  }
+
+  .spinner {
+    position: absolute;
+    right: 5px;
+    margin-top: 0px;
+    width: auto;
+    height: 20px;
+  }
 </style>
 
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
 <script>
   var STATUS = {
     isAdd: false, isRemove: false, logs: []
@@ -111,7 +125,6 @@
 
   /**
    * Called by the onchange event for the name and link input elements.
-   *
    * @param {HTMLInputElement} input The element needing validation.
    */
   function requireValidation(input) {
@@ -122,7 +135,7 @@
       case "memberName":
         const TASK_BUTTON = document.getElementById("taskButton");
         TASK_BUTTON.setAttribute("disabled", "");
-        TASK_BUTTON.textContent = (STATUS.isAdd === true ? "Add Member" :
+        TASK_BUTTON.firstChild.textContent = (STATUS.isAdd === true ? "Add Member" :
           (STATUS.isRemove === true ? "Delete Member" :
             "Unknown (Please reload sidebar)"));
         break;
@@ -140,7 +153,6 @@
 
   /**
    * Validate the current inputs and then call Apps Script to check for that member's existence.
-   *
    * @param {HTMLButtonElement} btn The button which called this validation routine.
    */
   function validateInput(btn) {
@@ -180,7 +192,6 @@
 
   /**
    * Onclick action which parses the memberLink form input, constructs the profile link, and opens it (for the administrator to doubly-validate).
-   *
    * @param {HTMLButtonElement} btn The button which was clicked to call this routine.
    */
   function openProfileLink(btn) {
@@ -229,7 +240,6 @@
 
   /**
    * Configure common DOM elements, defaulting to reset the page.
-   *
    * @param {boolean} [onTask] Control switch that indicates how the page should behave (e.g. load a particular menu based on STATUS).
    * @param {Object <string, string>} [strings] An object mapping between an element and the text it should display.
    */
@@ -253,38 +263,16 @@
 
     // Set element text values.
     if (strings) for (var elem in strings) {
-      document.getElementById(elem).textContent = strings[elem];
+      document.getElementById(elem).firstChild.textContent = strings[elem];
     }
     else { /* Returning to "main menu" */
-      document.getElementById("actionTitle").textContent = "Pick an Action";
+      document.getElementById("actionTitle").firstChild.textContent = "Pick an Action";
       Array.from(document.getElementsByTagName("form")).forEach(function (form) { form.reset() });
     }
   }
-  /**
-   * @typedef {Object} OperationFeasibility
-   * @property {boolean} canDo Whether or not this operation is possible.
-   * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
-   * @property {ValidatedInput} request The validated form input sent to the operation checker.
-   * @property {string} log The log text to be displayed to the administrator (feedback).
-   * @property {string} report The report text to be displayed to the administrator (feedback).
-   * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
-   * @property {string} [uid] The validated MHCC identifier for the individual.
-   * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
-   * @property {string} [rowid] The table rowid for the MHCC member with the given MHCC identifier.
-   * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB FusionTables.
-   */
-
-  /**
-   * @typedef {Object} OperationReport
-   * @property {boolean} reset Whether the sidebar form will be cleared by sending this object.
-   * @property {OperationFeasibility} request Analysis of whether the requested operation is possible.
-   * @property {string} log The log text to be displayed to the administrator (feedback).
-   * @property {string} report The report text to be displayed to the administrator (feedback).
-   */
 
   /**
    * Success Handler for the validation queries.
-   *
    * @param {OperationFeasibility} event The server's ruling on the request regarding a possible operation.
    * @param {HTMLButtonElement} btn The button or div that should be altered based on the operation feasibility.
    */
@@ -294,12 +282,16 @@
     // If a member was found and this is an addition query, `isNameChange` will be set.
     // Otherwise, if the operation can be done, enable the task button (which is the user object).
     if (event.isNameChange === true) {
-      btn.textContent = "Update Member's Name";
+      btn.firstChild.textContent = "Update Member's Name";
     }
 
     if (event.canDo === true) {
       btn.removeAttribute("disabled");
       btn.onclick = function () {
+        // Display feedback on button click.
+        btn.setAttribute("disabled", "");
+        document.getElementById('executing').classList.remove('hidden');
+
         const OP = google.script.run
           .withSuccessHandler(completedOperation)
           .withFailureHandler(failedOperation)
@@ -307,11 +299,11 @@
         if (STATUS.isAdd === true && event.isNameChange === true)
           OP.changeMemberName(document.forms["memberInfo"]);
         else if (STATUS.isAdd === true)
-          OP.addMemberToFusion(document.forms["memberInfo"]);
+          OP.addMemberToTable(document.forms["memberInfo"]);
         else if (STATUS.isRemove === true)
-          OP.delMemberFromFusion(document.forms["memberInfo"]);
+          OP.delMemberFromTable(document.forms["memberInfo"]);
         else
-          console.log("Unknown status");
+          throw new Error("Unknown event status combination");
       }
     }
     else {
@@ -326,7 +318,6 @@
   /**
    * Success Handler for the task queries. If the FusionTable request went well, then there is typically
    * no expected actions other than logging the output and clearing the form inputs.
-   *
    * @param {OperationReport} event The server's feedback about the request to perform an operation.
    */
   function completedOperation(event) {
@@ -344,6 +335,7 @@
 
       // Restore the disabled status and default text of the task button.
       document.getElementById("taskButton").setAttribute("disabled", "");
+      document.getElementById('executing').classList.add('hidden');
     }
 
     // Write any messages that were included.
@@ -352,7 +344,6 @@
 
   /**
    * Failure Handler for generic failures. Only used if an exception was thrown and not handled.
-   *
    * @param {Error} err An unhandled exception thrown by the Apps Script server code.
    * @param {HTMLButtonElement} btn The user object associated with the requested operation.
    */
@@ -362,11 +353,11 @@
     console.log(err);
     if (btn && btn.id === "taskButton") btn.setAttribute("disabled", "");
     else console.log(btn);
+    document.getElementById('executing').classList.add('hidden');
   }
 
   /**
    * Write the given object's log and/or report strings to the respective page elements.
-   *
    * @param {{log?: string, report?: string}} event An object that has a "log" key or a "report" key, with an associated string to write.
    */
   function handlerLogging(event) {
@@ -397,7 +388,7 @@
     document.getElementById("log").textContent = STATUS.logs.join("\n");
   }
   /**
-   * Attempt to extract the MHCC identifier from the given link.
+   * Attempt to extract the MHCC identifier from the given link. (either digits or hg_<some_hash>)
    * @param {string} link A profile link to be parsed for a member identifier.
    * @returns {string} The parsed identifier from the link (or null if no valid identifier).
    */

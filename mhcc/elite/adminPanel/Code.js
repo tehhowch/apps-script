@@ -27,8 +27,7 @@ function doSideBar_() {
 
 /**
  * @typedef {Object} MemberQueryResult
- * @property {string} name The member's name, as found in the Elite MHCC Members FusionTable.
- * @property {string} rowid The rowid in the Elite MHCC Member's FusionTable that holds this member's record.
+ * @property {string} name The member's name, as found in the Elite MHCC Members Table.
  * @property {string} uid The member's Elite MHCC identifier.
  * @property {Error} [error] Any error that occurred during a search of the Members table for this member.
  */
@@ -43,8 +42,7 @@ function doSideBar_() {
  * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
  * @property {string} [uid] The validated Elite MHCC identifier for the individual.
  * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
- * @property {string} [rowid] The table rowid for the Elite MHCC member with the given identifier.
- * @property {number} [dataRows] The number of rows of data this member has in the Rank DB FusionTable.
+ * @property {number} [dataRows] The number of rows of data this member has in the Ranks table.
  */
 
 /**
@@ -74,41 +72,20 @@ function validateSidebarInput_(form)
 }
 
 /**
- * Query the designated FusionTable to acquire this member's information.
- *
- * @param {string} tableId The FusionTable ID to query
+ * Query the designated BigQuery table to acquire the member's information.
+ * @param {'Core'|'Elite'} datasetName The BigQuery dataset whose "Members" table should be checked.
  * @param {string} uid The identifier for this particular individual.
  * @returns {MemberQueryResult} If found, the individual's known name and table row. Otherwise, an error.
  */
-function getMemberInfo_(tableId, uid)
+function getMemberInfo_(datasetName, uid)
 {
-  const query = "SELECT Member, UID, ROWID FROM " + tableId + " WHERE UID = '" + uid + "'";
   // Get the member information from the user table.
-  /** @type {{kind: string, rows: [string, string, string][], columns: string[]}} */
-  var resp;
-  try { resp = FusionTables.Query.sqlGet(query); }
-  catch (err)
-  {
-    console.warn({ "message": "Failed GetMemberInfo(" + uid + ")", "errMsg": err, "stack": err.stack.trim().split("\n"),
-        "query": query, "tableId": tableId, "userKey": Session.getTemporaryActiveUserKey() });
-    throw err;
-  }
-  console.log({ "message": "GetMemberInfo(" + uid + ")", "ftResponse": resp, "ftQuery": query });
-  // Received a well-formed response.
-  if (resp.rows && resp.rows.length > 0)
-  {
-    const member = resp.rows;
-    // Find this specific member's row within all the rows that were returned.
-    const index = member.map(function (v) { return v[1]; }).indexOf(uid);
-    if (index > -1)
-      return { "name": member[index][0], "uid": uid, "rowid": member[index][2] };
-  }
-  // No members found in the response.
-  else
-    return {
-      "name": "", "uid": uid, "rowid": "",
-      "error": Error("No member found with uid='" + uid + "'")
-    };
+  const allMembers = bq_getMemberBatch_(datasetName);
+  const requestedMember = allMembers.filter(function (member) { return member[1] === uid; })[0];
+  return (requestedMember
+    ? { name: requestedMember[0].toString(), uid: uid }
+    : { name: '', uid: uid, error: Error("No member found with uid='" + uid + "'") }
+  );
 }
 
 /**
@@ -130,11 +107,11 @@ function canAdd(form)
   };
   if(input.isValid)
   {
-    const eliteMember = getMemberInfo_(eliteUserTable, input.uid);
+    const eliteMember = getMemberInfo_('Elite', input.uid);
     // If an error occurred (i.e. there is no member info), check if this is an MHCC member.
     if (eliteMember.error)
     {
-      const mhccMember = getMemberInfo_(mhccUserTable, input.uid);
+      const mhccMember = getMemberInfo_('Core', input.uid);
       if (mhccMember.error)
       {
         // Not a member of MHCC.
@@ -152,7 +129,6 @@ function canAdd(form)
       // We found an Elite member with this uid. If the name is different,
       // we can perform a name change operation. Otherwise, no operation is possible.
       output.isNameChange = input.name !== eliteMember.name;
-      output.rowid = eliteMember.rowid;
       output.currentName = eliteMember.name;
       output.uid = eliteMember.uid;
       if (output.isNameChange)
@@ -171,7 +147,7 @@ function canAdd(form)
 }
 
 /**
- * Query FT to determine if this member can be deleted.
+ * Inspect BigQuery to determine if this member can be deleted.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationFeasibility} An object instructing the sidebar how to react.
  */
@@ -188,7 +164,7 @@ function canDelete(form)
   };
   if(input.isValid)
   {
-    const member = getMemberInfo_(eliteUserTable, input.uid);
+    const member = getMemberInfo_('Elite', input.uid);
     if (member.error)
     {
       // No member was found with this uid.
@@ -203,10 +179,10 @@ function canDelete(form)
         output.log = "Member exists with name '" + member.name + "'. Names must match.";
       else
       {
-        output.rowid = member.rowid;
         // Get the count of rows in the Elite Rank table.
-        const query = "SELECT COUNT(UID) FROM " + eliteRankTable + " WHERE UID = '" + input.uid + "'";
-        try { output.dataRows = parseInt(FusionTables.Query.sqlGet(query).rows[0][0], 10); }
+        const eliteRankTable = [dataProject, 'Elite', 'Ranks'].join('.');
+        const query = "SELECT COUNT(UID) FROM `" + eliteRankTable + "` WHERE UID = '" + input.uid + "'";
+        try { output.dataRows = parseInt(bq_querySync_(query).rows[0][0], 10); }
         catch (e)
         {
           console.warn({ "message": "Failed to count Elite Rank DB rows for UID=" + input.uid, "tableId": eliteRankTable, "error": e });
@@ -225,7 +201,6 @@ function canDelete(form)
 
 /**
  * Method called by the sidebar after an "Add Member" operation validates as a name change, and the administrator OKs it.
- *
  * @param {SidebarForm} form The sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
@@ -240,16 +215,13 @@ function changeMemberName(form)
     "log": "",
     "report": ""
   };
-  console.log({ "message": "Name Change", "isNameChange": input.isNameChange, "can_do": input.canDo, "row": input.rowid, "misc": input });
-  if (input.canDo === true && input.isNameChange === true && input.rowid)
+  console.log({ "message": "Name Change", "isNameChange": input.isNameChange, "can_do": input.canDo, "misc": input });
+  if (input.canDo === true && input.isNameChange === true && input.request.uid)
   {
-    const sql = "UPDATE " + eliteUserTable + " SET Member = '" + input.request.name + "' WHERE ROWID = '" + input.rowid + "'";
-    try { FusionTables.Query.sql(sql); }
-    catch (e)
-    {
-      console.warn({ "message": "Failed name change for UID=" + input.request.uid, "userKey": Session.getTemporaryActiveUserKey(), "error": e });
-      throw e;
-    }
+    const eliteUserTable = [dataProject, 'Elite', 'Members'].join('.');
+    const sql = "UPDATE `" + eliteUserTable + "` SET Member = '" + input.request.name + "' WHERE UID = '" + input.request.uid + "'";
+    try { Bigquery.Jobs.query({ query: sql, useLegacySql: false }, dataProject); } // DML requires billing.
+    catch (e) { throw e; }
     output.report = "Name for uid='" + input.request.uid + "' is now '" + input.request.name + "'";
     output.reset = true;
   }
@@ -260,14 +232,13 @@ function changeMemberName(form)
 }
 
 /**
- * Add the given individual to the Elite Members FusionTable.
- *
+ * Add the given individual to the Elite Members table.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
-function addMemberToFusion(form)
+function addMemberToTable(form)
 {
-  // Revalidate input, in case of trickery.
+  // Revalidate input.
   const input = canAdd(form);
   /** @type {OperationReport} */
   const output = {
@@ -278,15 +249,12 @@ function addMemberToFusion(form)
   };
   if (input.canDo === true && !input.isNameChange)
   {
-    const memCsv = [[input.request.name, input.request.uid]];
-    const uUpload = Utilities.newBlob(array2CSV_(memCsv), "application/octet-stream");
-    try { FusionTables.Table.importRows(eliteUserTable, uUpload); }
-    catch (e)
-    {
-      console.warn({ "message": "Failed to add member to Elite Member DB", "tableId": eliteUserTable, "error": e });
-      throw e;
-    }
-
+    const job = _insertTableData_([[input.request.name, input.request.uid]], {
+      projectId: dataProject,
+      datasetId: 'Elite',
+      tableId: 'Members'
+    });
+    console.info({ message: 'Added Elite MHCC member ' + input.request.name, memberAddJob: job });
     output.report = "Added '" + input.request.name + "' to the database.";
     output.reset = true;
   }
@@ -298,14 +266,13 @@ function addMemberToFusion(form)
 }
 
 /**
- * Delete the given individual from the Elite Members, and Elite Rank DB FusionTables.
- *
+ * Delete the given individual from the Elite Members and Elite Rank tables.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
-function delMemberFromFusion(form)
+function delMemberFromTable(form)
 {
-  // Revalidate input, in case of trickery.
+  // Revalidate input.
   const input = canDelete(form);
   /** @type {OperationReport} */
   const output = {
@@ -314,25 +281,23 @@ function delMemberFromFusion(form)
     "log": "",
     "report": ""
   };
-  if (input.canDo === true && input.rowid)
+  if (input.canDo === true && input.request.uid)
   {
+    const eliteUserTable = [dataProject, 'Elite', 'Members'].join('.');
+    const eliteRankTable = [dataProject, 'Elite', 'Ranks'].join('.');
     const resp = [];
     try
     {
       [
-        "DELETE FROM " + eliteUserTable + " WHERE ROWID = '" + input.rowid + "'",
-        "DELETE FROM " + eliteRankTable + " WHERE UID = '" + input.request.uid + "'"
-      ].forEach(function (query) { resp.push(FusionTables.Query.sql(query)); });
+        "DELETE FROM `" + eliteUserTable + "` WHERE UID = '" + input.request.uid + "'",
+        "DELETE FROM `" + eliteRankTable + "` WHERE UID = '" + input.request.uid + "'"
+      ].forEach(function (query) { resp.push(Bigquery.Jobs.query({ query: query, useLegacySql: false }, dataProject)); });
       output.reset = true;
     }
-    catch (e)
-    {
-      console.warn({ "message": "Error while deleting member.", "error": e, "input": input });
-      throw e;
-    }
+    catch (e) { console.warn({ "message": "Error while deleting member.", "error": e, "input": input }); throw e; }
 
-    const r = { "message": "Deleted user '" + input.request.name + "' from the Member, Rank DB, and Crown DB FusionTables.", "input": input, "responses": resp };
-    console.log(r);
+    const r = { "message": "Deleted user '" + input.request.name + "' from the Member and Rank DB tables", "input": input, "responses": resp };
+    console.info(r);
     output.report = r.message;
   }
   else

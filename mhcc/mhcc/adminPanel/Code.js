@@ -134,7 +134,7 @@ function canAdd(form)
 }
 
 /**
- * Query FT to determine if this member can be deleted.
+ * Inspect BigQuery to determine if this member can be deleted.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationFeasibility} An object instructing the sidebar how to react.
  */
@@ -189,7 +189,6 @@ function canDelete(form)
 
 /**
  * Method called by the sidebar after an "Add Member" operation validates as a name change, and the administrator OKs it.
- *
  * @param {SidebarForm} form The sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
@@ -243,7 +242,7 @@ function addMemberToTable(form)
       datasetId: 'Core',
       tableId: 'Members'
     });
-    console.log({ message: 'Added MHCC Member ' + input.request.name, memberAddJob: job });
+    console.info({ message: 'Added MHCC member ' + input.request.name, memberAddJob: job });
     output.report = "Added '" + input.request.name + "' to the database.";
     output.reset = true;
   }
@@ -255,14 +254,13 @@ function addMemberToTable(form)
 }
 
 /**
- * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB FusionTables.
- *
+ * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB tables.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
 function delMemberFromTable(form)
 {
-  // Revalidate input, in case of trickery.
+  // Revalidate input.
   const input = canDelete(form);
   /** @type {OperationReport} */
   const output = {
@@ -289,7 +287,7 @@ function delMemberFromTable(form)
     catch (e) { console.warn({ "message": "Error while deleting member.", "error": e, "input": input }); throw e; }
 
     const r = { "message": "Deleted user '" + input.request.name + "' from the Member, Rank DB, and Crown DB tables.", "input": input, "responses": resp };
-    console.log(r);
+    console.info(r);
     output.report = r.message;
   }
   else
