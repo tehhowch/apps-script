@@ -26,7 +26,9 @@
         <input id="snuid" name="snuid" class="hidden">
       </form>
       <button id="validateButton" class="item" onclick="validateInput(this)">Validate Info</button>
-      <button id="taskButton" class="item" disabled></button>
+      <button id="taskButton" class="item" disabled>
+        <image id="executing" class="spinner hidden" src="https://i.imgur.com/jPjmb6A.gif"/>
+      </button>
       <br>
       <div><button id="clearAll" class="item" onclick="resetForms()">Reset</button></div>
     </div>
@@ -98,6 +100,18 @@
   input:invalid {
     background-color: pink;
   }
+
+  button {
+    position: relative;
+  }
+
+  .spinner {
+    position: absolute;
+    right: 5px;
+    margin-top: 0px;
+    width: auto;
+    height: 20px;
+  }
 </style>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
@@ -121,7 +135,7 @@
       case "memberName":
         const TASK_BUTTON = document.getElementById("taskButton");
         TASK_BUTTON.setAttribute("disabled", "");
-        TASK_BUTTON.textContent = (STATUS.isAdd === true ? "Add Member" :
+        TASK_BUTTON.firstChild.textContent = (STATUS.isAdd === true ? "Add Member" :
           (STATUS.isRemove === true ? "Delete Member" :
             "Unknown (Please reload sidebar)"));
         break;
@@ -249,10 +263,10 @@
 
     // Set element text values.
     if (strings) for (var elem in strings) {
-      document.getElementById(elem).textContent = strings[elem];
+      document.getElementById(elem).firstChild.textContent = strings[elem];
     }
     else { /* Returning to "main menu" */
-      document.getElementById("actionTitle").textContent = "Pick an Action";
+      document.getElementById("actionTitle").firstChild.textContent = "Pick an Action";
       Array.from(document.getElementsByTagName("form")).forEach(function (form) { form.reset() });
     }
   }
@@ -268,7 +282,7 @@
     // If a member was found and this is an addition query, `isNameChange` will be set.
     // Otherwise, if the operation can be done, enable the task button (which is the user object).
     if (event.isNameChange === true) {
-      btn.textContent = "Update Member's Name";
+      btn.firstChild.textContent = "Update Member's Name";
     }
 
     if (event.canDo === true) {
@@ -276,6 +290,8 @@
       btn.onclick = function () {
         // Display feedback on button click.
         btn.setAttribute("disabled", "");
+        document.getElementById('executing').classList.remove('hidden');
+
         const OP = google.script.run
           .withSuccessHandler(completedOperation)
           .withFailureHandler(failedOperation)
@@ -319,6 +335,7 @@
 
       // Restore the disabled status and default text of the task button.
       document.getElementById("taskButton").setAttribute("disabled", "");
+      document.getElementById('executing').classList.add('hidden');
     }
 
     // Write any messages that were included.
@@ -336,6 +353,7 @@
     console.log(err);
     if (btn && btn.id === "taskButton") btn.setAttribute("disabled", "");
     else console.log(btn);
+    document.getElementById('executing').classList.add('hidden');
   }
 
   /**
