@@ -5,9 +5,14 @@
 
 /**
  * TODO
- * - expose finding members within 5 ranks of the current UID's rank (to compare crowns & rank histories)
  * - support current fusiontable method's interface
+ * - batch-submit queries (to improve responsiveness)
+ * - split queries apart ("where UID = <val>" instead of "where UID IN (<vals)") to improve query caching
+ * - validate UIDs against member list prior to submission
+ * - allow displaying Elite ranking
+ * - expose finding members within 5 ranks of the current UID's rank (to compare crowns & rank histories)
  */
+
 // #region webapp-invoked methods
 /**
  * @typedef {Object} PlotData
@@ -21,10 +26,87 @@
  * @property {PlotData} crown History of the user's crown counts.
  * @property {PlotData} rank History of the user's rank within MHCC.
  */
+
+/**
+ * Server-side function which queries the various tables to acquire the input users' crown and rank history.
+ *
+ * @param  {string} uids The (comma-separated) UID string with specific members for whom the data snapshots are returned.
+ * @param  {boolean} [blGroup] Optional parameter controlling GROUP BY or "return all" behavior. Generally true.
+ * @return {UserData[]}  An array of user data objects, each containing at minimum "user", "crown", and "rank" properties.
+ */
+function getUserHistory_(uids, blGroup)
+{
+  if (!uids) throw new Error('No UID provided');
+  const queryData = _getBQData_(uids, blGroup);
+
+  // Organize the query data by its associated member.
+  const members = uids.split(",");
+  const output = members.reduce(function (arr, id) {
+    /** @type {UserData} */
+    const memberOutput = {
+      uid: id,
+      crown: null,
+      rank: null,
+      user: '',
+    };
+    Object.keys(queryData).forEach(function (dataType) {
+      const plotData = queryData[dataType]
+      const memberData = plotData.dataset.filter(function (row) { return row[0] === id; });
+      // Do not include the member's UID in the column data sent to the webapp.
+      memberOutput[dataType] = {
+        headers: plotData.headers.slice(1).map(function (colName) { return colName.replace(/_/g, ' '); }),
+        dataset: memberData.map(function (row) { return row.slice(1); }),
+      };
+    });
+    memberOutput.user = memberOutput.crown.dataset.slice(-1)[0][0];
+
+    arr.push(memberOutput);
+    return arr;
+  }, []);
+  return output;
+}
+
 // #endregion
 
 
 // #region query
+/**
+ * Get the requested data from BigQuery.
+ * @param {string} uids comma-separated UID string with specific members for whom the data snapshots are returned.
+ * @param {boolean} [blGroup] Optional parameter controlling GROUP BY or 'return all' behavior. Generally true.
+ */
+function _getBQData_(uids, blGroup) {
+  const queryConfig = [
+    {
+      label: 'crown', table: '`' + [dataProject, 'Core', 'Crowns'].join('.') + '`',
+      columns: 'UID, Member, LastSeen, Bronze, Silver, Gold, MHCC',
+      orderBy: 'UID ASC, LastSeen ASC',
+    },
+    {
+      label: 'rank', table: '`' + [dataProject, 'Core', 'Ranks'].join('.') + '`',
+      columns: 'UID, Member, LastSeen, MHCC_Crowns, Rank, RankTime',
+      orderBy: 'UID ASC, RankTime ASC'
+    },
+  ];
+  // Explicitly wrap UIDs in quotes for string parsing by BQ.
+  const where = 'WHERE UID IN ("' + uids.replace(/"|'/g, '').split(',').join('","') + '")';
+
+  const queries = queryConfig.map(function (config) {
+    const terms = ['SELECT', config.columns, 'FROM', config.table, where];
+    if (blGroup) terms.push('GROUP BY', config.columns);
+    terms.push(config.orderBy);
+    return { label: config.label, sql: terms.join(' ') };
+  });
+
+  /** @type {Object <string, PlotData> & { crown: PlotData, rank: PlotData }} */
+  const queryData = { crown: null, rank: null };
+  queries.forEach(function (config) {
+    const resp = bq_querySync_(config.sql);
+    queryData[config.label] = { "headers": resp.columns, "dataset": resp.rows };
+  });
+  return queryData
+}
+
 /**
  * Workhorse function for performing a fully-formed StandardSQL query
  * @param {string} sql The query to execute on a table in this project
@@ -45,7 +127,7 @@ function bq_querySync_(sql)
     cacheHit: queryResult.cacheHit,
     resultCount: queryResult.totalRows,
     queryBytes: queryResult.totalBytesProcessed,
-    firstResult: queryResult.rows ? queryResult.rows[0] : null
+    firstResult: queryResult.rows ? queryResult.rows[0] : []
   });
 
   // Return the headers and formatted results to the caller.
