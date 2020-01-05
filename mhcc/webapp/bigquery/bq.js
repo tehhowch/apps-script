@@ -32,38 +32,94 @@
  */
 function bq_querySync_(sql)
 {
-  var job = Bigquery.newJob();
-  job = {
-    configuration: {
-      query: {
-        query: sql,
-        useLegacySql: false,
-      }
-    }
-  };
-  const queryJob = Bigquery.Jobs.insert(job, projectKey);
-  var queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
-  while (!queryResult.jobComplete)
+  const queryJob = _bq_submitQuery_(sql);
+  while (!_bq_hasQueryResults_(queryJob))
   {
-    queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
+    // Block until query is complete.
   }
-  var pages = 1;
+  const queryResult = _bq_getQueryResults_(queryJob);
+
   console.log({
     message: 'Query Completed',
     received: queryJob,
     cacheHit: queryResult.cacheHit,
     resultCount: queryResult.totalRows,
     queryBytes: queryResult.totalBytesProcessed,
-    hasPages: !!queryResult.pageToken,
     firstResult: queryResult.rows ? queryResult.rows[0] : null
   });
-  // Return the headers to the caller.
-  const headers = [];
-  Array.prototype.push.apply(headers, queryResult.schema.fields
-    .map(function (schemaField) { return schemaField.name; }));
 
+  // Return the headers and formatted results to the caller.
+  return {
+    columns: queryResult.schema.fields.map(function (schemaField) { return schemaField.name; }),
+    rows: bq_formatQueryRows_(queryResult.rows, queryResult.schema.fields),
+  };
+}
+
+/**
+ * @param {string} sql A #standardSQL query to submit for the configured project.
+ */
+function _bq_submitQuery_(sql)
+{
+  const job = Bigquery.newJob();
+  job.configuration = {
+    query: {
+      query: sql,
+      useLegacySql: false,
+    }
+  }
+  return Bigquery.Jobs.insert(job, projectKey);
+}
+
+/**
+ * Determines if job.getQueryResults is a valid API call (i.e. the job has started).
+ * @param {GoogleAppsScript.Bigquery.Schema.Job} job
+ */
+function _bq_hasQueryResults_(job) {
+  const jobStatus = Bigquery.Jobs.get(projectKey, job.jobReference.jobId, { fields: 'status/state' });
+  const state = jobStatus.status.state.toLowerCase();
+  return state === 'done' || state === 'success' || state === 'failure';
+}
+
+/**
+ * Get query results for all pages from the given completed job.
+ * @param {GoogleAppsScript.Bigquery.Schema.Job} job
+ */
+function _bq_getQueryResults_(job)
+{
+  const jobId = job.jobReference.jobId;
+  var queryResult = Bigquery.Jobs.getQueryResults(projectKey, jobId);
+  while (!queryResult.jobComplete)
+  {
+    console.error({ message: 'Should have been a completed job', queryResult: queryResult });
+    queryResult = Bigquery.Jobs.getQueryResults(projectKey, jobId);
+  }
+
+  // Collect rows from any remaining pages into the first page's results.
+  const firstResult = queryResult;
+  while (queryResult.pageToken)
+  {
+    queryResult = Bigquery.Jobs.getQueryResults(projectKey, jobId, {
+      pageToken: queryResult.pageToken,
+      fields: 'rows,errors,pageToken',
+    });
+    Array.prototype.push.apply(firstResult.rows, queryResult.rows);
+  }
+  if (parseInt(firstResult.totalRows, 10) !== firstResult.rows.length) {
+    console.error({ message: 'row mismatch', firstResult: firstResult, queryResult: queryResult });
+  }
+  return firstResult;
+}
+
+/**
+ * Returns a copy of the BQ query TableRows, formatted according to the types present in the given schema field description.
+ * @param {GoogleAppsScript.Bigquery.Schema.TableRow[]} rows BQ QueryResult rows to format
+ * @param {GoogleAppsScript.Bigquery.Schema.TableFieldSchema[]} schemaFields Schema fields describing the result row format
+ * @returns {(string | number)[][]}
+ */
+function bq_formatQueryRows_(rows, schemaFields)
+{
   // Compute type-coercion functions from the column schema.
-  const formatters = queryResult.schema.fields.map(function (colSchema) {
+  const formatters = schemaFields.map(function (colSchema) {
     var type = colSchema.type.toLowerCase();
     if (type === 'float' || type === 'float64') {
       return { fn: function (value) { return parseFloat(value); } };
@@ -73,23 +129,46 @@ function bq_querySync_(sql)
       return { fn: function (value) { return value; } };
     }
   });
-  const results = [];
-  Array.prototype.push.apply(results, queryResult.rows);
-  while (queryResult.pageToken)
+
+  return rows.map(function (row) { return row.f.map(
+    function (col, idx) {
+      return formatters[idx].fn(col.v);
+    });
+  });
+}
+
+/**
+ * Perform multiple queries in parallel, blocking until all have completed.
+ * (These queries should be read-only to avoid races.)
+ * @param {string[]} queries A set of queries to perform
+ * @param {string[]} queryIds Labels for the queries to help distinguish results.
+ */
+function bq_querySetSync_(queries, queryIds)
+{
+  // Submit all jobs before checking any for completion.
+  const queryJobs = queries.map(_bq_submitQuery_);
+  while (!queryJobs.every(_bq_hasQueryResults_))
   {
-    queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId, { pageToken: queryResult.pageToken });
-    Array.prototype.push.apply(results, queryResult.rows);
-    ++pages;
+    // Block until all queries have completed.
   }
-  if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
-  return {
-    columns: headers,
-    rows: results.map(function (row) { return row.f.map(
-      function (col, idx) {
-        return formatters[idx].fn(col.v);
-      });
-    }),
-  };
+  const queryResults = queryJobs.map(_bq_getQueryResults_);
+  console.log({
+    message: queryResults.length + ' queries completed',
+    queryData: queryResults.map(function (qr) { return {
+      cacheHit: qr.cacheHit,
+      resultCount: qr.totalRows,
+      queryBytes: qr.totalBytesProcessed,
+      firstResult: qr.rows ? qr.rows[0] : [],
+    }; }),
+  });
+
+  return queryResults.map(function (qr, idx) {
+    return {
+      queryId: (queryIds[idx] !== undefined) ? queryIds[idx] : queries[idx],
+      columns: qr.schema.fields.map(function (sf) { return sf.name; }),
+      rows: bq_formatQueryRows_(qr.rows, qr.schema.fields),
+    };
+  });
 }
 
 /**
