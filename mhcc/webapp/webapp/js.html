@@ -233,7 +233,7 @@
       chartData[uid].rankHistory = _getRankDataSeries(userData);
       const rankDataTable = google.visualization.arrayToDataTable(chartData[uid].rankHistory, false);
       rankDataTable.setColumnProperty(2, 'role', 'tooltip');
-      const rankDelta = Math.abs(chartData[uid].rankHistory.slice(-1)[0][1] - chartData[uid].rankHistory[1][1]);
+      const rankDelta = !chartData[uid].rankHistory.length ? 0 : Math.abs(chartData[uid].rankHistory.slice(-1)[0][1] - chartData[uid].rankHistory[1][1]);
       rhWrapper = new google.visualization.ChartWrapper({
         "containerId": "rankHistory",
         "chartType": "LineChart",

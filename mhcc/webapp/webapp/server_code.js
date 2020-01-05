@@ -20,7 +20,7 @@
  */
 function doGet(e)
 {
-  var pg = HtmlService.createTemplateFromFile("webapp\\page");
+  var pg = HtmlService.createTemplateFromFile("webapp/page");
   // Require that multiple uids were explicitly joined, i.e. "&uid=1,2", rather than "&uid=1&uid=2".
   pg.webAppUID = e.parameter.uid;
   return pg.evaluate().setTitle("MHCC Crown History").setFaviconUrl("https://i.imgur.com/QMghA1l.png");
@@ -59,9 +59,9 @@ function loadUserData(uids)
     // Bind a reference to it.
     const userOutput = outputToModify[userData.user];
 
-    if (userOutput.crownHeader[0].length !== userOutput.crownData[0].length)
+    if (userOutput.crownData.length && userOutput.crownHeader[0].length !== userOutput.crownData[0].length)
       throw new Error("Crown History is not rectangular");
-    if (userOutput.rankHeader[0].length !== userOutput.rankData[0].length)
+    if (userOutput.rankData.length && userOutput.rankHeader[0].length !== userOutput.rankData[0].length)
       throw new Error("Rank History is not rectangular");
 
     // Ensure the crown data is sorted ascending by LastSeen.

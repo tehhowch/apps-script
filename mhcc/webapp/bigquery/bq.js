@@ -58,7 +58,7 @@ function getUserHistory_(uids, blGroup)
         dataset: memberData.map(function (row) { return row.slice(1); }),
       };
     });
-    memberOutput.user = memberOutput.crown.dataset.slice(-1)[0][0];
+    memberOutput.user = memberOutput.crown.dataset.length ? memberOutput.crown.dataset.slice(-1)[0][0] : 'Unknown';
 
     arr.push(memberOutput);
     return arr;
@@ -94,7 +94,7 @@ function _getBQData_(uids, blGroup) {
   const queries = queryConfig.map(function (config) {
     const terms = ['SELECT', config.columns, 'FROM', config.table, where];
     if (blGroup) terms.push('GROUP BY', config.columns);
-    terms.push(config.orderBy);
+    terms.push('ORDER BY', config.orderBy);
     return { label: config.label, sql: terms.join(' ') };
   });
 
@@ -186,7 +186,7 @@ function _bq_getQueryResults_(job)
     });
     Array.prototype.push.apply(firstResult.rows, queryResult.rows);
   }
-  if (parseInt(firstResult.totalRows, 10) !== firstResult.rows.length) {
+  if (parseInt(firstResult.totalRows, 10) !== (firstResult.rows ? firstResult.rows.length : 0)) {
     console.error({ message: 'row mismatch', firstResult: firstResult, queryResult: queryResult });
   }
   return firstResult;
@@ -212,7 +212,7 @@ function bq_formatQueryRows_(rows, schemaFields)
     }
   });
 
-  return rows.map(function (row) { return row.f.map(
+  return !rows ? [] : rows.map(function (row) { return row.f.map(
     function (col, idx) {
       return formatters[idx].fn(col.v);
     });
