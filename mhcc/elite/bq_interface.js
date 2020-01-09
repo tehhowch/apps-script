@@ -73,22 +73,13 @@ function bq_querySync_(sql)
 
 /**
  * @param {'Core'|'Elite'} [datasetName] The dataset containing the target Members table (default "Elite").
- * @param {number} [start] The offset into the member list to retreive
- * @param {number} [limit] The maximum number of members to retrieve
  */
-function bq_getMemberBatch_(datasetName, start, limit)
+function bq_getMemberBatch_(datasetName)
 {
   if (!datasetName) datasetName = 'Elite';
   const tableId = [dataProject, datasetName, 'Members'].join('.');
   const sql = 'SELECT Member, UID FROM `' + tableId + '` ORDER BY Member ASC';
-  const members = bq_querySync_(sql).rows;
-  if (start === undefined && limit === undefined)
-    return members;
-
-  start = Math.abs(parseInt(start || 0, 10));
-  if (limit <= 0) limit = 1;
-  limit = parseInt(limit || 100000, 10);
-  return members.slice(start, start + limit);
+  return bq_querySync_(sql).rows;
 }
 
 /**
@@ -226,7 +217,7 @@ function bq_addRankSnapshots_(newRankData)
 /**
  * Upload the given data into the given BigQuery table (table must exist).
  * Returns the associated LoadJob
- * @param {(string|number)[][]} data FusionTable data as a 2D javascript array
+ * @param {(string|number)[][]} data data as a 2D javascript array
  * @param {{projectId: string, datasetId: string, tableId: string}} config Description of the target table
  */
 function _insertTableData_(data, config)

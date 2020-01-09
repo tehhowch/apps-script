@@ -226,7 +226,7 @@ function bq_addRankSnapshots_(newRankData)
 /**
  * Upload the given data into the given BigQuery table (table must exist).
  * Returns the associated LoadJob
- * @param {(string|number)[][]} data FusionTable data as a 2D javascript array
+ * @param {(string|number)[][]} data data as a 2D javascript array
  * @param {{projectId: string, datasetId: string, tableId: string}} config Description of the target table
  */
 function _insertTableData_(data, config)

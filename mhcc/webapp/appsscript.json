@@ -3,11 +3,6 @@
   "dependencies": {
     "enabledAdvancedServices": [
       {
-        "userSymbol": "FusionTables",
-        "serviceId": "fusiontables",
-        "version": "v2"
-      },
-      {
         "userSymbol": "Bigquery",
         "serviceId": "bigquery",
         "version": "v2"

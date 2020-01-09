@@ -175,7 +175,7 @@
       return;
     }
 
-    // Query the FusionTable re: existing information.
+    // Ask the server for existing information.
     const TASK = google.script.run.withSuccessHandler(verifyOperation)
       .withFailureHandler(failedOperation)
       .withUserObject(document.getElementById("taskButton"));
@@ -316,7 +316,7 @@
   }
 
   /**
-   * Success Handler for the task queries. If the FusionTable request went well, then there is typically
+   * Success Handler for the task queries. If the BigQuery request went well, then there is typically
    * no expected actions other than logging the output and clearing the form inputs.
    * @param {OperationReport} event The server's feedback about the request to perform an operation.
    */

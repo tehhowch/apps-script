@@ -26,7 +26,7 @@ function doSideBar_() {
 
 /**
  * @typedef {Object} MemberQueryResult
- * @property {string} name The member's name, as found in the MHCC Members FusionTable.
+ * @property {string} name The member's name, as found in the MHCC Members table.
  * @property {string} uid The member's MHCC identifier.
  * @property {Error} [error] Any error that occurred during a search of the Members table for this member.
  */
@@ -41,7 +41,7 @@ function doSideBar_() {
  * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
  * @property {string} [uid] The validated MHCC identifier for the individual.
  * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
- * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB FusionTables.
+ * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB tables.
  */
 
 /**

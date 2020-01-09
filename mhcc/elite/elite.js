@@ -142,7 +142,7 @@ function UpdateScoreboard()
 
 /**
  * Compute the latest scoreboard rows using the most up-to-date information from the MHCC database.
- * Submits the computed rows to the Elite Rank DB FusionTable for archiving.
+ * Submits the computed rows to the Elite Rank DB for archiving.
  * @param {{bronze: number, silver: number, gold: number}} scoreFor The number of points earned for a crown of each type
  * @param {{gold: number, gs: number, total: number}} minimum The minimum crown counts needed of each type.
  * @returns {Array[]} The ordered scoreboard rows, for spreadsheet serialization.
