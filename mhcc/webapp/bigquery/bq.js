@@ -5,7 +5,6 @@
 
 /**
  * TODO
- * - support current fusiontable method's interface
  * - batch-submit queries (to improve responsiveness)
  * - split queries apart ("where UID = <val>" instead of "where UID IN (<vals)") to improve query caching
  * - allow displaying Elite ranking
