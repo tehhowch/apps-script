@@ -9,7 +9,7 @@ from datetime import datetime
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
-from services import DriveHandler, FusionTableHandler
+from services import DriveHandler, FusionTableHandler, BigQueryHandler
 from services import HttpError
 from services import print_progress_bar as ppb
 from services import _write_as_csv as save
@@ -20,7 +20,8 @@ LOCAL_KEYS = {}
 TABLE_LIST = {}
 
 SCOPES = ['https://www.googleapis.com/auth/fusiontables',
-          'https://www.googleapis.com/auth/drive']
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/bigquery']
 
 
 def initialize(keys: dict, tables: dict):
@@ -82,8 +83,12 @@ def authorize(local_keys: dict) -> 'Dict[str, GoogleService]':
     print('\nVerifying FusionTables access by requesting tables you\'ve accessed.')
     fusiontables.verify_ft_service(export=True)
 
+    bq = BigQueryHandler(local_keys['bq_project'], creds)
+    print('\nVerifying BigQuery access by requesting project information.')
+    # TODO
+
     print('Authorization & service verification completed successfully.')
-    return {'FusionTables': fusiontables, 'Drive': drive}
+    return {'FusionTables': fusiontables, 'Drive': drive, 'BigQuery': bq}
 
 
 
@@ -473,10 +478,13 @@ if __name__ == "__main__":
     handlers = authorize(LOCAL_KEYS)
     handlers['FusionTables'].verify_known_tables(TABLE_LIST, handlers['Drive'].get_service())
     handlers['FusionTables'].set_user_table(TABLE_LIST['MHCC Members'])
+    client = handlers['BigQuery'].get_client()
     #print('Pick a table')
     #table = pick_table()
     #print("Select the rank table")
     #prune_ranks(TABLE_LIST['MHCC Rank DB'], handlers['FusionTables'])
     #print('Select the crown table')
     #prune_crowns(TABLE_LIST['MHCC Crown DB'], handlers['FusionTables'])
-    print('waiting for you to do stuff')
+    # print('waiting for you to do stuff')
+    from ft2bq import export
+    export(handlers['FusionTables'], client)

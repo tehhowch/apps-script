@@ -1,5 +1,5 @@
 /**
- *  This spreadsheet uses Google Apps Script, Spreadsheets, and the "experimental" FusionTables API
+ *  This spreadsheet uses Google Apps Script, Spreadsheets, and the BigQuery API
  *  to maintain a record of all MHCC members that opted into crown tracking. Via UpdateDatabase()
  *  and HornTracker.com's "MostMice", the arduous task of tracking all members' crowns is be reduced
  *  to simply clicking a profile.
@@ -7,9 +7,9 @@
  *  members (higher batch sizes overload the maximum URL length). This fetch is performed until all
  *  member data has been fetched, or a specified execution duration is met, in order to avoid the
  *  "Maximum Execution Time Exceeded" Google Apps Script error (at 300 seconds).
- *  The time-basis Trigger frequency should not be set too high, as unless member data is constantly
- *  updated, this results in sending essentially duplicated data to the FusionTable. A member rank's
- *  Rank is only updated at the end of an update cycle, when the Scoreboard is written.
+ *  The time-basis Trigger frequency should not be set too high, to avoid consuming the available
+ *  free query quota.
+ *  A member rank's Rank is only updated at the end of a cycle, when the Scoreboard is written.
  *
  *
  * Tracking Progress of Updates
@@ -49,14 +49,14 @@ var crownDBnumColumns = 10;
 var numCustomTitles = 16;
 /**
  * function onOpen()      Sets up the admin's menu from the spreadsheet interface.
- * @param {Object <string, any>} e The "spreadsheet open" event object, provided by Google.
+ * @param {GoogleAppsScript.Events.SheetsOnOpen} e The "spreadsheet open" event object, provided by Google.
  */
 function onOpen(e)
 {
   e.source.addMenu('Administration', [
     { name: "Manage Members", functionName: "getSidebar" },
     { name: "Perform Crown Update", functionName: "UpdateDatabase" },
-    { name: "Check Database Size", functionName: "getDbSize" }]);
+  ]);
 }
 /**
  * function getMyDb_          Returns the entire data contents of the worksheet SheetDb to the calling
@@ -122,22 +122,20 @@ function UpdateDatabase()
   const wb = SpreadsheetApp.getActive(), store = PropertiesService.getScriptProperties();
   const props = store.getProperties();
   // Database records count (may be larger than the written db on SheetDb)
-  var numMembers = getTotalRowCount_(utbl);
+  var numMembers = bq_getTableRowCount_(dataProject, 'Core', 'Members');
   // The last queried member number indicates where to begin new update queries.
   var lastRan = props.lastRan * 1 || 0;
 
   // Read in the MHCC tiers as an array.
   // (If the MHCC tiers are moved, this getRange target MUST be updated!)
-  try { const aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
+  try { var aRankTitle = wb.getSheetByName('Members').getRange(3, 8, numCustomTitles, 3).getValues(); }
   catch (e) { throw new Error("'Members' sheet was renamed or deleted - cannot locate crown-title relationship data."); }
 
-  // After each Scoreboard operation, a backup of the FusionTable databases should be attempted.
   if (lastRan >= numMembers)
   {
     UpdateScoreboard();
     store.setProperty("lastRan", 0);
-    doBackupTable_(ftid);
-    doBackupTable_(rankTableId);
+    // TODO: create a backup of the Crown & Rank tables?
     if (Math.random() < 0.4)
       doWebhookPost_(props["mhDiscord"]);
   }
@@ -149,7 +147,7 @@ function UpdateDatabase()
       return;
 
     // allMembers is an array of [Name, UID]
-    const allMembers = getUserBatch_(0, numMembers),
+    const allMembers = bq_getMemberBatch_(),
       newMemberData = {};
     var updateLastRan = false;
 
@@ -170,16 +168,16 @@ function UpdateDatabase()
     } while ((new Date() - startTime) < maxRuntime * 1000 && lastRan < numMembers);
 
     // Convert partial records into insertable MHCC records. This involves querying the
-    // FusionTable database to determine each member's last crown counts.
+    // BigQuery table to determine each member's last crown counts.
     const newRecords = [];
     if (Object.keys(newMemberData).length)
     {
-      const existing = _fetchExistingRecords_(newMemberData);
+      const existing = _fetchExistingRecords_();
       if (!existing || !existing.records || !existing.indices)
         throw new Error("Failed to obtain stored records");
       _addRecords_(newMemberData, existing.records, existing.indices, newRecords);
       if (newRecords.length > 0)
-        ftBatchWrite_(newRecords, ftid);
+        bq_addCrownSnapshots_(newRecords);
     }
 
     if (updateLastRan)
@@ -209,67 +207,28 @@ function UpdateDatabase()
    * @property {CrownSnapshot[]} newData Crown snapshots that should be formed into records and uploaded.
    */
   /**
-   * Nested function which handles obtaining the previously known data for the given partial records.
-   * Returns an object with the full record referenced for a given member in the partial records, indexed by UID.
+   * Nested function which handles obtaining the previously known data for all members, and
+   * packages the full record into a UID-indexed object for easy retrieval.
    *
-   * @param {Object <string, MemberUpload>} partials UID-indexed object with the timestamps needed to query for the previous stored record.
    * @return {{records: Object <string, (string|number)[]>, indices: Object <string, number>}} Object containing UID-indexed full records, and the indices needed to order values in a new record.
    */
-  function _fetchExistingRecords_(partials)
+  function _fetchExistingRecords_()
   {
-    if (!partials || !Object.keys(partials).length)
-      return null;
-
-    // TODO: evaluate if getLatestRows_() should be used instead of/in this function.
-
-    // Collect the UIDs which need to be queried in the FusionTable.
-    const sqlParts = [
-      "SELECT * FROM " + ftid + " WHERE UID IN (",
-      "",
-      ") AND LastTouched IN (",
-      "",
-      ")"
-    ];
-
-    const criteriaList = [];
-    for (var uid in partials)
-      criteriaList.push({ uid: uid, lt: partials[uid].storedInfo.lastTouched });
-    if (!criteriaList.length)
-      return null;
+    const resp = bq_getLatestRows_('Core', 'Crowns');
+    const records = resp.rows;
 
     // Collect the full records into a UID-indexed Object (for rapid accessing).
-    const indices = {}, labels = ["uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
+    const headers = resp.columns.map(function (column) { return column.toLowerCase(); });
+    const labels = ["member", "uid", "lastseen", "lastcrown", "lasttouched", "bronze", "silver", "gold", "mhcc", "squirrel"];
     /** @type {Object <string, (string|number)[]} */
     const storedRecords = {};
-    do {
-      // Construct a maximal query (8000 characters or less) from the given criteria.
-      var queryUIDs = [], queryLT = [], sql = "";
-      do {
-        var cl = criteriaList.pop();
-        if (cl.uid && cl.lt)
-        {
-          queryUIDs.push(cl.uid);
-          queryLT.push(cl.lt);
-        }
-        sql = sqlParts[0] + queryUIDs.join(",") + sqlParts[2] + queryLT.join(",") + sqlParts[4];
-      } while (sql.length < 8000 && criteriaList.length);
+    const indices = labels.reduce(function (map, colName) {
+      map[colName] = headers.indexOf(colName);
+      if (map[colName] === -1) throw new Error("Missing column name '" + colName + "'");
+      return map;
+    }, {});
+    records.forEach(function (record) { storedRecords[record[indices.uid]] = record; });
 
-      // Execute the query to obtain the members' full records (and thus their previous crown count and crown change date).
-      var resp = FusionTables.Query.sqlGet(sql, { quotaUser: queryUIDs[0] });
-      if (!resp || !resp.columns)
-        return [];
-      if (!Object.keys(indices).length)
-      {
-        var headers = resp.columns.map(function (col) { return String(col).toLowerCase(); });
-        labels.forEach(function (colTitle) {
-          indices[colTitle] = headers.indexOf(colTitle);
-          if (indices[colTitle] === -1) throw new Error("Missing column name '" + colTitle + "'");
-        });
-      }
-      // While unlikely, this particular batch of requested members may not have any existing rows.
-      if (resp.rows)
-        resp.rows.forEach(function (record) { storedRecords[record[indices.uid]] = record; });
-    } while (criteriaList.length);
     return { records: storedRecords, indices: indices };
   }
   /**
@@ -330,7 +289,7 @@ function UpdateDatabase()
         else
           newRecord[indices.lastcrown] = (i > 0)
             ? fullRecords[fullRecords.length - 1][indices.lastcrown]
-            : dbr[indices.lastcrown];
+            : parseInt(dbr[indices.lastcrown], 10);
 
         // Compute a new "Squirrel" rating (the ratings may have changed even if the member's crowns did not).
         for (var k = 0; k < aRankTitle.length; ++k)
@@ -355,14 +314,14 @@ function UpdateDatabase()
    * Nested function which handles requesting crown info for a given set of members from the various data
    * sources available:
    *    1. HornTracker MostMice
-   *    2. Jack's MH Crowns FusionTable
+   *    2. MHCT CrownCounts BigQuery DB
    *
    *  Each unique instance of data is imported, provided
    *    A) It has a different "Last Seen" than the member's existing "Last Seen" data.
    *      or
    *    B) It has been a week since the last time the member had a new record entered.
    *
-   *  Returns null only if memberSet has no IDs, or all of the IDs have no associated record data in the MHCC Crowns DB FusionTable.
+   *  Returns null only if memberSet has no IDs, or all of the IDs have no associated record data in the various tables.
    *  otherwise, returns a uid-indexed Object with the database's maximum values for seen, touched, and crown data, and at least 1
    *  crown snapshot for which a full record needs to be constructed.
    *
@@ -409,15 +368,10 @@ function UpdateDatabase()
 
     // Obtain the lastSeen and lastTouched timestamps for the users in this batch.
     var uidString = urlIDs.join(",");
-    var sql = 'SELECT UID, MAXIMUM(LastSeen), MAXIMUM(LastCrown), MAXIMUM(LastTouched) FROM ' + ftid;
-    sql += ' WHERE UID IN (' + uidString + ') GROUP BY UID';
-    /** @type {{rows:[string, number, number, number][]}} */
-    var resp = FusionTables.Query.sqlGet(sql);
-    if (!resp || !resp.columns)
-      return null;
+    const batchRows = bq_getLatestBatch_('Core', 'Crowns', urlIDs);
     // While unlikely, this entire batch of requested members may have no existing Crown DB records.
-    if (resp.rows)
-      resp.rows.forEach(function (memberRow) {
+    if (batchRows)
+      batchRows.forEach(function (memberRow) {
         var uid = memberRow[0];
         data[uid].storedInfo.lastSeen = memberRow[1] * 1;
         data[uid].storedInfo.lastCrown = memberRow[2] * 1;
@@ -439,7 +393,7 @@ function UpdateDatabase()
       // If this member's records as held by the datasources are different than the stored data, stage them.
       var last_stored = data[uid].storedInfo.lastSeen || 0;
       var elapsed_since_storage = (now - (data[uid].storedInfo.lastTouched || 0)) / (1000 * 86400);
-      var insert_anyway = elapsed_since_storage > 7;
+      var insert_anyway = elapsed_since_storage > 30;
       for (var ds = 0; ds < datasourceData.length; ++ds)
       {
         var dsr = datasourceData[ds][uid];
@@ -447,7 +401,7 @@ function UpdateDatabase()
           continue;
         // Is this a new record, relative to what we have stored? Or has it been a
         // long time since we stored a record for this member (new or otherwise)?
-        if (dsr.seen > last_stored || insert_anyway)
+        if (dsr.seen > last_stored || (insert_anyway && dsr.seen === last_stored))
           data[uid].collected.push(dsr);
       }
       // If this member is currently absent from all datasources (i.e. the one with the data is
@@ -581,27 +535,20 @@ function UpdateDatabase()
     }
     return htData;
   }
-  /** Nested function which handles querying @devjacksmith's "MH Latest Crowns" FusionTable and constructing the expected data object.
+  /**
+   * Nested function which handles querying crown counts collected by the MHCT extension and constructing the expected data object.
+   * Now with more BigQuery!
    * @param {string} uids  A comma-joined string of member identifiers for whom to request catch totals.
    * @return {Object <string, CrownSnapshot>} A UID-indexed object with the latest known crown counts for the input members.
    */
   function QueryJacksData_(uids)
   {
-    // Jack provides a queryable FusionTable which may or may not have data for the users in question.
-    // His fusiontable is unique on snuid - each person has only one record.
+    // MHCT provides a BigQuery table which may or may not have data for the users in question.
+    // The table *should* be unique on `snuid`, but this is not a guarantee.
     // snuid | timestamp (seconds UTC) | bronze | silver | gold | platinum | diamond
-    const sql = "SELECT * FROM " + alt_table + " WHERE snuid IN (" + uids + ")";
     const jkData = {};
-    try { var resp = FusionTables.Query.sqlGet(sql); }
-    catch (e)
-    {
-      e.message = "Failed to query Jack's 'MH Crowns' FusionTable: " + e.message;
-      console.error({ message: e.message, query: sql, response: resp });
-      throw e;
-    }
-    // Ensure well-formed data was obtained.
-    if (!resp || !resp.rows || !resp.rows.length || !resp.rows[0].length || !resp.columns)
-      return jkData;
+    const resp = bq_readMHCTCrowns_(uids.split(','));
+    const records = resp.rows;
 
     // Check that the SQL response has the data we want.
     const headers = resp.columns.map(function (col) { return col.toLowerCase(); });
@@ -612,13 +559,13 @@ function UpdateDatabase()
     if (!Object.keys(indices).every(function (val) { return indices[val] > -1; }))
     {
       console.error({
-        "message": "Unable to find required column headers in Jack's FusionTable.",
-        "response": resp, "headers": headers, "indices": indices
+        "message": "Unable to find required column headers in MHCT's BQ Table.",
+        "response": records, "headers": headers, "indices": indices
       });
       return jkData;
     }
 
-    resp.rows.forEach(function (record) {
+    records.forEach(function (record) {
       var id = record[0].toString();
       jkData[id] = {
         bronze: record[indices.bronze] * 1,
@@ -627,7 +574,7 @@ function UpdateDatabase()
         seen: record[indices.timestamp] * 1000
       };
 
-      // Since not all FusionTable records have values for these columns, we need to coerce them to a valid number.
+      // Coerce possibly-missing diamond and platinum values to a valid number.
       var platCount = parseInt(record[indices.platinum], 10);
       var diamondCount = parseInt(record[indices.diamond], 10);
       // Add platinum and diamond crowns to the gold tally. TODO: record these separately.
@@ -723,7 +670,7 @@ function UpdateScoreboard()
 
   // To build the scoreboard....
   // 1) Store the most recent snapshots of all members on SheetDb
-  if (!saveMyDb_(wb, getLatestRows_()))
+  if (!saveMyDb_(wb, bq_getLatestRows_('Core', 'Crowns').rows))
     throw new Error('Unable to save snapshots retrieved from crown database');
 
   // 2) Sort it by MHCC crowns, then LastCrown, then LastSeen. This means the first to have a
@@ -771,7 +718,7 @@ function UpdateScoreboard()
     return [record[0], String(record[1]), record[2], record[10], record[11], record[8]];
   });
   if (rankUpload.length && rankUpload[0].length === 6)
-    ftBatchWrite_(rankUpload, rankTableId);
+    bq_addRankSnapshots_(rankUpload);
 
   // Provide estimate of the next new scoreboard posting and the time this one was posted.
   _estimateNextScoreboard('Members', 'I23', 'H23', startTime);

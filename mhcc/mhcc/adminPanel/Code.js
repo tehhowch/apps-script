@@ -26,8 +26,7 @@ function doSideBar_() {
 
 /**
  * @typedef {Object} MemberQueryResult
- * @property {string} name The member's name, as found in the MHCC Members FusionTable.
- * @property {string} rowid The rowid in the MHCC Member's FusionTable that holds this member's record.
+ * @property {string} name The member's name, as found in the MHCC Members table.
  * @property {string} uid The member's MHCC identifier.
  * @property {Error} [error] Any error that occurred during a search of the Members table for this member.
  */
@@ -42,8 +41,7 @@ function doSideBar_() {
  * @property {boolean} [isNameChange] If an "add member" operation is actually a name change.
  * @property {string} [uid] The validated MHCC identifier for the individual.
  * @property {string} [currentName] The existing display name for the MHCC member with the given identifier
- * @property {string} [rowid] The table rowid for the MHCC member with the given MHCC identifier.
- * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB FusionTables.
+ * @property {number} [dataRows] The number of rows of data this member has in the Crowns DB and Rank DB tables.
  */
 
 /**
@@ -73,44 +71,23 @@ function validateSidebarInput_(form)
 }
 
 /**
- * Query the MHCC Members FusionTable to acquire this member's information.
- *
+ * Query the MHCC Members table to acquire this member's information.
  * @param {string} uid The MHCC identifier for this particular individual.
  * @returns {MemberQueryResult} If found, the individual's known name and table row. Otherwise, an error.
  */
 function getMemberInfo(uid)
 {
-  const query = "SELECT Member, UID, ROWID FROM " + utbl + " WHERE UID = '" + uid + "'";
   // Get the member information from the user table.
-  /** @type {{kind: string, rows: [string, string, string][], columns: string[]}} */
-  const resp = FusionTables.Query.sqlGet(query);
-  if (resp.kind !== "fusiontables#sqlresponse" || !resp.columns || !resp.columns.length)
-  {
-    const e = TypeError("Invalid response received");
-    e.inputData = { "sql": query, "response": resp };
-    throw e;
-  }
-  console.log({ "message": "GetMemberInfo(" + uid + ")", "ftResponse": resp, "ftQuery": query });
-  // Received a well-formed response.
-  if (resp.rows && resp.rows.length > 0)
-  {
-    const member = resp.rows;
-    // Find this specific member's row within all the rows that were returned.
-    const index = member.map(function (v) { return v[1]; }).indexOf(uid);
-    if (index > -1)
-      return { "name": member[index][0], "uid": uid, "rowid": member[index][2] };
-  }
-  // No members found in the response.
-  else
-    return {
-      "name": "", "uid": uid, "rowid": "",
-      "error": Error("No member found with uid='" + uid + "'")
-    };
+  const allMembers = bq_getMemberBatch_();
+  const requestedMember = allMembers.filter(function (member) { return member[1] === uid; })[0];
+  return (requestedMember
+    ? { name: requestedMember[0].toString(), uid: uid }
+    : { name: '', uid: uid, error: Error("No member found with uid='" + uid + "'") }
+  );
 }
 
 /**
  * Query the MHCC Members table to determine if this member can be added.
- *
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationFeasibility} An object instructing the sidebar how to react.
  */
@@ -139,7 +116,6 @@ function canAdd(form)
       // We found a member with this uid. If the name is different,
       // we can perform a name change operation. Otherwise, no operation is possible.
       output.isNameChange = input.name !== member.name;
-      output.rowid = member.rowid;
       output.currentName = member.name;
       output.uid = member.uid;
       if (output.isNameChange)
@@ -158,7 +134,7 @@ function canAdd(form)
 }
 
 /**
- * Query FT to determine if this member can be deleted.
+ * Inspect BigQuery to determine if this member can be deleted.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationFeasibility} An object instructing the sidebar how to react.
  */
@@ -190,18 +166,18 @@ function canDelete(form)
         output.log = "Member exists with name '" + member.name + "'. Names must match.";
       else
       {
-        output.rowid = member.rowid;
         // Get the count of rows in the Crown and Rank tables.
-        /** @type {{kind: string, rows: string[][]}[]} */
-        const resp = [];
-        [
-          "SELECT COUNT(UID) FROM " + ftid + " WHERE UID = '" + input.uid + "'",
-          "SELECT COUNT(UID) FROM " + rankTableId + " WHERE UID = '" + input.uid + "'"
-        ].forEach(function (query) { resp.push(FusionTables.Query.sqlGet(query)); });
-        try { output.dataRows = resp.reduce(function (acc, val) { return acc + (val.rows && val.rows.length) ? val.rows[0][0] * 1 : 0; }, 0); }
-        catch (e) { console.warn(e); output.dataRows = ""; }
+        const crownTable = [dataProject, 'Core', 'Crowns'].join('.');
+        const rankTable = [dataProject, 'Core', 'Ranks'].join('.');
+        const counts = [
+          "SELECT COUNT(UID) FROM `" + crownTable + "` WHERE UID = '" + input.uid + "'",
+          "SELECT COUNT(UID) FROM `" + rankTable + "` WHERE UID = '" + input.uid + "'"
+        ].map(function (query) { return bq_querySync_(query).rows; });
+        console.log({ counts: counts });
+        try { output.dataRows = counts.reduce(function (acc, val) { return acc + (val && val.length) ? parseInt(val[0][0], 10) : 0; }, 0); }
+        catch (e) { console.warn(e); output.dataRows = 0; }
 
-        output.log = "Deleting '" + member.name + "' will also delete their " + (output.dataRows ? output.dataRows + " " : "") + "crown records.";
+        output.log = "Deleting '" + member.name + "' will also delete their " + (output.dataRows ? output.dataRows + " " : "") + "stored records.";
       }
     }
   }
@@ -213,7 +189,6 @@ function canDelete(form)
 
 /**
  * Method called by the sidebar after an "Add Member" operation validates as a name change, and the administrator OKs it.
- *
  * @param {SidebarForm} form The sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
@@ -228,11 +203,12 @@ function changeMemberName(form)
     "log": "",
     "report": ""
   };
-  console.log({ "message": "Name Change", "isNameChange": input.isNameChange, "can_do": input.canDo, "row": input.rowid, "misc": input });
-  if (input.canDo === true && input.isNameChange === true && input.rowid)
+  console.log({ "message": "Name Change", "isNameChange": input.isNameChange, "can_do": input.canDo, "misc": input });
+  if (input.canDo === true && input.isNameChange === true && input.request.uid)
   {
-    const sql = "UPDATE " + utbl + " SET Member = '" + input.request.name + "' WHERE ROWID = '" + input.rowid + "'";
-    try { FusionTables.Query.sql(sql); }
+    const utbl = [dataProject, 'Core', 'Members'].join('.');
+    const sql = "UPDATE `" + utbl + "` SET Member = '" + input.request.name + "' WHERE UID = '" + input.request.uid + "'";
+    try { Bigquery.Jobs.query({ query: sql, useLegacySql: false }, dataProject); } // DML requires billing.
     catch (e) {throw e;}
     output.report = "Name for uid='" + input.request.uid + "' is now '" + input.request.name + "'";
     output.reset = true;
@@ -244,14 +220,13 @@ function changeMemberName(form)
 }
 
 /**
- * Add the given individual to the MHCC Members FusionTable.
- *
+ * Add the given individual to the MHCC Members Table.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
-function addMemberToFusion(form)
+function addMemberToTable(form)
 {
-  // Revalidate input, in case of trickery.
+  // Revalidate input.
   const input = canAdd(form);
   /** @type {OperationReport} */
   const output = {
@@ -262,10 +237,12 @@ function addMemberToFusion(form)
   };
   if (input.canDo === true && !input.isNameChange)
   {
-    const memCsv = [[input.request.name, input.request.uid]];
-    const uUpload = Utilities.newBlob(array2CSV_(memCsv), "application/octet-stream");
-    const resp = FusionTables.Table.importRows(utbl, uUpload).numRowsReceived;
-
+    const job = _insertTableData_([[input.request.name, input.request.uid]], {
+      projectId: dataProject,
+      datasetId: 'Core',
+      tableId: 'Members'
+    });
+    console.info({ message: 'Added MHCC member ' + input.request.name, memberAddJob: job });
     output.report = "Added '" + input.request.name + "' to the database.";
     output.reset = true;
   }
@@ -277,14 +254,13 @@ function addMemberToFusion(form)
 }
 
 /**
- * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB FusionTables.
- *
+ * Delete the given individual from the MHCC Members, MHCC Crowns DB, and MHCC Rank DB tables.
  * @param {SidebarForm} form The current sidebar form data.
  * @returns {OperationReport} An object instructing the sidebar how to react.
  */
-function delMemberFromFusion(form)
+function delMemberFromTable(form)
 {
-  // Revalidate input, in case of trickery.
+  // Revalidate input.
   const input = canDelete(form);
   /** @type {OperationReport} */
   const output = {
@@ -293,22 +269,25 @@ function delMemberFromFusion(form)
     "log": "",
     "report": ""
   };
-  if (input.canDo === true && input.rowid)
+  if (input.canDo === true && input.request.uid)
   {
+    const utbl = [dataProject, 'Core', 'Members'].join('.');
+    const ftid = [dataProject, 'Core', 'Crowns'].join('.');
+    const rankTableId = [dataProject, 'Core', 'Ranks'].join('.');
     const resp = [];
     try
     {
       [
-        "DELETE FROM " + utbl + " WHERE ROWID = '" + input.rowid + "'",
-        "DELETE FROM " + ftid + " WHERE UID = '" + input.request.uid + "'",
-        "DELETE FROM " + rankTableId + " WHERE UID = '" + input.request.uid + "'"
-      ].forEach(function (query) { resp.push(FusionTables.Query.sql(query)); });
+        "DELETE FROM `" + utbl + "` WHERE UID = '" + input.request.uid + "'",
+        "DELETE FROM `" + ftid + "` WHERE UID = '" + input.request.uid + "'",
+        "DELETE FROM `" + rankTableId + "` WHERE UID = '" + input.request.uid + "'"
+      ].forEach(function (query) { resp.push(Bigquery.Jobs.query({ query: query, useLegacySql: false }, dataProject)); });
       output.reset = true;
     }
     catch (e) { console.warn({ "message": "Error while deleting member.", "error": e, "input": input }); throw e; }
 
-    const r = { "message": "Deleted user '" + input.request.name + "' from the Member, Rank DB, and Crown DB FusionTables.", "input": input, "responses": resp };
-    console.log(r);
+    const r = { "message": "Deleted user '" + input.request.name + "' from the Member, Rank DB, and Crown DB tables.", "input": input, "responses": resp };
+    console.info(r);
     output.report = r.message;
   }
   else
