@@ -198,6 +198,7 @@
     function _plotOneUser(dataInput)
     {
       const uid = Object.keys(dataInput)[0];
+      if (!uid) return;
       const userData = dataInput[uid];
       chartData[uid] = {};
 

@@ -48,12 +48,12 @@ function loadUserData(uids)
 
       crownHeader: [["Date Seen", "# Bronze", "# Silver", "# Gold", "Total"]],
       crownData: userData.crown.dataset.map(function (value) {
-        return [value[1] * 1, value[2] * 1, value[3] * 1, value[4] * 1, (value[5] * 1 + value[2] * 1)];
+        return [value[0] * 1, value[1] * 1, value[2] * 1, value[3] * 1, (value[4] * 1 + value[1] * 1)];
       }),
 
       rankHeader: [["Date Ranked", "Rank", "# MHCC Crowns", "Date Seen"]],
       rankData: userData.rank.dataset.map(function (value) {
-        return [value[4] * 1, value[3] * 1, value[2] * 1, value[1] * 1];
+        return [value[3] * 1, value[2] * 1, value[1] * 1, value[0] * 1];
       }),
     };
     // Bind a reference to it.
@@ -86,7 +86,7 @@ function loadUserData(uids)
   if (!Object.keys(dataForWebapp).length)
     throw new Error("No data to be sent to webapp");
   if (Object.keys(dataForWebapp).length !== uids.split(",").length)
-    console.warn({ "message": "At least 1 requested dataset is unavailable", "uids": uids.split(","), "data": dataForWebapp });
+    console.warn({ "message": "At least 1 requested dataset is unavailable", "uids": uids.split(",") });
 
   // Due to object complexity, send as a string instead of a raw object.
   return JSON.stringify(dataForWebapp);

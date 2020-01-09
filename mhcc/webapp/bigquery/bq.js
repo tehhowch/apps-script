@@ -8,7 +8,6 @@
  * - support current fusiontable method's interface
  * - batch-submit queries (to improve responsiveness)
  * - split queries apart ("where UID = <val>" instead of "where UID IN (<vals)") to improve query caching
- * - validate UIDs against member list prior to submission
  * - allow displaying Elite ranking
  * - expose finding members within 5 ranks of the current UID's rank (to compare crowns & rank histories)
  */
@@ -37,17 +36,23 @@
 function getUserHistory_(uids, blGroup)
 {
   if (!uids) throw new Error('No UID provided');
-  const queryData = _getBQData_(uids, blGroup);
+  /** @type {Object <string, string>} */
+  const nameLookup = bq_getMembers_('Core').reduce(function (hash, member) {
+    hash[member[1]] = member[0];
+    return hash;
+  }, {});
+  const members = uids.split(",").filter(function (id) { return nameLookup[id] !== undefined; });
+  if (!members.length) throw new Error('Requested user is not a member of MHCC');
 
   // Organize the query data by its associated member.
-  const members = uids.split(",");
+  const queryData = _getBQData_(uids, blGroup);
   const output = members.reduce(function (arr, id) {
     /** @type {UserData} */
     const memberOutput = {
       uid: id,
       crown: null,
       rank: null,
-      user: '',
+      user: nameLookup[id],
     };
     Object.keys(queryData).forEach(function (dataType) {
       const plotData = queryData[dataType]
@@ -58,7 +63,6 @@ function getUserHistory_(uids, blGroup)
         dataset: memberData.map(function (row) { return row.slice(1); }),
       };
     });
-    memberOutput.user = memberOutput.crown.dataset.length ? memberOutput.crown.dataset.slice(-1)[0][0] : 'Unknown';
 
     arr.push(memberOutput);
     return arr;
@@ -79,12 +83,12 @@ function _getBQData_(uids, blGroup) {
   const queryConfig = [
     {
       label: 'crown', table: '`' + [dataProject, 'Core', 'Crowns'].join('.') + '`',
-      columns: 'UID, Member, LastSeen, Bronze, Silver, Gold, MHCC',
+      columns: 'UID, LastSeen, Bronze, Silver, Gold, MHCC',
       orderBy: 'UID ASC, LastSeen ASC',
     },
     {
       label: 'rank', table: '`' + [dataProject, 'Core', 'Ranks'].join('.') + '`',
-      columns: 'UID, Member, LastSeen, MHCC_Crowns, Rank, RankTime',
+      columns: 'UID, LastSeen, MHCC_Crowns, Rank, RankTime',
       orderBy: 'UID ASC, RankTime ASC'
     },
   ];
@@ -200,6 +204,7 @@ function _bq_getQueryResults_(job)
  */
 function bq_formatQueryRows_(rows, schemaFields)
 {
+  if (!rows || !rows.length) return [];
   // Compute type-coercion functions from the column schema.
   const formatters = schemaFields.map(function (colSchema) {
     var type = colSchema.type.toLowerCase();
@@ -212,7 +217,7 @@ function bq_formatQueryRows_(rows, schemaFields)
     }
   });
 
-  return !rows ? [] : rows.map(function (row) { return row.f.map(
+  return rows.map(function (row) { return row.f.map(
     function (col, idx) {
       return formatters[idx].fn(col.v);
     });
