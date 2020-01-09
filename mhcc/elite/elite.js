@@ -30,7 +30,7 @@ function onOpen()
 {
   const ui = SpreadsheetApp.getUi();
   const menu = ui.createMenu("Elite Admin");
-  // menu.addItem("Update Member Info", "getSidebar");
+  menu.addItem("Update Member Info", "getSidebar");
   menu.addItem("Update Scoreboard", "UpdateScoreboard");
   menu.addSeparator();
   const subMenu = ui.createMenu("Auth");
