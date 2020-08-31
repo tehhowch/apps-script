@@ -1,0 +1,13 @@
+{
+  "requires": true,
+  "devDependencies": {
+    "@types/google-apps-script": "^1.0.0",
+    "@google/clasp": "^2.3.0"
+  },
+  "license": "GPL-3.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tehhowch/apps-script"
+  }
+}

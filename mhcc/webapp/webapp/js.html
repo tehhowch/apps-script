@@ -1,0 +1,383 @@
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+  /**
+   * Once chart libraries load,
+   *   Run the server-side function loadUserData()
+   *   If the data loaded successfully, we run the client function "dataLoadedOK"
+   *   If Apps Script throws an error (i.e. no UID given), run the client function "dataNotLoadedOK"
+   */
+
+  /**
+   * @typedef {Object} UserHistory
+   * @property {string} memberName The display name associated with this history data.
+   * @property {string[][]} crownHeader Array of column titles for the crown history data.
+   * @property {number[][]} crownData The crown history data to be plotted.
+   * @property {string[][]} rankHeader Array of column titles for the rank history data.
+   * @property {number[][]} rankData The rank history data to be plotted.
+   */
+
+  /**
+   * Async loading function called after all libraries load.
+   * @callback
+   * @param {string} uid The user id(s) with MHCC Crown/Rank histories to query for and plot.
+   */
+  function loadData(uid)
+  {
+    google.script.run
+      .withSuccessHandler(dataLoadedOK)
+      .withFailureHandler(dataNotLoadedOK)
+      .loadUserData(uid);
+  };
+  /**
+   * Called by {@link loadData} with an unhandled exception thrown by the Apps Script server function.
+   * TODO: Actually be useful when the server throws an error.
+   * @callback
+   * @param {Error} e The error thrown by the Apps Script server function.
+   */
+  function dataNotLoadedOK(e)
+  {
+    document.getElementById('crownHistory').innerHTML = e.message;
+    document.getElementById('rankHistory').innerHTML = "";
+  }
+  /** ChartWrapper classes that are bound to the Google Charts if loading is successful. */
+  var rhWrapper, chWrapper;
+  /** Data queried from the Apps Script server.
+   * TODO: Use this with other page controls to allow switching between compare and single-user viewing modes
+   * @type {Object <string, {crownHistory: any[][], rankHistory: any[][], crownCompare: any[][]}>}
+   */
+  const chartData = {};
+  /**
+   * Called by {@link loadData} with the return value of the Apps Script server function.
+   * @callback
+   * @param {string} input Stringified UserHistory object, indexed by member identifier.
+   */
+  function dataLoadedOK(input)
+  {
+    /**
+     * Function which condenses the given 2D arrays into a single 2D array that can be plotted with Google Charts.
+     * I.e., any 2D array without an X value found in any of the other 2D arrays gets values of null in its y-data
+     * columns for those X-values, and common X-values have values from all 2D arrays.
+     * Returns an Mx(N-1)*K array for K input MxN arrays: [ X | 1.2 | ... | 1.N | 2.2 | ... | 2.N ... ]
+     *
+     * @param {any[][][]} dataTables  An array containing several 2D arrays with the same number of columns and headers.
+     * @param {number} numHeaders     The number of header rows in each of the given dataTables.
+     */
+    function _collateX_(dataTables, numHeaders)
+    {
+      // Requre all input dataTables have the same number of data columns in every row.
+      const numColumns = dataTables[0][0].length;
+      if (!dataTables.every(dt => dt.every(r => r.length === numColumns)))
+        throw new Error("Datatables cannot be merged due to different column counts.");
+
+      // Index all X-values of each input, and push each Y-value for each other Column (i.e. duplicates supported).
+      const allXVals = [];
+      dataTables.forEach((dt, index) => {
+        let xVals = {}, numSeries = dt[0].length - 1;
+        for (let r = numHeaders, len = dt.length; r < len; ++r)
+        {
+          let row = dt[r], xVal = row[0].getTime();
+          // Create this new xValue and give each Y-Column an array to push to.
+          if (!xVals[xVal])
+          {
+            xVals[xVal] = {};
+            for (let c = 1; c <= numSeries; ++c)
+              xVals[xVal][c] = [];
+          }
+          // Add this row's Y-Values to their respective arrays.
+          for (let c = 1; c <= numSeries; ++c)
+            xVals[xVal][c].push(row[c]);
+        }
+        // Store this completed xValues map for this dataset at the same index level.
+        allXVals[index] = xVals;
+      });
+
+      // Beginning with the first datatable, import the xValues and add rows for each relevant Y-value.
+      const unifiedX = {}, numTables = dataTables.length;
+      allXVals.forEach((xData, index, eachXV) => {
+        for (let xVal in xData)
+        {
+          // If this xValue already exists in the unified collection, then all series have been added for it.
+          if (unifiedX[xVal])
+            continue;
+          else
+            unifiedX[xVal] = { 'rows': 0, 'values': {} };
+
+          // Determine which dataTables have values to add (vs adding null), and how many.
+          let hasValues = {};
+          eachXV.forEach((xv, i) => {
+            if (xv[xVal])
+            {
+              // Should be numColumns - 1 keys in xv[xVal].
+              if (Object.keys(xv[xVal]).length !== numColumns - 1)
+                throw new Error("Incorrect number of columns in datatable " + i + " for xVal " + xVal);
+
+              hasValues[i] = xv[xVal]['1'].length;
+            }
+            else
+              hasValues[i] = 0;
+            unifiedX[xVal].rows = Math.max(unifiedX[xVal].rows, hasValues[i]);
+          });
+
+          // The unified x-value data is an array with the values to insert for each column at that x-value for that dataset.
+          eachXV.forEach((xv, i) => {
+            unifiedX[xVal].values[i] = {};
+            let numValues = hasValues[i];
+            for (let yCol = 1; yCol < numColumns; ++yCol)
+            {
+              let inserted = 0;
+              // Initialize the array for each data column.
+              unifiedX[xVal].values[i][yCol] = [];
+              // Add as many real-valued datapoints as this dataTable has.
+              for (; inserted < numValues; ++inserted)
+                unifiedX[xVal].values[i][yCol].push(xv[xVal][yCol][inserted]);
+              // Add needed null-valued datapoints so that this dataTable has as many rows as all the other dataTables for this xValue.
+              for (; inserted < unifiedX[xVal].rows; ++inserted)
+                unifiedX[xVal].values[i][yCol].push(null);
+            }
+          });
+        }
+      });
+
+      // Now that the unified map is created, convert from the object to the needed Array.
+      const newTable = [];
+      for (let xVal in unifiedX)
+      {
+        let dataSources = unifiedX[xVal].values;
+        for (let r = 0; r < unifiedX[xVal].rows; ++r)
+        {
+          let row = [new Date(xVal * 1)];
+          for (let dt in dataSources)
+          {
+            for (let yCol in dataSources[dt])
+              row.push(dataSources[dt][yCol][r]);
+          }
+          newTable.push(row);
+        }
+      }
+      // Sort this new table chronologically ascending.
+      newTable.sort(([a], [b]) => a - b);
+
+      // Create the header row.
+      const headers = dataTables[0].slice(0, 1)[0];
+      for (let i = 1; i < dataTables.length; ++i)
+        Array.prototype.push.apply(headers, dataTables[i].slice(0, 1)[0].slice(1));
+
+      if (newTable.length === 0)
+        throw new Error("Failed to collate X data.");
+      if (newTable[0].length !== headers.length)
+        throw new Error("Header/Data column count mismatch");
+
+      newTable.unshift(headers);
+      return newTable;
+    }
+    /** All rank dataseries can be extracted to the same format, even if to be used for multi-member comparison.
+     * @param {UserHistory} userData A single member's user history.
+     * @return {any[][]}
+     */
+    function _getRankDataSeries(userData)
+    {
+      return [].concat(
+        [userData.rankHeader[0].slice(0, -1)],
+        userData.rankData.map((row) => {
+          //      RankTime          | Rank | Tooltip ( X crowns, rank: y, Seen: yyyy-mm-dd )
+          return [new Date(row[0]), row[1], `${row[2]} crowns:\nRank: ${row[1]}\nSeen: ${new Date(row[3]).toLocaleDateString()}`];
+        })
+      );
+    }
+
+    /**
+     * Function which parses and displays the received user data for detailed inspection. Crown
+     * history will be plotted as several series.
+     *
+     * @param {Object <string, UserHistory>} dataInput
+     *        Received data from the Apps Script server, containing plottable data for each given user id.
+     *        CrownHeader: [ LastSeen | Bronze | Silver | Gold | Total ]
+     *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
+     */
+    function _plotOneUser(dataInput)
+    {
+      const uid = Object.keys(dataInput)[0];
+      if (!uid) return;
+      const userData = dataInput[uid];
+      chartData[uid] = {};
+
+      // Crown History (Bronze as Line, Silver & Gold as stacked area, Total as Line
+      chartData[uid].crownHistory = [].concat(
+        userData.crownHeader,
+        userData.crownData.map((row) => {
+          //       LastSeen       | Bronze | Silver | Gold | Total
+          return [new Date(row[0]), row[1], row[2], row[3], row[4]];
+        })
+      );
+      const crownDataTable = google.visualization.arrayToDataTable(chartData[uid].crownHistory, false);
+      chWrapper = new google.visualization.ChartWrapper({
+        "containerId": "crownHistory",
+        "chartType": "ComboChart",
+        "dataTable": crownDataTable,
+        "options": {
+          "title": `${userData.memberName}'s Crowns History`,
+          "pointSize": 4,
+          "focusTarget": "category",
+          "hAxis": { title: "Snapshot Date" },
+          "vAxis": { title: "Crown Counts", minValue: 0 },
+          "seriesType": "steppedArea",
+          "isStacked": true,
+          "series": { 0: { type: "line" }, 3: { type: "line" } },
+          "colors": ["brown", "silver", "gold", "black"],
+          "explorer": { axis: "horizontal", maxZoomIn: .0625 }
+        }
+      });
+
+
+      // Rank History (Rank 1 at top)
+      chartData[uid].rankHistory = _getRankDataSeries(userData);
+      const rankDataTable = google.visualization.arrayToDataTable(chartData[uid].rankHistory, false);
+      rankDataTable.setColumnProperty(2, 'role', 'tooltip');
+      const rankDelta = !chartData[uid].rankHistory.length ? 0 : Math.abs(chartData[uid].rankHistory.slice(-1)[0][1] - chartData[uid].rankHistory[1][1]);
+      rhWrapper = new google.visualization.ChartWrapper({
+        "containerId": "rankHistory",
+        "chartType": "LineChart",
+        "dataTable": rankDataTable,
+        "options": {
+          "title": `${userData.memberName}'s MHCC Rank History`,
+          "pointSize": 5,
+          "hAxis": { title: "Ranking Date" },
+          "vAxis": { title: "Rank", direction: -1, minValue: 1, logScale: false },
+          "explorer": { axis: 'horizontal', maxZoomIn: .125 }
+        }
+      });
+      if (rankDelta >= 1000)
+      {
+        rhWrapper.setOption("vAxis.logScale", true);
+        rhWrapper.setOption("vAxis.minValue", Math.round(chartData[uid].rankHistory.slice(-1)[0][1] / 10));
+      }
+    }
+
+    /**
+     * Function which parses and displays the received users' data for comparison. Crown
+     * history will be plotted as a comparison of users' MHCC Crowns.
+     *
+     * @param {Object <string, UserHistory>} dataInput
+     *        Received data from the Apps Script server, containing plottable data for each given user id.
+     *        CrownHeader: [ LastSeen | Bronze | Silver | Gold | Total ]
+     *        RankHeader:  [ RankTime | Rank | MHCC Crowns | LastSeen ]
+     */
+    function _plotMultipleUsers(dataInput)
+    {
+      // Google Charts requires a single column has all X data - series without Y data use `null` at the intersection.
+      const crownDataSets = [], rankDataSets = [], names = [];
+      for (let uid in dataInput)
+      {
+        let userData = dataInput[uid];
+        names.push(userData.memberName);
+        let userCrowns = [].concat(
+            userData.crownHeader,
+            userData.crownData.map((row) => {
+              //       LastSeen       | Bronze | Silver | Gold | Total
+              return [new Date(row[0]), row[1], row[2], row[3], row[4]];
+            })
+        );
+        let userRanks = _getRankDataSeries(userData);
+        // Override the default series title of "Rank" with the member name.
+        userRanks[0][1] = userData.memberName;
+        // Store this detailed data for use in alternate plotting schema
+        chartData[uid] = { crownHistory: userCrowns, rankHistory: userRanks };
+        // Rank data keeps the same detail in both compare and normal plot modes.
+        rankDataSets.push(userRanks);
+        // Create a stripped-detail version of the crown data for compare plot mode.
+        let userCrownCompare = userCrowns.map((row, index) => {
+          return (index === 0 ? ["Last Seen", userData.memberName, "Tooltip"] :
+            [row[0], row[2] + row[3], `#S: ${row[2]}, #G: ${row[3]}`]);
+        });
+        chartData[uid].crownCompare = userCrownCompare;
+        crownDataSets.push(userCrownCompare);
+      }
+      // Union the input datasets
+      const crownData = _collateX_(crownDataSets, 1);
+      const rankData = _collateX_(rankDataSets, 1);
+      const titleStub = `${names.join(" vs. ")}:`;
+
+      // Plot crown comparison.
+      const ccDataTable = google.visualization.arrayToDataTable(crownData, false);
+
+      // Set tooltip roles.
+      for (let c = 2; c < crownData[0].length; ++c) if ((c - 1) % 2 === 1)
+          ccDataTable.setColumnProperty(c, "role", "tooltip");
+
+      chWrapper = new google.visualization.ChartWrapper({
+        "containerId": "crownHistory",
+        "chartType": "LineChart",
+        "dataTable": ccDataTable,
+        "options": {
+          "title": `${titleStub} Crowns`,
+          "pointSize": 4,
+          "focusTarget": "category",
+          "interpolateNulls": true,
+          "hAxis": { title: "Snapshot Date" },
+          "vAxis": { title: "MHCC Crowns"},
+          "seriesType": "line",
+          "explorer": { axis: "horizontal", maxZoomIn: .0625 }
+        }
+      });
+
+
+      // Plot rank comparison.
+      const rcDataTable = google.visualization.arrayToDataTable(rankData, false);
+
+      // Set tooltip roles.
+      for (let c = 2; c < rankData[0].length; ++c) if ((c - 1) % 2 === 1)
+          rcDataTable.setColumnProperty(c, "role", "tooltip");
+
+      rhWrapper = new google.visualization.ChartWrapper({
+        "containerId": "rankHistory",
+        "chartType": "LineChart",
+        "dataTable": rcDataTable,
+        "options": {
+          "title": `${titleStub} Ranks`,
+          "pointSize": 5,
+          "focusTarget": "category",
+          "interpolateNulls": true,
+          "hAxis": { title: "Ranking Date" },
+          "vAxis": { title: "MHCC Member Ranking", direction: -1, minValue: 1, logScale: false },
+          "explorer": { axis: 'horizontal', maxZoomIn: .125 }
+        }
+      });
+    }
+
+
+    if (!input || !input.length)
+    {
+      const m = "No data received from the Apps Script function";
+      ['crownHistory', 'rankHistory'].forEach(id => document.getElementById(id).innerHTML = m);
+      return;
+    }
+    // Data was sent as a JSONified string.
+    /** @type {Object <string, UserHistory>} */
+    const data = JSON.parse(input);
+
+    if (Object.keys(data).length === 1)
+      _plotOneUser(data);
+    else if (Object.keys(data).length < 6)
+      _plotMultipleUsers(data);
+    else
+      return;
+
+    drawAll();
+  }
+
+
+  google.charts.load('current', {packages: ['corechart']});
+  google.charts.setOnLoadCallback(loadData(document.getElementById('member').innerHTML));
+  // Redraw the charts a half-second after the page stops resizing.
+  $(window).resize(function() {
+    if (this.resizeTO)
+      clearTimeout(this.resizeTO);
+    this.resizeTO = setTimeout(function(){ $(this).trigger('resizeEnd');}, 500);
+  });
+  $(window).on('resizeEnd', drawAll);
+  function drawAll() {
+    if (rhWrapper) rhWrapper.draw();
+    if (chWrapper) chWrapper.draw();
+  }
+</script>

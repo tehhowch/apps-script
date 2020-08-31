@@ -1,11 +1,22 @@
 # MHCC specific ignores
-fusion.txt
 credentials.dat
-backupTable.txt
 staging.csv
+auth.txt
+tables.txt
+mhcc/.vs*
+env/
+keys.js
 
+# Python ignores
+__pycache__/*
+.mypy_cache/
+*.pyc
+Pipfile*
 
 # General-purpose ignores
+.clasp*.json
+client_secret_*
+creds.json
 [Tt]humbs.db
 *.DS_Store
 
@@ -42,3 +53,10 @@ _ReSharper*/
 
 .svn
 ~$*
+/.vs
+node_modules/*
+
+# Backups of table data
+table_backups/
+table_*.csv
+*data*.csv

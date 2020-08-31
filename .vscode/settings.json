@@ -1,0 +1,8 @@
+{
+    "files.trimTrailingWhitespace": true,
+    "javascript.format.placeOpenBraceOnNewLineForControlBlocks": true,
+    "javascript.format.placeOpenBraceOnNewLineForFunctions": true,
+    "python.pythonPath": "${workspaceFolder}/mhcc/maintenance/mhcc_maintainer/env",
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true
+}
