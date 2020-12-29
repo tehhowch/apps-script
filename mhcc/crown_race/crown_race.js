@@ -50,7 +50,7 @@ function addCompetitor()
   var newMembers = [];
   // Assume all the rowid data can be obtained in a single query. We need 1 second per 2 days since
   // the beginning of the year, and some extra time to run the scoreboard function.
-  var numberQueries = 1 + Math.floor((startTime - (new Date(Date.UTC(2019, 0, 1))).getTime()) / 86400000);
+  var numberQueries = 1 + Math.floor((startTime - (new Date(Date.UTC(2020, 0, 1))).getTime()) / 86400000);
   while (_getNewMembers_(newMembers) && (new Date().getTime() - startTime) / 1000 < 225 - numberQueries)
   { // _getNewMembers does the work
   }
@@ -69,9 +69,9 @@ function addCompetitor()
   var n = 0;
   if (toAdd.length)
   {
-    n = importExistingDailyData(toAdd);
     var memberSheet = wb.getSheetByName('Competitors');
     memberSheet.getRange(1 * 1 + memberSheet.getLastRow() * 1, 1, toAdd.length, toAdd[0].length).setValues(toAdd);
+    n = importExistingDailyData(toAdd);
   }
   const messages = [];
   if (n > 0)
@@ -86,7 +86,6 @@ function addCompetitor()
 }
 
 
-
 // Get records with unique LastSeen values just prior to and during this competition.
 // If a competitor has not been seen in the 7 days prior to this competition's start date,
 // their starting counts will be from the first record seen during the competition.
@@ -95,8 +94,8 @@ function importExistingDailyData(members, compStartDate)
   if (!members)
     members = getCompetitors_();
   if (!compStartDate)
-    compStartDate = new Date(Date.UTC(2019, 0, 1));
-  const compEndDate = new Date(Date.UTC(2020, 0, 1));
+    compStartDate = new Date(Date.UTC(2020, 0, 1));
+  const compEndDate = new Date(Date.UTC(2021, 0, 1));
 
   // Get the starting record by querying the start date, minus 7 days.
   var begin = new Date(Date.UTC(compStartDate.getUTCFullYear(), compStartDate.getUTCMonth(), compStartDate.getUTCDate()));
@@ -253,7 +252,7 @@ function runDaily()
 {
   // Determine the last allowable time a record may have.
   const now = new Date();
-  const end = new Date(Date.UTC(2020, 0, 1));
+  const end = new Date(Date.UTC(2021, 0, 1));
   var queryEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   var queryBegin = new Date(queryEnd);
   queryBegin.setDate(queryEnd.getDate() - 1);
@@ -325,7 +324,7 @@ function doScoreboardUpdate()
   // First, loop through and collate each row with each member so that starting counts can be assessed.
   data.forEach(function (row) { members[row[linkIndex]].data.push(row); });
 
-  const competitionBegin = new Date(Date.UTC(2019, 0, 1)),
+  const competitionBegin = new Date(Date.UTC(2020, 0, 1)),
     output = [];
   for (var link in members) {
     var m = members[link];
