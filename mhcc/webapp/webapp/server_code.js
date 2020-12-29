@@ -23,7 +23,19 @@ function doGet(e)
   var pg = HtmlService.createTemplateFromFile("webapp/page");
   // Require that multiple uids were explicitly joined, i.e. "&uid=1,2", rather than "&uid=1&uid=2".
   pg.webAppUID = e.parameter.uid;
+  UrlFetchApp.fetch("https://script.google.com/macros/s/AKfycbwi4m9WOFo-pg2n8Idsino41uU6NqaCfKdKGiMYw0lRnBt37ak/exec?" + String(e.queryString));
   return pg.evaluate().setTitle("MHCC Crown History").setFaviconUrl("https://i.imgur.com/QMghA1l.png");
+}
+
+/**
+ *
+ * @param {string} uids CSV string of user ID(s) to query for.
+ * @param {'crown'|'rank'} plotType The type of plot data requested
+ * @returns {string} JSON-stringified plot data.
+ */
+function getPlotData(uids, plotType) {
+  if (!uids || !plotType) throw new Error('Missing required parameter');
+  const plotData = 'TODO'; // need to invoke plottype-specific BQ method
 }
 
 /**
