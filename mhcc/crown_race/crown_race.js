@@ -60,9 +60,9 @@ function addCompetitor()
   const toAdd = [], skipped = [];
   newMembers.forEach((maybe) => {
     if (existing.includes(maybe[2]))
-      toAdd.push(maybe);
-    else
       skipped.push(maybe);
+    else
+      toAdd.push(maybe);
   });
 
   // Import the existing data for these people.
