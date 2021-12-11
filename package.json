@@ -1,13 +1,31 @@
 {
-  "requires": true,
+  "name": "apps-script",
+  "version": "0.1.0",
+  "author": "tehhowch",
+  "homepage": "https://github.com/tehhowch/apps-script#readme",
+  "description": "A collection of Javascript functions used to interface with MH Community Tools (MHCT) and serve data to the MouseHunt community. Generally meant to be loaded into Google Apps Script for use with Google Sheets.",
+  "bugs": {
+    "url": "https://github.com/tehhowch/apps-script/issues"
+  },
   "devDependencies": {
-    "@types/google-apps-script": "^1.0.0",
-    "@google/clasp": "^2.3.0"
+    "@google/clasp": "^2.4.1",
+    "@types/google-apps-script": "^1.0.41"
   },
   "license": "GPL-3.0",
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/tehhowch/apps-script"
+    "url": "https://github.com/tehhowch/apps-script.git"
+  },
+  "keywords": [
+    "mousehunt",
+    "MHCT",
+    "google-apps-script",
+    "google-sheets",
+    "BigQuery",
+    "fusion-tables"
+  ],
+  "volta": {
+    "node": "16.13.1"
   }
 }

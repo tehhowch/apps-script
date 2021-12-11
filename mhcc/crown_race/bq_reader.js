@@ -11,7 +11,7 @@
  */
 function bq_querySync_(sql)
 {
-  var job = Bigquery.newJob();
+  let job = Bigquery.newJob();
   job = {
     configuration: {
       query: {
@@ -21,16 +21,14 @@ function bq_querySync_(sql)
     }
   };
   const queryJob = Bigquery.Jobs.insert(job, projectKey);
-  var queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
+  let queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
   while (!queryResult.jobComplete)
   {
     queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
   }
-  var pages = 1;
+  let pages = 1;
   console.log({
     message: 'Query Completed',
-    submitted: job,
-    received: queryJob,
     cacheHit: queryResult.cacheHit,
     resultCount: queryResult.totalRows,
     queryBytes: queryResult.totalBytesProcessed,
@@ -38,13 +36,11 @@ function bq_querySync_(sql)
     firstResult: queryResult.rows ? queryResult.rows[0] : null
   });
   // Return the headers to the caller.
-  const headers = [];
-  Array.prototype.push.apply(headers, queryResult.schema.fields
-    .map(function (schemaField) { return schemaField.name; }));
+  const headers = queryResult.schema.fields.map(({ name }) => name);
 
   // Compute type-coercion functions from the column schema.
-  const formatters = queryResult.schema.fields.map(function (colSchema) {
-    var type = colSchema.type.toLowerCase();
+  const formatters = queryResult.schema.fields.map((colSchema) => {
+    const type = colSchema.type.toLowerCase();
     if (type === 'float' || type === 'float64') {
       return { fn: function (value) { return parseFloat(value); } };
     } else if (type === 'numeric' || type === 'integer' || type === 'int64' || type === 'integer64') {
@@ -61,14 +57,10 @@ function bq_querySync_(sql)
     Array.prototype.push.apply(results, queryResult.rows);
     ++pages;
   }
-  if (pages !== 1) console.log({ message: 'Queried results from ' + pages + ' pages'});
+  if (pages !== 1) console.log(`Queried results from ${pages} pages`);
   return {
     columns: headers,
-    rows: results.map(function (row) { return row.f.map(
-      function (col, idx) {
-        return formatters[idx].fn(col.v);
-      });
-    }),
+    rows: results.map((row) => row.f.map((col, idx) => formatters[idx].fn(col.v))),
   };
 }
 
@@ -81,8 +73,8 @@ function bq_querySync_(sql)
  */
 function bq_getRowsSeenInRange_(uids, startDate, endDate)
 {
-  if (!uids.length || !uids.every(function (uid) { return typeof uid === 'string'; })) {
-    console.warn({ message: 'Invalid UID input', uids: uids });
+  if (!uids.length || !uids.every((uid) => typeof uid === 'string')) {
+    console.warn({ message: 'Invalid UID input', uids });
     throw new Error('Invalid UIDs given for querying');
   }
   const tableId = [dataProject, 'Core', 'Crowns'].join('.');
