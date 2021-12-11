@@ -100,7 +100,7 @@ function saveMyDb_(wb, db)
   // Have a lock on the db, now save.
   const SS = _getDbSheet_(), oldDataRows = SS.getLastRow() - 1;
   // If the new db is smaller, the old db must be cleared first.
-  if (db.length < oldDataRows || db[0].length < SS.getLastColumn())
+  if (oldDataRows > 0 && (db.length < oldDataRows || db[0].length < SS.getLastColumn()))
   {
     SS.getRange(2, 1, oldDataRows, SS.getLastColumn()).clearContent();
     SpreadsheetApp.flush();
