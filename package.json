@@ -7,10 +7,9 @@
   "bugs": {
     "url": "https://github.com/tehhowch/apps-script/issues"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@types/google-apps-script": "^1.0.0",
-    "@google/clasp": "^2.3.0"
+    "@google/clasp": "^2.4.1",
+    "@types/google-apps-script": "^1.0.41"
   },
   "license": "GPL-3.0",
   "private": true,
@@ -25,5 +24,8 @@
     "google-sheets",
     "BigQuery",
     "fusion-tables"
-  ]
+  ],
+  "volta": {
+    "node": "16.13.1"
+  }
 }
