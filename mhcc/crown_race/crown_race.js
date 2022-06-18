@@ -1,5 +1,6 @@
 //@ts-check
 // @OnlyCurrentDoc
+const COMP_YEAR = 2022;
 /**
  * @param {GoogleAppsScript.Events.SheetsOnOpen} e
  */
@@ -50,7 +51,7 @@ function addCompetitor()
   const newMembers = [];
   // Assume all the rowid data can be obtained in a single query. We need 1 second per 2 days since
   // the beginning of the year, and some extra time to run the scoreboard function.
-  const numberQueries = 1 + Math.floor((startTime - (new Date(Date.UTC(2021, 0, 1))).getTime()) / 86400000);
+  const numberQueries = 1 + Math.floor((startTime - (new Date(Date.UTC(COMP_YEAR, 0, 1))).getTime()) / 86400000);
   while (_getNewMembers_(newMembers) && (new Date().getTime() - startTime) / 1000 < 225 - numberQueries)
   {
     // _getNewMembers does the work
@@ -95,8 +96,8 @@ function importExistingDailyData(members, compStartDate)
   if (!members)
     members = getCompetitors_();
   if (!compStartDate)
-    compStartDate = new Date(Date.UTC(2021, 0, 1));
-  const compEndDate = new Date(Date.UTC(2022, 0, 1));
+    compStartDate = new Date(Date.UTC(COMP_YEAR, 0, 1));
+  const compEndDate = new Date(Date.UTC(COMP_YEAR + 1, 0, 1));
 
   // Get the starting record by querying the start date, minus 7 days.
   const begin = new Date(Date.UTC(compStartDate.getUTCFullYear(), compStartDate.getUTCMonth(), compStartDate.getUTCDate()));
@@ -251,7 +252,7 @@ function runDaily()
 {
   // Determine the last allowable time a record may have.
   const now = new Date();
-  const end = new Date(Date.UTC(2022, 0, 1));
+  const end = new Date(Date.UTC(COMP_YEAR + 1, 0, 1));
   let queryEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const queryBegin = new Date(queryEnd);
   queryBegin.setDate(queryEnd.getDate() - 1);
@@ -314,18 +315,18 @@ function doScoreboardUpdate()
   const headers = data.shift();
 
   // Assign the relevant data indexes.
-  const linkIndex = headers.indexOf('Link'),
-    silverIndex = headers.indexOf("Silver"),
-    goldIndex = headers.indexOf("Gold"),
-    bronzeIndex = headers.indexOf("Bronze"),
-    seenIndex = headers.indexOf("Last Seen"),
-    crownIndex = headers.indexOf("Last Crown");
+  const linkIndex = headers.indexOf('Link');
+  const silverIndex = headers.indexOf("Silver");
+  const goldIndex = headers.indexOf("Gold");
+  const bronzeIndex = headers.indexOf("Bronze");
+  const seenIndex = headers.indexOf("Last Seen");
+  const crownIndex = headers.indexOf("Last Crown");
 
   // First, loop through and collate each row with each member so that starting counts can be assessed.
   data.forEach(function (row) { members[row[linkIndex]].data.push(row); });
 
-  const competitionBegin = new Date(Date.UTC(2021, 0, 1)),
-    output = [];
+  const competitionBegin = new Date(Date.UTC(COMP_YEAR, 0, 1));
+  const output = [];
   for (var link in members) {
     const m = members[link];
     // Compute the starting counts, and determine the most recent counts.

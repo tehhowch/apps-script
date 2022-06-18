@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@google/clasp": "^2.4.1",
-    "@types/google-apps-script": "^1.0.41"
+    "@types/google-apps-script": "^1.0.48"
   },
   "license": "GPL-3.0",
   "private": true,
@@ -26,6 +26,6 @@
     "fusion-tables"
   ],
   "volta": {
-    "node": "16.13.1"
+    "node": "16.15.1"
   }
 }
