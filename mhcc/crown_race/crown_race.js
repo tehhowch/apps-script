@@ -1,6 +1,6 @@
 //@ts-check
 // @OnlyCurrentDoc
-const COMP_YEAR = 2022;
+const COMP_YEAR = 2023;
 /**
  * @param {GoogleAppsScript.Events.SheetsOnOpen} e
  */
