@@ -11,7 +11,7 @@
  */
 function bq_querySync_(sql)
 {
-  let job = Bigquery.newJob();
+  let job = BigQuery.newJob();
   job = {
     configuration: {
       query: {
@@ -20,11 +20,11 @@ function bq_querySync_(sql)
       }
     }
   };
-  const queryJob = Bigquery.Jobs.insert(job, projectKey);
-  let queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
+  const queryJob = BigQuery.Jobs.insert(job, projectKey);
+  let queryResult = BigQuery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
   while (!queryResult.jobComplete)
   {
-    queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
+    queryResult = BigQuery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId);
   }
   let pages = 1;
   console.log({
@@ -53,7 +53,7 @@ function bq_querySync_(sql)
   Array.prototype.push.apply(results, queryResult.rows);
   while (queryResult.pageToken)
   {
-    queryResult = Bigquery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId, { pageToken: queryResult.pageToken });
+    queryResult = BigQuery.Jobs.getQueryResults(projectKey, queryJob.jobReference.jobId, { pageToken: queryResult.pageToken });
     Array.prototype.push.apply(results, queryResult.rows);
     ++pages;
   }

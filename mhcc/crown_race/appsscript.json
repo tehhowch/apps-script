@@ -2,7 +2,7 @@
   "timeZone": "America/Chicago",
   "dependencies": {
     "enabledAdvancedServices": [{
-      "userSymbol": "Bigquery",
+      "userSymbol": "BigQuery",
       "serviceId": "bigquery",
       "version": "v2"
     }]
